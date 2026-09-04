@@ -20,7 +20,7 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
@@ -267,15 +267,26 @@ def main():
     print(f"  all-1h flat     : ${flat_hi:,.2f}  ({(flat_hi/true_cost-1)*100:+.2f}%)")
     print(f"  all-5m flat     : ${flat_lo:,.2f}  ({(flat_lo/true_cost-1)*100:+.2f}%)")
 
-    # --- the actual push: 7-day window, skip empty days ------------------
+    # --- the actual push: 7 CALENDAR days, skip empty and all-zero rows ---
+    # #18 Q1: the window is 7 *calendar* days, not 7 active days. Active-days
+    # spans 27 calendar days on this corpus and makes "last 7 days" a lie.
     all_dates = sorted({k[0] for k in ranked_rows})
-    window = all_dates[-WINDOW_DAYS:]
+    today = datetime.now().astimezone().date()
+    window = {(today - timedelta(days=i)).isoformat() for i in range(WINDOW_DAYS)}
     push = {k: v for k, v in ranked_rows.items() if k[0] in window}
+    # #18 Q3: a row with no tokens and no cost has nothing to display.
+    dropped_zero = [k for k, v in push.items() if not any(
+        (v["input_tokens"], v["output_tokens"], v["cache_write_5m"],
+         v["cache_write_1h"], v["cache_read_tokens"]))]
+    for k in dropped_zero:
+        del push[k]
 
     print("\n" + "=" * 78)
-    print(f"THE PUSH — rolling {WINDOW_DAYS} active days, skipping days with no usage")
+    print(f"THE PUSH — rolling {WINDOW_DAYS} CALENDAR days, empty days skipped")
     print("=" * 78)
-    print(f"Window: {window[0]} .. {window[-1]}   ({len(all_dates)} active days exist)")
+    print(f"Window: {min(window)} .. {max(window)}   "
+          f"({len(all_dates)} active days exist in total)")
+    print(f"All-zero rows dropped: {len(dropped_zero)} {dropped_zero}")
 
     sizes = []
     print(f"\n{'bytes':>6s}  row")
@@ -308,9 +319,19 @@ def main():
     print(f"  synthetic worst case              : {len(worst)} bytes")
 
     # --- headline legibility --------------------------------------------
+    # #18 Q2: cost is the headline; the token sum is demoted and abbreviated,
+    # because all-four-classes-summed is an 8-9 digit wall dominated by cache
+    # reads and swings an order of magnitude day to day.
     print("\n" + "-" * 78)
-    print("HEADLINE LEGIBILITY — what the e-ink display would show")
+    print("HEADLINE — cost leads, tokens demoted (abbreviated)")
     print("-" * 78)
+
+    def abbrev(n):
+        for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+            if n >= div:
+                return f"{n/div:.1f}{suf}"
+        return str(n)
+
     by_day = defaultdict(lambda: {"tok": 0, "cost": 0.0, "complete": True})
     for (date, _, _), r in push.items():
         b = by_day[date]
@@ -320,8 +341,8 @@ def main():
         b["complete"] &= r["cost_complete"]
     for date in sorted(by_day):
         b = by_day[date]
-        print(f"  {date}  {b['tok']:>14,} tokens ({len(str(b['tok']))} digits)"
-              f"   ${b['cost']:>8,.2f}   cost_complete={b['complete']}")
+        print(f"  {date}   ${b['cost']:>8,.2f}   {abbrev(b['tok']):>7s} tokens"
+              f"   cost_complete={b['complete']}")
 
     incomplete = [k for k, v in push.items() if not v["cost_complete"]]
     print(f"\n  rows with cost_complete=False : {len(incomplete)}")
