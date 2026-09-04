@@ -1,0 +1,15 @@
+[Unit]
+Description=zeropi-display BLE receiver
+BindsTo=bluetooth.service
+After=bluetooth.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/zeropi-display
+ExecStart=/opt/zeropi-display/venv/bin/python /opt/zeropi-display/receive.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
