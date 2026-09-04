@@ -41,12 +41,11 @@ Tickets, in dependency order:
 Unlike map #1, **#8 is a real decision ticket** — grill it out rather than
 jumping to a script.
 
-### Previous: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
+### Closed: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
 
-Tickets #2–#5 closed. [#6 (verify round trip)](https://github.com/peterderkoala/zeropi.display/issues/6)
-is **still open but its acceptance criteria are now met** — see the
-verification session comment and `docs/e2e-verification.md`. Close it (and
-with it map #1's destination) unless something else is wanted from it first.
+Destination reached; all five tickets (#2–#6) and the map itself are
+closed. The round trip is verified on real hardware — see
+`docs/e2e-verification.md` and the closing comments on #6 and #1.
 
 ## Hard-won facts — do not relearn these
 
