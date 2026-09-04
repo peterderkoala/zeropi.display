@@ -74,6 +74,10 @@ going forward.
 
 Issues live in GitHub Issues (github.com/peterderkoala/zeropi.display), using the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
+### Triage labels
+
+Default vocabulary — the five canonical roles, label strings equal to their names. See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 Single-context layout (root `CONTEXT.md` + `docs/adr/`, created lazily as decisions are made). See `docs/agents/domain.md`.
