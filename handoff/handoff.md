@@ -25,29 +25,47 @@ Two maps are open. #13 is where the work is; #7 has one ticket left.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
-Charted 2026-09-04. Destination is a **spec** —
-`docs/spec-usage-pipeline.md` plus the `CONTEXT.md`/ADR changes it needs —
-precise enough that a Sonnet 5 session implements the real-usage pipeline
-without reopening a decision. Implementation is a separate map.
+Charted 2026-09-04. **Destination redrawn 2026-09-05** — read the map body
+before anything else, including the redraw banner at the top.
 
-**Read the map body first.** It carries ~20 decisions settled during
-charting and the measured facts behind them; nothing on this map should
-re-derive them.
+The original map specced the daily-aggregate pipeline. The maintainer's
+actual goal is a **live usage gauge**: current consumption against the
+rolling 5-hour limit window (ideally a percentage), the weekly limit if
+obtainable, and the **context size of the active session**. History is
+demoted to a supporting role — an average/trend graph — but survives as
+specced.
+
+**The redraw invalidated some settled decisions.** They are struck through
+in the map's tables rather than deleted, so you can see what changed:
+cadence is no longer out of scope, and the "cost is the headline" decision
+now governs only the historic view.
 
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the multi-row transport protocol (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
-   — `wayfinder:grilling`. Connection lifetime, ack discipline, partial
-   failure, ordering.
-2. [Settle who creates the new SQLite schema on the Pi (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
-   — `wayfinder:grilling`. Touches map #7's open #11; don't invalidate it.
-3. [Settle whether older usage history is backfilled (#21)](https://github.com/peterderkoala/zeropi.display/issues/21)
+1. [Settle whether older usage history is backfilled (#21)](https://github.com/peterderkoala/zeropi.display/issues/21)
    — `wayfinder:grilling`. Raised by #18: the 7-calendar-day window means
    seven of nine active days, including the largest, never reach the Pi.
 
-Blocked: [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
-(← #16, #17), [Write the implementation spec (#20)](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← #16, #17, #19, #21).
+Two research tickets were fired on 2026-09-05 and may already be closed:
+[#22 rate limits](https://github.com/peterderkoala/zeropi.display/issues/22)
+and [#23 e-ink refresh](https://github.com/peterderkoala/zeropi.display/issues/23).
+**Check their state before starting anything** — they unblock most of the map.
+
+Blocked: [#24 live data model](https://github.com/peterderkoala/zeropi.display/issues/24)
+(← #22) is the hinge — the transport, the schema and the cadence all wait on
+it. Then [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25)
+(← #23, #24), [#26 live prototype](https://github.com/peterderkoala/zeropi.display/issues/26)
+(← #22, #24), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
+(← #24), [#17 schema](https://github.com/peterderkoala/zeropi.display/issues/17)
+(← #24), [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
+(← #16, #17), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
+(← seven tickets).
+
+**#22 decides whether the primary goal is achievable at all.** The gauge needs
+a percentage; charting established the numerator exists but found **no limit
+data anywhere on this machine**. If #22 comes back empty, the agreed fallback
+is a hand-configured constant labelled "of your configured limit" — never a
+number inferred from observed maxima, which is circular.
 
 Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
 (`docs/research/pricing-table.md`, branch `research/pricing-table`),
@@ -98,6 +116,20 @@ closed. The round trip is verified on real hardware — see
   [#12](https://github.com/peterderkoala/zeropi.display/issues/12); until
   it is fixed, delete that `finally` block by hand when diagnosing a BLE
   failure.
+
+Live-gauge facts, established 2026-09-05 (detail in the map body):
+
+- **`~/.claude/sessions/<pid>.json` is a live session registry** — real-time
+  `sessionId`, `cwd`, `status` (`busy`/otherwise), `startedAt`, `updatedAt`.
+  The `sessionId` joins to the session's JSONL. This is how you detect the
+  active session; no heuristics needed.
+- **Context size** = the active session's latest assistant entry's
+  `input + cache_creation + cache_read`. Measured 210,641 on a live session,
+  which **exceeds 200K** — so don't assume the context-window denominator.
+- **Rate limits are not in the local data.** Searched exhaustively. The gauge
+  has a numerator and no denominator until #22 says otherwise.
+- **Never read `~/.claude/.credentials.json`.** It sits next to the useful
+  files; nothing in this project needs it.
 
 Usage-log facts, from map #13's research (full detail in the map body and
 in `docs/research/`):
