@@ -46,26 +46,37 @@ Frontier — open, unblocked, unclaimed:
    — `wayfinder:grilling`. Raised by #18: the 7-calendar-day window means
    seven of nine active days, including the largest, never reach the Pi.
 
-Two research tickets were fired on 2026-09-05 and may already be closed:
-[#22 rate limits](https://github.com/peterderkoala/zeropi.display/issues/22)
-and [#23 e-ink refresh](https://github.com/peterderkoala/zeropi.display/issues/23).
-**Check their state before starting anything** — they unblock most of the map.
+2. [Get a fresh rate-limit snapshot onto disk (#27)](https://github.com/peterderkoala/zeropi.display/issues/27)
+   — `wayfinder:task`. Raised by #22. **Touches the maintainer's global
+   `~/.claude/settings.json` — ask before changing it.**
 
 Blocked: [#24 live data model](https://github.com/peterderkoala/zeropi.display/issues/24)
-(← #22) is the hinge — the transport, the schema and the cadence all wait on
+(← #27) is the hinge — the transport, the schema and the cadence all wait on
 it. Then [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25)
-(← #23, #24), [#26 live prototype](https://github.com/peterderkoala/zeropi.display/issues/26)
-(← #22, #24), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
+(← #24), [#26 live prototype](https://github.com/peterderkoala/zeropi.display/issues/26)
+(← #24, #27), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
 (← #24), [#17 schema](https://github.com/peterderkoala/zeropi.display/issues/17)
 (← #24), [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
 (← #16, #17), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← seven tickets).
+(← eight tickets).
 
-**#22 decides whether the primary goal is achievable at all.** The gauge needs
-a percentage; charting established the numerator exists but found **no limit
-data anywhere on this machine**. If #22 comes back empty, the agreed fallback
-is a hand-configured constant labelled "of your configured limit" — never a
-number inferred from observed maxima, which is circular.
+**The primary goal is achievable, but not the way this map first assumed.**
+[#22](https://github.com/peterderkoala/zeropi.display/issues/22) (closed)
+overturned the framing: there is **no denominator and none is needed** —
+Anthropic computes utilization server-side and Claude Code carries
+`five_hour.utilization` / `resets_at` and `seven_day.*` ready-made. The
+"hand-configured constant" fallback recorded earlier was **withdrawn as
+unsound**: the limit is not a token count, so there is no number to configure.
+
+**The load-bearing corollary**: the locally-parsed token sum is **not
+proportional** to limit consumption. Never show it as a proxy for the gauge —
+they are different quantities.
+
+[#23](https://github.com/peterderkoala/zeropi.display/issues/23) (closed) set
+the hardware floor: **minimum safe panel update is 180 s, 300 s recommended**
+on a second-hand panel. So "live" means a ~5-minute gauge, not real-time. If
+that disappoints, *time-until-window-reset* may read better than a
+slowly-creeping percentage — flagged on #25.
 
 Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
 (`docs/research/pricing-table.md`, branch `research/pricing-table`),
@@ -126,8 +137,21 @@ Live-gauge facts, established 2026-09-05 (detail in the map body):
 - **Context size** = the active session's latest assistant entry's
   `input + cache_creation + cache_read`. Measured 210,641 on a live session,
   which **exceeds 200K** — so don't assume the context-window denominator.
-- **Rate limits are not in the local data.** Searched exhaustively. The gauge
-  has a numerator and no denominator until #22 says otherwise.
+- **The gauge percentage is served ready-made**, not computed locally.
+  Verified on this machine: `five_hour.utilization: 17`,
+  `seven_day.utilization: 2`, with `limit_dollars` / `used_dollars` /
+  `remaining_dollars` **all null**. No limit crosses the wire in any unit.
+- **⚠ `~/.claude.json` → `cachedUsageUtilization` is a trap.** It is the only
+  on-disk copy and it is not maintained — verified **7.1 hours stale** with an
+  already-elapsed `resets_at`. Reading the gauge from it ships a frozen number
+  for a dead window. That is what #27 exists to fix.
+- **The 5h window's anchor is not locally reconstructible** — it matched
+  neither the nearest local event, nor first-activity-after-a-gap, nor a clock
+  boundary. **Read `resets_at`; never model the window.** The 7-day window is
+  a different shape: a fixed account slot on an exact clock hour.
+- **The gauge is account-wide**, computed server-side, so usage from
+  claude.ai and other devices is already included. The *historic* rows are
+  still this-machine-only.
 - **Never read `~/.claude/.credentials.json`.** It sits next to the useful
   files; nothing in this project needs it.
 
