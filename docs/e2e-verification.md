@@ -98,6 +98,10 @@ one write at MTU 517.
 
 ## Notes for next time
 
+The provisioning and unattended-run items below are now tracked on
+[Map: Target installation reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7).
+
+
 - The Pi's Bluetooth stack is **not** the bottleneck it appeared to be; do
   not design around a presumed Pi Zero 2W BLE limitation.
 - When the Desktop reports "no device advertising service …", check
