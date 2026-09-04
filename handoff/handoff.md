@@ -41,18 +41,26 @@ Frontier — open, unblocked, unclaimed:
    failure, ordering.
 2. [Settle who creates the new SQLite schema on the Pi (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
    — `wayfinder:grilling`. Touches map #7's open #11; don't invalidate it.
-3. [Prototype: the usage reader against real logs (#18)](https://github.com/peterderkoala/zeropi.display/issues/18)
-   — `wayfinder:prototype`. Unblocked now that both research tickets closed.
+3. [Settle whether older usage history is backfilled (#21)](https://github.com/peterderkoala/zeropi.display/issues/21)
+   — `wayfinder:grilling`. Raised by #18: the 7-calendar-day window means
+   seven of nine active days, including the largest, never reach the Pi.
 
 Blocked: [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
 (← #16, #17), [Write the implementation spec (#20)](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← #16, #17, #18, #19).
+(← #16, #17, #19, #21).
 
 Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
-(`docs/research/pricing-table.md`, branch `research/pricing-table`) and
+(`docs/research/pricing-table.md`, branch `research/pricing-table`),
 [#15 dedup](https://github.com/peterderkoala/zeropi.display/issues/15)
-(`docs/research/dedup-rules.md`, branch `research/dedup-rules`). Both
-branches are unmerged research; the findings are summarised in the map body.
+(`docs/research/dedup-rules.md`, branch `research/dedup-rules`) and
+[#18 prototype](https://github.com/peterderkoala/zeropi.display/issues/18)
+(`desktop/usage_prototype.py`, branch `prototype/usage-reader`). All three
+branches are unmerged; the findings are summarised in the map body.
+
+**The prototype is worth running before you touch this pipeline** —
+`python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
+rows a push would send from your real logs, with the dedup delta and the
+cache-write TTL error measured live. It is throwaway, not the implementation.
 
 ### Also open: [Target installation reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7)
 
