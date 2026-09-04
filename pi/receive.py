@@ -11,6 +11,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from bluezero import adapter
+from bluezero import async_tools
 from bluezero import device
 from bluezero import peripheral
 
@@ -95,7 +96,17 @@ class ReceiveState:
     def send_ack(cls, ack: dict) -> None:
         if cls.ack_characteristic is None:
             return
-        cls.ack_characteristic.set_value(list(json.dumps(ack).encode("utf-8")))
+        characteristic = cls.ack_characteristic
+
+        def _notify() -> bool:
+            characteristic.set_value(list(json.dumps(ack).encode("utf-8")))
+            return False
+
+        # Deferred: notifying from inside the write's own D-Bus call
+        # confuses BlueZ's ATT state machine (the pending write reply
+        # races the notification), so send it on the next event-loop
+        # iteration instead.
+        async_tools.add_timer_ms(0, _notify)
 
     @classmethod
     def on_write(cls, value: list, options: dict) -> None:
