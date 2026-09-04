@@ -63,7 +63,10 @@ with it map #1's destination) unless something else is wanted from it first.
   `journalctl -u bluetooth` for a crash before suspecting the radio.
 - `push.py`'s `finally: stop_notify(...)` masks the real exception when a
   connect fails, reporting "Service Discovery has not been performed yet"
-  over the top of the actual error. Untracked wart; costs diagnosis time.
+  over the top of the actual error. Tracked as
+  [#12](https://github.com/peterderkoala/zeropi.display/issues/12); until
+  it is fixed, delete that `finally` block by hand when diagnosing a BLE
+  failure.
 
 ## Environment notes
 
