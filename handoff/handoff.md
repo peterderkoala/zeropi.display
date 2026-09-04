@@ -21,25 +21,49 @@ which exists nowhere executable. That is what the current map addresses.
 
 ## Maps
 
-### Current: [Target installation reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7)
+Two maps are open. #13 is where the work is; #7 has one ticket left.
+
+### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
+
+Charted 2026-09-04. Destination is a **spec** —
+`docs/spec-usage-pipeline.md` plus the `CONTEXT.md`/ADR changes it needs —
+precise enough that a Sonnet 5 session implements the real-usage pipeline
+without reopening a decision. Implementation is a separate map.
+
+**Read the map body first.** It carries ~20 decisions settled during
+charting and the measured facts behind them; nothing on this map should
+re-derive them.
+
+Frontier — open, unblocked, unclaimed:
+
+1. [Settle the multi-row transport protocol (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
+   — `wayfinder:grilling`. Connection lifetime, ack discipline, partial
+   failure, ordering.
+2. [Settle who creates the new SQLite schema on the Pi (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
+   — `wayfinder:grilling`. Touches map #7's open #11; don't invalidate it.
+3. [Prototype: the usage reader against real logs (#18)](https://github.com/peterderkoala/zeropi.display/issues/18)
+   — `wayfinder:prototype`. Unblocked now that both research tickets closed.
+
+Blocked: [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
+(← #16, #17), [Write the implementation spec (#20)](https://github.com/peterderkoala/zeropi.display/issues/20)
+(← #16, #17, #18, #19).
+
+Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
+(`docs/research/pricing-table.md`, branch `research/pricing-table`) and
+[#15 dedup](https://github.com/peterderkoala/zeropi.display/issues/15)
+(`docs/research/dedup-rules.md`, branch `research/dedup-rules`). Both
+branches are unmerged research; the findings are summarised in the map body.
+
+### Also open: [Target installation reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7)
 
 Get a stock Pi to an unattended, reboot-surviving install with one
 repeatable provisioning path. The map body carries the full inventory of
 hand-applied Pi state — read it before touching the Pi.
 
-Tickets, in dependency order:
-
-1. [Settle the provisioning approach (#8)](https://github.com/peterderkoala/zeropi.display/issues/8)
-   — `wayfinder:grilling`. **Frontier, unblocked, unclaimed. Start here.**
-   Decides install.sh vs checklist, on-Pi vs over-SSH, idempotency, and the
-   `bluezero` install method (which the systemd unit's `ExecStart` depends
-   on).
-2. [systemd unit for receive.py (#9)](https://github.com/peterderkoala/zeropi.display/issues/9) — blocked by #8
-3. [Implement pi/install.sh (#10)](https://github.com/peterderkoala/zeropi.display/issues/10) — blocked by #8, #9
-4. [Verify provisioning from scratch (#11)](https://github.com/peterderkoala/zeropi.display/issues/11) — blocked by #10
-
-Unlike map #1, **#8 is a real decision ticket** — grill it out rather than
-jumping to a script.
+**Only [#11](https://github.com/peterderkoala/zeropi.display/issues/11)
+remains open** (verify provisioning from scratch); #8, #9 and #10 are
+closed. Note that map #13's ticket #17 may change what #11 has to verify —
+settle #17 before running #11.
 
 ### Closed: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
 
@@ -67,6 +91,21 @@ closed. The round trip is verified on real hardware — see
   it is fixed, delete that `finally` block by hand when diagnosing a BLE
   failure.
 
+Usage-log facts, from map #13's research (full detail in the map body and
+in `docs/research/`):
+
+- **A naive dedup of the JSONL logs loses 26.2% of all output tokens.**
+  Duplication is streaming content-block fan-out, and the early copies carry
+  a *provisional* usage snapshot. Keying on `(requestId, message.id)` is only
+  half the rule — you must also pick a winner within each group.
+- **Cache-write tokens are two billed classes, not one.**
+  `cache_creation_input_tokens` is the sum of `ephemeral_5m` and
+  `ephemeral_1h`, which price differently. Costing off the sum is wrong by
+  ~5% on a real session.
+- **Transcript-derived cost is ~92.8% of `cost-state`, and that is correct.**
+  The transcript does not contain every call the accumulator saw. Do not
+  chase the gap.
+
 ## Environment notes
 
 - Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
@@ -76,13 +115,27 @@ closed. The round trip is verified on real hardware — see
   `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
   `uv venv .venv && uv pip install -r desktop/requirements.txt`.
-- Labels `wayfinder:map`, `wayfinder:task`, `wayfinder:grilling` exist.
-  `gh` CLI is authenticated as `peterderkoala`.
+- Labels `wayfinder:map`, `wayfinder:task`, `wayfinder:grilling`,
+  `wayfinder:research`, `wayfinder:prototype` exist. `gh` CLI is
+  authenticated as `peterderkoala`.
+- Claude Code usage logs live at `~/.claude/projects/**/*.jsonl` — 124 files,
+  ~70MB, 3 projects as of 2026-09-04. They contain prompts and file
+  contents: **never commit them or excerpts of them.** Test fixtures must be
+  synthetic or scrubbed.
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #7 — claim #8, resolve,
-  record, advance the frontier.
-- **`mattpocock-skills:grilling`** for #8 itself, since it is a genuine
-  open decision rather than a build step; record the outcome as an ADR via
-  **`mattpocock-skills:domain-modeling`** if it carries lasting rationale.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #16, #17 or #18 from
+  the frontier, resolve one, record, advance.
+- **`mattpocock-skills:grilling`** for #16 and #17, which are genuine open
+  decisions; **`mattpocock-skills:prototype`** for #18.
+- **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
+  Payload/Reading vocabulary and supersedes ADR 0001.
+
+## If you run subagents, isolate them
+
+Two research subagents were run in parallel from the same working tree on
+2026-09-04 and their git operations collided — one agent's commit landed on
+the other's branch. No damage (`dev` and `main` were untouched) and it was
+repaired with a fast-forward, but `research/dedup-rules` still carries the
+pricing commit as a result. **Give parallel agents their own worktrees.**
