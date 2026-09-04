@@ -58,8 +58,16 @@ async def push_payload(payload: dict, device: BLEDevice) -> dict:
         ack_received.set()
 
     async with BleakClient(device) as client:
-        print(f"Connected to {device.address} (negotiated MTU: {client.mtu_size})")
+        # bleak's public start_notify() only uses BlueZ's low-MTU StartNotify
+        # call unless the remote characteristic already advertises
+        # "NotifyAcquired" (ours, served by bluezero, never does). Acquiring
+        # the MTU directly is the only way to negotiate past the 23-byte
+        # default, which the single-write Payload (see
+        # ../docs/adr/0001-single-write-payload-no-chunking.md) needs to fit
+        # in one write.
+        await client._backend._acquire_mtu()
         await client.start_notify(NOTIFY_CHARACTERISTIC_UUID, handle_ack)
+        print(f"Connected to {device.address} (negotiated MTU: {client.mtu_size})")
         try:
             body = json.dumps(payload).encode("utf-8")
             await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, body, response=True)
