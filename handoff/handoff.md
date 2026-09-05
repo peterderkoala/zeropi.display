@@ -42,31 +42,31 @@ now governs only the historic view.
 
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
-   — `wayfinder:grilling`. Raised by #21, and the biggest of the three: a new
-   component the map's architecture did not have. Grain, push marks and the
-   archive-of-record role are already settled on #21 and are **not** open;
-   what is open is the file's location, ingest incrementality and schema.
+1. [Settle the live-usage data model (#24)](https://github.com/peterderkoala/zeropi.display/issues/24)
+   — `wayfinder:grilling`. **The hinge, and newly unblocked** — #27 closed its
+   last blocker. The transport (#16), the schema (#17), the cadence (#25) and
+   the live prototype (#26) all wait on it. Take this one first. Its inputs are
+   now real: the snapshot file exists and its exact shape is on #27.
 
-2. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
+2. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
+   — `wayfinder:grilling`. Raised by #21: a new component the map's
+   architecture did not have. Grain, push marks and the archive-of-record role
+   are already settled on #21 and are **not** open; what is open is the file's
+   location, ingest incrementality and schema.
+
+3. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
    — `wayfinder:task`. Raised by #21. **No deadline** — pre-prod data is test
    material, not history. Nothing to decide; the ticket body carries the
    schema and the method.
 
-3. [Get a fresh rate-limit snapshot onto disk (#27)](https://github.com/peterderkoala/zeropi.display/issues/27)
-   — `wayfinder:task`. Raised by #22. **Touches the maintainer's global
-   `~/.claude/settings.json` — ask before changing it.**
-
-Blocked: [#24 live data model](https://github.com/peterderkoala/zeropi.display/issues/24)
-(← #27) is the hinge — the transport, the schema and the cadence all wait on
-it. Then [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25)
+Blocked: [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25)
 (← #24), [#26 live prototype](https://github.com/peterderkoala/zeropi.display/issues/26)
-(← #24, #27), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
+(← #24), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
 (← #24), [#17 schema](https://github.com/peterderkoala/zeropi.display/issues/17)
 (← #24), [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
 (← #16, #17), [#30 Pi retention/pruning](https://github.com/peterderkoala/zeropi.display/issues/30)
 (← #28), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← eight open tickets, now including #28).
+(← seven open tickets).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -79,7 +79,8 @@ as takeable.
 [#22](https://github.com/peterderkoala/zeropi.display/issues/22) (closed)
 overturned the framing: there is **no denominator and none is needed** —
 Anthropic computes utilization server-side and Claude Code carries
-`five_hour.utilization` / `resets_at` and `seven_day.*` ready-made. The
+`five_hour` / `seven_day` percentages with their `resets_at` ready-made
+(**field naming differs by source — see #27 below**). The
 "hand-configured constant" fallback recorded earlier was **withdrawn as
 unsound**: the limit is not a token count, so there is no number to configure.
 
@@ -159,10 +160,11 @@ Live-gauge facts, established 2026-09-05 (detail in the map body):
   Verified on this machine: `five_hour.utilization: 17`,
   `seven_day.utilization: 2`, with `limit_dollars` / `used_dollars` /
   `remaining_dollars` **all null**. No limit crosses the wire in any unit.
-- **⚠ `~/.claude.json` → `cachedUsageUtilization` is a trap.** It is the only
-  on-disk copy and it is not maintained — verified **7.1 hours stale** with an
-  already-elapsed `resets_at`. Reading the gauge from it ships a frozen number
-  for a dead window. That is what #27 exists to fix.
+- **⚠ `~/.claude.json` → `cachedUsageUtilization` is a trap** — and worse than
+  first measured. It is not maintained **at all** while Claude Code runs:
+  **16.5 h stale and not updated once** across a full active session in which
+  the live gauge moved 21% → 26%, its cached `seven_day` reading **2% against a
+  live 18%**. **Never read this file.**
 - **The 5h window's anchor is not locally reconstructible** — it matched
   neither the nearest local event, nor first-activity-after-a-gap, nor a clock
   boundary. **Read `resets_at`; never model the window.** The 7-day window is
@@ -172,6 +174,35 @@ Live-gauge facts, established 2026-09-05 (detail in the map body):
   still this-machine-only.
 - **Never read `~/.claude/.credentials.json`.** It sits next to the useful
   files; nothing in this project needs it.
+
+Rate-limit snapshot facts, established 2026-09-05 by
+[#27](https://github.com/peterderkoala/zeropi.display/issues/27):
+
+- **The live snapshot exists now**:
+  `~/.local/state/zeropi-display/rate-limits.json` (0600, atomic temp+rename),
+  written by **claude-hud** via `display.externalUsageWritePath`. That option
+  lives in **`~/.claude/plugins/claude-hud/config.json`** — *not*
+  `~/.claude/settings.json`, which was left untouched. claude-hud never creates
+  the parent directory, so it must exist first.
+- **Shape**: three keys — `updated_at` (ISO-8601 UTC, always present), plus
+  `five_hour` and `seven_day`, each `{used_percentage, resets_at}`.
+  `used_percentage` is an **integer 0-100 or null**; `resets_at` an ISO string
+  or null. `model_scoped` and `balance_label` are **dropped by the writer**.
+- **⚠ The stdin field is `used_percentage`, not `utilization`.** `utilization`
+  is right for `~/.claude.json` only. Spec against the snapshot's names.
+- **⚠ `updated_at` is a write time, not a fetch time.** claude-hud rewrites on
+  a 30 s throttle even when the value is unchanged — observed twice (23%→23%,
+  24%→24%). A fresh `updated_at` does **not** mean a fresh percentage.
+- **⚠ Headless `-p` sessions write nothing.** Print mode renders no status
+  line, verified with a canary command that was never invoked. **The gauge is
+  live only while an interactive Claude Code TUI is open** — a cron-fired
+  `push.py` against a closed terminal reads a frozen file.
+- **Absent, not zero.** No file before the first render; and if stdin carries
+  no `rate_limits` at all, nothing is written and any existing file is left in
+  place, so a stale snapshot can persist silently.
+- **5 minutes has prior art as the staleness threshold** — claude-hud's own
+  reader default (`externalUsageFreshnessMs`, 300 000 ms), independently the
+  same number as #23's recommended 300 s panel operating point.
 
 Backfill and retention facts, established 2026-09-05 by
 [#21](https://github.com/peterderkoala/zeropi.display/issues/21):
@@ -237,11 +268,11 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #28, #29 or #27 from
-  the frontier, resolve one, record, advance. #28 is the one that unblocks
-  most.
-- **`mattpocock-skills:grilling`** for #28, which is a genuine open decision;
-  #29 is a task with nothing to decide.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #24, #28 or #29 from
+  the frontier, resolve one, record, advance. **#24 is the hinge**: four
+  tickets unblock behind it, and #27 has just made its inputs concrete.
+- **`mattpocock-skills:grilling`** for #24 and #28, both genuine open
+  decisions; #29 is a task with nothing to decide.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
