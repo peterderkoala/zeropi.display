@@ -152,15 +152,56 @@ which unblocked #19.
 rows a push would send from your real logs, with the dedup delta and the
 cache-write TTL error measured live. It is throwaway, not the implementation.
 
-### Also open: [Target installation reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7)
+### Also open: [Both ends reproducible from scratch (#7)](https://github.com/peterderkoala/zeropi.display/issues/7)
 
-Get a stock Pi to an unattended, reboot-surviving install with one
-repeatable provisioning path. The map body carries the full inventory of
-hand-applied Pi state — read it before touching the Pi.
+**Destination redrawn 2026-09-05** — read the map body first, including the
+banner and the new **Delivery shape** section, which binds all three
+tickets.
 
-**All four tickets are now closed** (#8, #9, #10, #11) and the
-destination is reached — the map itself is still open pending the
-maintainer's call. #11 verified it on hardware: `install.sh` runs clean
+The original destination (a stock Pi reproducible from scratch) was
+**reached** by #11. Rather than close, the map was redrawn to cover the two
+things it had listed as unspecified: **delivery** (getting code onto a Pi
+was a hand-run `scp`) and the **Desktop end**, which had no provisioning at
+all. Desktop-side provisioning moved **out of Out-of-scope and into scope**
+— struck through rather than deleted, so the reversal is visible.
+
+The redraw's decisions came from a grilling session, not a ticket, so they
+live in the map's **Delivery shape** section. The load-bearing ones:
+
+- **Tarball, not a clone** — `git` is *not installed on the Pi* and costs
+  ~50 MB on a Zero; the branch tarball is 36 KB. This overturned the
+  maintainer's own opening instruction ("clones the repo"), deliberately.
+- **Fetched by sha, not by branch.** A branch tarball unpacks to
+  `zeropi.display-dev/` and carries **no version identity** — precisely what
+  a clone would have given for free. Resolve ref → sha, fetch
+  `/archive/<sha>.tar.gz`, stamp `VERSION`.
+- **One root `install.sh`, role by argument**, running unprivileged, with
+  the `pi` role re-execing under `sudo`.
+- **Never "client"/"server"** in names — `CONTEXT.md` lists both as terms to
+  avoid. It is `install-pi.sh` / `install-desktop.sh`.
+- **The Desktop role works in-place *and* standalone**, because it must run
+  on machines that are not the maintainer's; it detects a surrounding clone
+  and says which mode it picked.
+- **Points at `dev`** — no `dev` → `main` PR yet, the maintainer's call.
+
+Frontier — open, unblocked, unclaimed:
+
+1. [Build the curl bootstrap (install.sh) and move the Pi role behind it (#33)](https://github.com/peterderkoala/zeropi.display/issues/33)
+   — the only takeable one; #34 and #35 both wait on it.
+
+Blocked: [#34 the Desktop installer](https://github.com/peterderkoala/zeropi.display/issues/34)
+(← #33), [#35 hardware verification of both roles](https://github.com/peterderkoala/zeropi.display/issues/35)
+(← #33, #34).
+
+Also spun out, **not** a map child:
+[#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
+`push.py`'s `_acquire_mtu()` is a private BlueZ-specific `bleak` API, so the
+Desktop is Linux-only. Ruled out of scope for #7 for the same reason as #12
+(a code wart, not an installation concern); `install-desktop.sh` refuses
+non-Linux loudly instead.
+
+**The original four tickets are closed** (#8, #9, #10, #11); three new ones
+(#33, #34, #35) came from the redraw. #11 verified the Pi path on hardware: `install.sh` runs clean
 from a torn-down Pi and is idempotent, reboot and `bluetoothd` restart both
 survive unattended, **20/20** consecutive pushes and **23/23** round trips
 with 0 `bluetoothd` crashes. Write-up: `docs/provisioning-verification.md`.
@@ -169,12 +210,11 @@ with 0 `bluetoothd` crashes. Write-up: `docs/provisioning-verification.md`.
 schema lands *after* #11 closes. It has closed, so #17's schema change is
 free to land.
 
-Two things #11 left open, both recorded under the map's "Not yet
-specified": how the repo's code reaches the Pi on update (the run used
-`scp` purely as transport, which settles nothing), and whether the path is
-ever confirmed against a **genuinely fresh SD card** — no spare was
-available, so "from scratch" meant tearing the hand-applied state off the
-dev Pi.
+#11 left the fresh-card caveat standing: no spare was available, so "from
+scratch" meant tearing the hand-applied state off the dev Pi —
+`python3-gi` was never removed, BlueZ never downgraded, first-boot state not
+reproduced. Still fog on the map. Its other open item, how code reaches the
+Pi, is what the redraw answers.
 
 ### Closed: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
 
@@ -396,7 +436,13 @@ in `docs/research/`):
 
 - **`mattpocock-skills:wayfinder`** with map #13 — take #19, #25, #26 or
   #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31,
-  #16 and #17 are all resolved.
+  #16 and #17 are all resolved. Note #13 gained a new fog entry from #7's
+  redraw: **what a second Desktop means for the data** (two machines, two
+  Readings per date, no machine identity in the Payload) — worth settling
+  before #19 fixes the vocabulary and #20 writes the spec.
+- **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
+  ticket and it is execution, not a decision; the deciding was done by the
+  redraw.
 - **`mattpocock-skills:grilling`** for #25 and #30, genuine open decisions;
   #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
