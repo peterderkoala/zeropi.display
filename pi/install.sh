@@ -17,6 +17,8 @@ RUN_AS_USER="pi"
 DROPIN_DIR="/etc/systemd/system/bluetooth.service.d"
 DROPIN_FILE="$DROPIN_DIR/noplugin.conf"
 MAIN_CONF="/etc/bluetooth/main.conf"
+ADAPTER="hci0"
+ADVERT_POLL_TRIES=20
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $EUID -ne 0 ]]; then
@@ -38,9 +40,14 @@ if ! dpkg --compare-versions "$BLUEZ_VERSION" ge "$REQUIRED_BLUEZ_VERSION"; then
 fi
 echo "    bluez $BLUEZ_VERSION OK"
 
-echo "==> Installing apt dependencies (python3-dbus, python3-venv)"
+echo "==> Installing apt dependencies (python3-dbus, python3-gi, python3-venv)"
+# bluezero imports both dbus-python and PyGObject. Both are C extensions;
+# building them from a pip sdist needs cairo/girepository dev headers that a
+# stock image does not carry, so they come from apt and the venv borrows them
+# via --system-site-packages below. python3-gi ships with Raspberry Pi OS, but
+# it is named explicitly rather than assumed.
 apt-get update -qq
-apt-get install -y python3-dbus python3-venv
+apt-get install -y python3-dbus python3-gi python3-venv
 
 echo "==> Excluding the midi/sap/avrcp bluetoothd plugins"
 # The stock midi plugin segfaults bluetoothd on every incoming LE
@@ -74,8 +81,18 @@ cp "$SCRIPT_DIR/receive.py" "$INSTALL_DIR/receive.py"
 chown -R "$RUN_AS_USER:$RUN_AS_USER" "$INSTALL_DIR"
 
 echo "==> Installing bluezero into a venv"
+# --system-site-packages is load-bearing, not a convenience: without it pip
+# resolves bluezero's PyGObject dependency from source and the build dies at
+# "Dependency \"cairo\" not found". With it, the apt-installed python3-gi and
+# python3-dbus satisfy those requirements and only bluezero itself is
+# installed into the venv. A venv left over from an older run of this script
+# may predate the flag, so it is checked and rebuilt rather than reused.
+if [[ -d "$VENV_DIR" ]] && ! grep -qi '^include-system-site-packages = true' "$VENV_DIR/pyvenv.cfg" 2>/dev/null; then
+    echo "    existing venv lacks system site-packages; rebuilding it"
+    rm -rf "$VENV_DIR"
+fi
 if [[ ! -d "$VENV_DIR" ]]; then
-    sudo -u "$RUN_AS_USER" python3 -m venv "$VENV_DIR"
+    sudo -u "$RUN_AS_USER" python3 -m venv --system-site-packages "$VENV_DIR"
 fi
 sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
@@ -110,13 +127,37 @@ if [[ ! -f "$DROPIN_FILE" ]]; then
     FAIL=1
 fi
 
-# Best-effort: warn rather than fail here, since the exact bluetoothctl
-# output format wasn't verified against real hardware while writing this
-# script. Ticket #11 should confirm this parses correctly and promote it
-# to a hard failure if so.
-ACTIVE_INSTANCES_LINE="$(bluetoothctl show 2>/dev/null | grep -i ActiveInstances || true)"
-if [[ -z "$ACTIVE_INSTANCES_LINE" || "$ACTIVE_INSTANCES_LINE" == *"0x00"* ]]; then
-    echo "    WARN: no active LE advertisement seen (${ACTIVE_INSTANCES_LINE:-no ActiveInstances line})" >&2
+# Verified against real hardware by ticket #11 and promoted from a warning
+# to a hard failure: an install that leaves no advertisement on the air is
+# not a working install, however healthy the two units look.
+#
+# The property is read over D-Bus rather than scraped from `bluetoothctl
+# show`. bluetoothctl interleaves colourised async "[CHG] Controller ...
+# ActiveInstances" lines with its own property block, so a grep can pick up
+# either one; busctl returns exactly "y <n>".
+#
+# It is polled rather than sampled once. bluetoothd was restarted moments
+# ago, and receive.py only registers its advertisement after bluezero has
+# come up and claimed the adapter -- measured at ~1.5 s on the dev Pi Zero
+# 2W, but the fixed 2 s sleep above raced it on a cold first install.
+echo "    waiting for the LE advertisement"
+ACTIVE_INSTANCES=""
+for _ in $(seq 1 "$ADVERT_POLL_TRIES"); do
+    ACTIVE_INSTANCES="$(busctl get-property org.bluez "/org/bluez/$ADAPTER" \
+        org.bluez.LEAdvertisingManager1 ActiveInstances 2>/dev/null \
+        | awk '{print $2}')"
+    if [[ -n "$ACTIVE_INSTANCES" && "$ACTIVE_INSTANCES" != "0" ]]; then
+        break
+    fi
+    sleep 1
+done
+if [[ -z "$ACTIVE_INSTANCES" || "$ACTIVE_INSTANCES" == "0" ]]; then
+    echo "    FAIL: no active LE advertisement after ${ADVERT_POLL_TRIES}s" >&2
+    echo "    (ActiveInstances=${ACTIVE_INSTANCES:-unreadable} on $ADAPTER)" >&2
+    echo "    Check: journalctl -u zeropi-display -u bluetooth -n 50" >&2
+    FAIL=1
+else
+    echo "    LE advertisement active (ActiveInstances=$ACTIVE_INSTANCES)"
 fi
 
 if [[ "$FAIL" -ne 0 ]]; then

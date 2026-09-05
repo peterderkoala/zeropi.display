@@ -15,24 +15,29 @@ Milestone 1 (the BLE link) is implemented and verified on real hardware:
 Reading to SQLite and returns an Ack. See `docs/e2e-verification.md` for
 the verification run and the BlueZ configuration it depends on.
 
-There is still no build, lint, or test tooling — both entry points are run
-by hand:
+The Pi is provisioned by `pi/install.sh` and runs `receive.py` unattended
+under systemd — verified from scratch on real hardware, including reboot
+and `bluetoothd`-restart survival, in `docs/provisioning-verification.md`.
+Copy `pi/` to the Pi and run it there as root; it is idempotent:
+
+```bash
+scp -r pi/ pi@<pi-ip>:~/zeropi-display-pi   # creds in infrastructure.md
+ssh pi@<pi-ip> 'cd ~/zeropi-display-pi && sudo ./install.sh'
+```
+
+That script owns the BlueZ configuration the link depends on — most
+critically a `bluetoothd --noplugin=midi,sap,avrcp` systemd drop-in,
+without which `bluetoothd` segfaults on every incoming LE connection. Do
+not hand-apply Pi state; add it to `install.sh` instead.
+
+There is still no build, lint, or test tooling. The Desktop entry point is
+run by hand:
 
 ```bash
 # Desktop (needs bleak; venv is gitignored)
 uv venv .venv && uv pip install -r desktop/requirements.txt
 .venv/bin/python desktop/push.py
-
-# Pi (over SSH; creds in infrastructure.md)
-cd /opt/zeropi-display && python3 receive.py
 ```
-
-The Pi's BLE stack needs configuration that is **not yet captured in this
-repo** — most critically a `bluetoothd --noplugin=midi,sap,avrcp` systemd
-drop-in, without which `bluetoothd` segfaults on every incoming LE
-connection. Making that reproducible is tracked on
-[map #7](https://github.com/peterderkoala/zeropi.display/issues/7); the
-inventory of hand-applied state lives in that map's body.
 
 ## What this project is
 
