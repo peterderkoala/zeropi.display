@@ -60,25 +60,31 @@ recovery, newest-day-first ordering, an explicit Ack correlation field
 (`date`/`project`/`model` echo), an explicit batch marker
 (`batch_size`/`batch_index` on the Payload), unchanged 10s per-row timeout,
 unchanged characteristic UUIDs. See the map's Decisions-so-far for the full
-eight-part answer. **Flags two new fields for #17** to fold into its
-schema. #19 stays blocked — it still needs #17.
+eight-part answer. Flagged two new fields for #17, which is now resolved
+(see below).
+
+**[#17 (the new SQLite schema on the Pi) is also resolved and closed.**
+`receive.py`'s `init_db()` stays sole owner, made self-healing and
+version-gated (`PRAGMA user_version`; drop+recreate on mismatch — same path
+for a fresh Pi and the maintainer's already-provisioned one). `install.sh`
+untouched. Lands **after #11 closes** — a sequencing note, not a checklist
+change, since install.sh isn't touched. Table keeps the name `readings`.
+Full DDL (readings + a key-value `meta` table for `coverage_start`,
+auto-derived on every insert) in the resolution comment. Unblocked #19.
 
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
-   — newly unblocked by #24. **Now carries extra requirements from two
-   closed tickets**: #28's Pi-side `coverage_start` meta table, and #16's
-   `batch_size`/`batch_index` Payload fields plus the Ack's key-echo field.
-   Read both resolution comments before starting.
-
-2. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
+1. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
    — newly unblocked by #24, and by #23's eink-refresh research.
 
-3. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+2. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
    — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
 
-4. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+3. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — newly unblocked by #28.
+
+4. [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
+   — newly unblocked by #17 (its other blocker, #16, was already closed).
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -92,9 +98,8 @@ percentage-against-a-per-model-table decision — no open frontier ticket
 consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
-Blocked: [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
-(← #16, #17), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← six open tickets).
+Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
+(← #19, #25, #26 still open; #16, #17, #18, #21, #24, #27, #28 already closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -137,8 +142,9 @@ itself (`docs/research/context-window-table.md`, branch
 `research/context-window-table`); [#28 the Desktop-side usage store](https://github.com/peterderkoala/zeropi.display/issues/28),
 which unblocked #30; [#29 the dev-era capture](https://github.com/peterderkoala/zeropi.display/issues/29)
 (`~/.local/share/zeropi-display/usage-archive.db`, 6,201 rows, not committed);
-and [#16 the multi-row transport protocol](https://github.com/peterderkoala/zeropi.display/issues/16),
-which adds two required fields to #17's schema.
+[#16 the multi-row transport protocol](https://github.com/peterderkoala/zeropi.display/issues/16);
+and [#17 the new SQLite schema](https://github.com/peterderkoala/zeropi.display/issues/17),
+which unblocked #19.
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -153,8 +159,9 @@ hand-applied Pi state — read it before touching the Pi.
 
 **Only [#11](https://github.com/peterderkoala/zeropi.display/issues/11)
 remains open** (verify provisioning from scratch); #8, #9 and #10 are
-closed. Note that map #13's ticket #17 may change what #11 has to verify —
-settle #17 before running #11.
+closed. Map #13's #17 (now resolved) confirmed `install.sh` stays untouched
+by the schema change, so #11's checklist doesn't change — but #17 settled
+that the schema change itself lands **after** #11 closes, so run #11 first.
 
 ### Closed: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
 
@@ -360,14 +367,14 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #17, #25, #26 or
-  #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31
-  and #16 are all resolved. #17 carries requirements spun out by both #28
-  and #16 — read their resolution comments first.
-- **`mattpocock-skills:grilling`** for #17, #25 and #30, all genuine open
-  decisions; #26 is a prototype.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #19, #25, #26 or
+  #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31,
+  #16 and #17 are all resolved.
+- **`mattpocock-skills:grilling`** for #25 and #30, genuine open decisions;
+  #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
-  Payload/Reading vocabulary and supersedes ADR 0001.
+  Payload/Reading vocabulary and supersedes ADR 0001 — now unblocked, with
+  #17's DDL and #16's transport fields both settled as its inputs.
 
 ## If you run subagents, isolate them
 
