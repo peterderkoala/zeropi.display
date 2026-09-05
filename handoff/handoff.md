@@ -109,20 +109,32 @@ Full detail in its resolution comment and the map's Decisions-so-far.
 [#37](https://github.com/peterderkoala/zeropi.display/issues/37)**, which now
 blocks #20 in #25's place. See "the Pi has no clock" below.
 
+**[#26 (the live-gauge prototype) is resolved and closed** — also this
+session. Branch `prototype/live-gauge`, mocks committed at
+`docs/research/gauge-mocks/`. **The gauge tells the truth and the layout is
+legible, but the prototype overturned three of #24's paper decisions and
+corrected two facts this handoff had recorded as settled.** Read its
+resolution comment before touching the gauge. Spun out
+[#38](https://github.com/peterderkoala/zeropi.display/issues/38).
+
+⚠ **Two tickets in, two tickets out.** #25 and #26 both closed this session and
+the critical path to #20 is the same length: #37 and #38 replaced them. That is
+the prototype doing its job — both new tickets exist because contact with real
+data and a real panel invalidated decisions made on paper.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
-   — `wayfinder:prototype`, unblocked by #24, #22 and #27 together. **A
-   blocker of the spec.**
+1. [Settle how the Pi knows the time (#37)](https://github.com/peterderkoala/zeropi.display/issues/37)
+   — `wayfinder:grilling`, new this session. **A blocker of the spec.**
 
-2. [Settle how the Pi knows the time (#37)](https://github.com/peterderkoala/zeropi.display/issues/37)
-   — `wayfinder:grilling`, new this session, unblocked from birth. **The other
-   blocker of the spec.**
+2. [Re-settle the gauge readout (#38)](https://github.com/peterderkoala/zeropi.display/issues/38)
+   — `wayfinder:grilling`, new this session. **The other blocker of the spec.**
+   Look at `docs/research/gauge-mocks/` first; the decisions are about pictures.
 
 3. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — unblocked by #28. Not a blocker of #20.
 
-**#26 and #37 are now the entire critical path to #20, the spec.** Everything
+**#37 and #38 are now the entire critical path to #20, the spec.** Everything
 else on this map is closed.
 
 **[#31 (context-window research) is resolved and closed.**
@@ -138,8 +150,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← **only #26 and #37** still open; #16, #17, #18, #19, #21, #24, #25, #27,
-#28, #36 all closed).
+(← **only #37 and #38** still open; #16, #17, #18, #19, #21, #24, #25, #26,
+#27, #28, #36 all closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -297,10 +309,12 @@ closed. The round trip is verified on real hardware — see
 
 Live-gauge facts, established 2026-09-05 (detail in the map body):
 
-- **`~/.claude/sessions/<pid>.json` is a live session registry** — real-time
-  `sessionId`, `cwd`, `status` (`busy`/otherwise), `startedAt`, `updatedAt`.
-  The `sessionId` joins to the session's JSONL. This is how you detect the
-  active session; no heuristics needed.
+- **`~/.claude/sessions/<pid>.json` is a live session registry** —
+  ~~real-time~~ `sessionId`, `cwd`, `status` (`busy`/otherwise), `startedAt`,
+  `updatedAt`, `kind`. The `sessionId` joins to the session's JSONL. This is
+  how you detect the active session; no heuristics needed. **⚠ "Real-time" was
+  wrong** — #26 measured `updatedAt` frozen at 467 s during active work. See
+  the #26 block below before using any timestamp here.
 - **Context size** = the active session's latest assistant entry's
   `input + cache_creation + cache_read`. Measured 210,641 on a live session,
   which **exceeds 200K** — so don't assume the context-window denominator.
@@ -349,6 +363,46 @@ Hand-off facts, established 2026-09-05 by
   two *concurrent* Desktops would clobber each other's Ack channel. Moot under
   the sequential shape settled by #36, but it is why concurrent multi-Desktop
   would have cost far more than a schema change.
+
+Live-gauge facts, MEASURED 2026-09-05 by
+[#26](https://github.com/peterderkoala/zeropi.display/issues/26) — these
+correct earlier entries in this file, so prefer them:
+
+- **⚠ `updatedAt` in the session registry is a status-TRANSITION timestamp, not
+  a heartbeat.** This file previously called the registry "real-time"; it is
+  not. Measured: `updatedAt` and `statusUpdatedAt` are **exactly equal**, and
+  both sat **frozen at 467 s** while the session was actively working with
+  `status: "busy"`. **Never test liveness with it** — a freshness threshold
+  anywhere near 5 minutes calls a busy session dead. **Liveness is
+  `/proc/<pid>`**, cheap and exact.
+- **The registry carries `kind: "interactive"`**, which turns #27's headless
+  trap from a silent freeze into a **detectable** condition. Filter on it.
+- **⚠ Sub-agents do NOT register in the session registry.** One `<pid>.json`
+  per interactive CLI process, nothing more — verified across a session that
+  ran skills and heavy tool work. So #24's multi-session rule only ever
+  discriminates between **separate terminals**. Related: `isSidechain` is
+  present on every assistant entry and **false in all 42 sessions on this
+  machine**, so the sub-agent-context risk is unverified — keep the filter as
+  cheap insurance, not because it has bitten.
+- **`.key` files sit alongside the `.json` ones** in `~/.claude/sessions/`.
+  Glob narrowly.
+- **The gauge moves at ~1.1 percentage points per minute** under heavy Opus 5
+  use (27% -> 36% in 8.2 min), so a full 5-hour window is ~91 minutes of
+  continuous work. **The trigger therefore fires ~5.5x per 300 s floor** — the
+  Desktop-side throttle #25 called a courtesy is doing real work.
+- **The Gauge Payload is 279 bytes against the 514 budget**, verbose keys and
+  all.
+- **⚠ Context-as-a-percentage is a dead readout.** Against #31's 1,000,000
+  window, 42 real sessions peaked at **589,408 (59%)**, median peak **15.8%**,
+  and **0 of 42** ever passed 900K. The bar is a permanent stub. (The 589,408
+  peak does independently **confirm** #31's 1M table — it exceeds any 200K
+  window.)
+- **⚠ "Dim a stale reading" is not implementable.** The panel is 1-bit
+  monochrome: there is no grey. #24 settled dimming anyway. This is
+  [#38](https://github.com/peterderkoala/zeropi.display/issues/38).
+- **The 5h and 7d windows have visibly different shapes**, confirming #22 by
+  observation: `five_hour.resets_at` was 23:40Z — **off any clock hour** —
+  while `seven_day.resets_at` was 13:00Z, **exactly on one**.
 
 Cadence and panel facts, established 2026-09-05 by
 [#25](https://github.com/peterderkoala/zeropi.display/issues/25):
