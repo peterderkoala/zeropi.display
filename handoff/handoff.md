@@ -14,10 +14,13 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
 
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
-- Domain glossary: `CONTEXT.md` (Desktop, Pi, Payload, Reading, Ack,
-  One-liner)
-- ADRs: `docs/adr/0001-single-write-payload-no-chunking.md`,
-  `docs/adr/0002-readings-persisted-on-pi.md`
+- Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**
+  Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
+  Coverage Start, Usage, Gauge, Project Key, Project Label, Window, Cost
+  Complete, One-liner.
+- ADRs: `docs/adr/0001` (**superseded by 0003**), `0002` readings-on-the-Pi,
+  `0003` one-write-per-Reading, `0004` dedup-winner-rank, `0005`
+  Desktop-store-is-archive-of-record, `0006` wipe-on-Desktop-Id-change.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
@@ -83,21 +86,31 @@ untouched), the machine id is a **scalar in the `meta` table**, and the Pi
 **drops and recreates `readings` when it changes**. See its resolution comment
 for the eight-part answer. Unblocked #19.
 
+**[#19 (vocabulary and ADRs) is resolved and closed** — second ticket of that
+session. `CONTEXT.md` and `docs/adr/0003`–`0006` are on `dev` in `9ac14ba`.
+**Payload keeps meaning one BLE write**; the set is a **Batch**, the two shapes
+are **Daily Payload** / **Gauge Payload**, and nine further terms are pinned
+(**Desktop Id**, **Usage**, **Gauge**, **Project Key** vs **Project Label**,
+**Window**, **Cost Complete**, **Coverage Start**). Four ADRs written, and the
+`(date, project, model)` **grain was deliberately refused one**. Read
+`CONTEXT.md` before naming anything in #20's spec — that is now the binding
+vocabulary, not this handoff.
+
 Frontier — open, unblocked, unclaimed:
 
 1. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
-   — newly unblocked by #24, and by #23's eink-refresh research.
+   — unblocked by #24 and #23's eink-refresh research. **One of the last two
+   blockers of the spec.**
 
 2. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
-   — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
+   — `wayfinder:prototype`, unblocked by #24, #22 and #27 together. **The
+   other one.**
 
 3. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
-   — newly unblocked by #28.
+   — unblocked by #28. Not a blocker of #20.
 
-4. [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
-   — now fully unblocked (#16, #17, #36 all closed). **#36 handed it four
-   concrete inputs and an ADR to write** — read #36's "Inputs handed to #19"
-   section before starting.
+**#25 and #26 are now the entire critical path to #20, the spec — and both are
+live-gauge questions.** Everything else on this map is closed.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -112,8 +125,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← #19, #25, #26 still open; #16, #17, #18, #21, #24, #27, #28, #36 already
-closed).
+(← **only #25 and #26** still open; #16, #17, #18, #19, #21, #24, #27, #28,
+#36 all closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -474,19 +487,18 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #19, #25, #26 or
-  #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31,
-  #16, #17 and #36 are all resolved. **#19 is the one to take next**: it is
-  the last blocker of the spec that isn't a live-gauge question, and #36 just
-  handed it its remaining inputs.
+- **`mattpocock-skills:wayfinder`** with map #13 — the frontier is #25, #26
+  and #30. **Take #25 or #26**: they are the only two things left between
+  this map and its destination, #20's spec. #30 is real but off the critical
+  path.
 - **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
   ticket and it is execution, not a decision; the deciding was done by the
   redraw.
 - **`mattpocock-skills:grilling`** for #25 and #30, genuine open decisions;
   #26 is a prototype.
-- **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
-  Payload/Reading vocabulary and supersedes ADR 0001 — now unblocked, with
-  #17's DDL and #16's transport fields both settled as its inputs.
+- **`mattpocock-skills:domain-modeling`** is **done for now** — #19 rewrote
+  the vocabulary and superseded ADR 0001. Reach for it again only if #25 or
+  #26 coins a term the glossary does not have.
 
 ## If you run subagents, isolate them
 
