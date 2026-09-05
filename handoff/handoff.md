@@ -54,23 +54,30 @@ and schema are all settled — see the map's Decisions-so-far. Unblocked #30.
 `~/.local/share/zeropi-display/usage-archive.db` — 6,201 rows, 1.59 MB, not
 committed. Quarry for #20's future test fixture; unblocked nothing further.
 
+**[#16 (multi-row transport protocol) is also resolved and closed.** One
+connection per loop, sequential Acks, continue-past-failure with push-marks
+recovery, newest-day-first ordering, an explicit Ack correlation field
+(`date`/`project`/`model` echo), an explicit batch marker
+(`batch_size`/`batch_index` on the Payload), unchanged 10s per-row timeout,
+unchanged characteristic UUIDs. See the map's Decisions-so-far for the full
+eight-part answer. **Flags two new fields for #17** to fold into its
+schema. #19 stays blocked — it still needs #17.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
-   — newly unblocked by #24.
+1. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
+   — newly unblocked by #24. **Now carries extra requirements from two
+   closed tickets**: #28's Pi-side `coverage_start` meta table, and #16's
+   `batch_size`/`batch_index` Payload fields plus the Ack's key-echo field.
+   Read both resolution comments before starting.
 
-2. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
-   — newly unblocked by #24. Note it may change what #7's #11 has to verify,
-   and should be designed with #28's Desktop-store shape in mind (the Pi's
-   `coverage_start` meta table).
-
-3. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
+2. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
    — newly unblocked by #24, and by #23's eink-refresh research.
 
-4. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+3. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
    — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
 
-5. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+4. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — newly unblocked by #28.
 
 **[#31 (context-window research) is resolved and closed.**
@@ -128,8 +135,10 @@ any of them. Also closed: [#24 the live-usage data model](https://github.com/pet
 which spun out #31; [#31 context-window research](https://github.com/peterderkoala/zeropi.display/issues/31)
 itself (`docs/research/context-window-table.md`, branch
 `research/context-window-table`); [#28 the Desktop-side usage store](https://github.com/peterderkoala/zeropi.display/issues/28),
-which unblocked #30; and [#29 the dev-era capture](https://github.com/peterderkoala/zeropi.display/issues/29)
-(`~/.local/share/zeropi-display/usage-archive.db`, 6,201 rows, not committed).
+which unblocked #30; [#29 the dev-era capture](https://github.com/peterderkoala/zeropi.display/issues/29)
+(`~/.local/share/zeropi-display/usage-archive.db`, 6,201 rows, not committed);
+and [#16 the multi-row transport protocol](https://github.com/peterderkoala/zeropi.display/issues/16),
+which adds two required fields to #17's schema.
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -351,11 +360,12 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #16, #17, #25, #26
-  or #30 from the frontier, resolve one, record, advance. #24, #28, #29 and
-  #31 are all resolved.
-- **`mattpocock-skills:grilling`** for #16, #17, #25 and #30, all genuine
-  open decisions; #26 is a prototype.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #17, #25, #26 or
+  #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31
+  and #16 are all resolved. #17 carries requirements spun out by both #28
+  and #16 — read their resolution comments first.
+- **`mattpocock-skills:grilling`** for #17, #25 and #30, all genuine open
+  decisions; #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
