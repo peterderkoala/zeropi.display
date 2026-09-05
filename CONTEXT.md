@@ -8,7 +8,9 @@ between a desktop and the Pi, ahead of e-ink rendering or real data parsing.
 
 **Desktop (BLE Central)**:
 The machine that owns the real data sources (weather, calendar, Claude Code
-usage) and initiates the BLE connection to push a Payload to the Pi.
+usage) and initiates the BLE connection to push a Payload to the Pi. Need
+not be the maintainer's dev machine — any Linux box running Claude Code can
+be provisioned as one.
 _Avoid_: Client, sender
 
 **Pi (BLE Peripheral)**:
@@ -16,6 +18,13 @@ The Pi Zero running the e-ink display. Advertises the GATT service, accepts
 a Payload write, and is a dumb receiver — it does not fetch or compute data
 itself.
 _Avoid_: Server, receiver
+
+> On *Client* and *Server*: in strict GATT terms the Pi **is** the server and
+> the Desktop the client, so the pull toward those words is understandable
+> and recurring. They are still avoided, because "server" implies the Pi
+> serves or computes something when it is a dumb receiver, and because it
+> points the wrong way for *data* flow, where the Desktop is the active
+> party. Use the GATT roles only when discussing the GATT layer itself.
 
 **Payload**:
 The JSON object the Desktop writes to the Pi's write characteristic in a
