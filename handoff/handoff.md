@@ -30,8 +30,10 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
 
 ## Maps
 
-Two maps are open. **#13 has reached its destination** — the spec is written;
-only the off-path #30 remains. #7 has three tickets, #33 the only takeable one.
+Two maps are open. **#13 has reached its destination and has no open tickets
+left** — the spec is written and #30, the last child, is resolved. Closing the
+map is the maintainer's call; the next real move is an implementation map
+opened against the spec. #7 has three tickets, #33 the only takeable one.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
@@ -179,16 +181,22 @@ schema mismatch rather than dropping** — deliberately the opposite of the Pi's
 version gate, because one is an archive of record and one is a rebuildable
 cache. **Spun out nothing.**
 
-Frontier — open, unblocked, unclaimed:
+Frontier — **empty**. Every child of #13 is closed.
 
-1. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
-   — `wayfinder:grilling`, unblocked by #28. **The only child left open**, and
-   it was never on the critical path.
+[Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30),
+the last one, was resolved 2026-09-06: **no pruning, on either end.** Measured
+at the grain the Pi stores, the machine's entire history is **18 rows** over 41
+calendar days (mean 1.8/active day), and growth is bounded by the Pi's uptime
+rather than by log history. The invariant is *the Pi never deletes a Reading on
+size grounds*; `wiped` stays exclusive to the Desktop-Id change (answering the
+question #36 left); there is no operator reset command (`rm data.db` + restart
+is the path); and the Desktop archive is never pruned either, as an ADR-0005
+corollary. Recorded as spec §8.7 and §4.5, plus a deletion lifecycle on
+`CONTEXT.md`'s **Reading**. No ADR — additive and easily reversed.
 
-**The map's destination is reached.** The map is deliberately left open, not
-closed, because #30 is a genuine undecided question on it — closing it is the
-maintainer's call. Implementation is **its own map**, opened against the
-finished spec.
+**The map's destination is reached and nothing is open on it.** It is still
+left open rather than closed — that call is the maintainer's. Implementation is
+**its own map**, opened against the finished spec.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -661,14 +669,15 @@ in `docs/research/`):
 - **The spec is done. The next real move is implementation** — a new map
   opened against `docs/spec-usage-pipeline.md`, per map #13's own Destination
   ("Implementation is not part of this map"). Read the spec, not this file.
-- **`mattpocock-skills:wayfinder`** with map #13 — only #30 is left, and it is
-  off the critical path. The map is reached but not closed; whether to close it
-  with #30 still open is the maintainer's call.
+- **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
+  The map is reached with every child closed; whether to close the map itself
+  is the maintainer's call.
 - **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
   ticket and it is execution, not a decision; the deciding was done by the
   redraw.
-- **`mattpocock-skills:grilling`** for #25 and #30, genuine open decisions;
-  #26 is a prototype.
+- **`mattpocock-skills:grilling`** has no open decisions left on #13 — #25,
+  #26 and #30 are all resolved. Reach for it on map #7 or on the
+  implementation map when that is charted.
 - **`mattpocock-skills:domain-modeling`** is **done for now** — #19 rewrote
   the vocabulary and superseded ADR 0001. Reach for it again only if #25 or
   #26 coins a term the glossary does not have.

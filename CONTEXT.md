@@ -73,7 +73,9 @@ _Avoid_: Response, reply
 One stored day of Usage, keyed by date, Project Key and model — created when
 a Daily Payload is successfully received and parsed. The persisted history
 behind the long-term graph the e-ink display will eventually render. A Gauge
-Payload produces **no Reading**; the live gauge is never stored.
+Payload produces **no Reading**; the live gauge is never stored. A Reading is
+never deleted because it is old or because there are many of them; it goes
+only when the whole table goes, on a Desktop hand-off or a schema change.
 _Avoid_: Record, entry, sample
 
 **Coverage Start**:

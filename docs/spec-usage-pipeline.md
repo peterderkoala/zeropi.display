@@ -305,6 +305,15 @@ can yield a **smaller** row for a day already stored in full, silently
 overwriting good history with worse. That is the exact failure the store exists
 to prevent (ADR-0005).
 
+**The store is never pruned** (#30). It is the archive of record, so deleting
+from it is the one deletion in this system that is genuinely unrecoverable:
+`--resend-all` refills the Pi *from here*, and the logs cannot refill *this*
+(the rolling 30-day sweep above). It grows at entry grain — thousands of rows
+where the Pi holds tens — so this is the one place a size argument could
+eventually be real. It is a deliberate choice, not an omission: if the store
+ever needs bounding, that is a decision about the archive, taken with a backup
+in hand, and never a `DELETE` bolted onto the ingest path.
+
 ### 4.6 Aggregating Readings
 
 A **Reading** is one `(date, Project Key, model)` group. Machine-wide and
@@ -864,6 +873,41 @@ The e-ink driver is out of scope. Implement the state machine above against a
 `render(view)` seam that, for now, logs one line naming the frame and its
 values. The display milestone replaces that function and nothing else.
 
+### 8.7 Retention: Readings are never pruned
+
+**The Pi never deletes a Reading on size grounds.** There is no age rule, no
+row-count cap, no `DELETE` anywhere in `receive.py`. Settled by #30 against
+measurement, not taste: at `(date, project, model)` grain the maintainer's
+entire machine history is **18 rows** over 41 calendar days — mean 1.8, max 3
+rows per *active* day. A pessimistic 5 rows every calendar day is under 200 KB
+a year including the primary-key index; twenty years of that is ~4 MB. Growth
+is also bounded by the Pi's **uptime**, not by log history, because the rolling
+7-calendar-day window (§4.6) means the Pi only ever accumulates days it was
+actually pushed.
+
+Three consequences you must not undo:
+
+- **Coverage Start is unaffected**, and §8.2's rejection of
+  `SELECT MIN(date) FROM readings` still stands. It is rejected for what it
+  *means*, not for what pruning would do to it — a fact about what the table
+  holds is not a fact about what was observed, and only the explicit scalar can
+  make a never-received date read as *outside coverage* rather than as zero.
+- **`wiped` stays exclusive to the Desktop-Id change** (§8.3). It is never set
+  for a size- or age-driven reason. The two are different in kind: a hand-off
+  wipe invalidates the Desktop's whole model of what the Pi holds, while a
+  prune would be the Pi discarding rows the Desktop deliberately stopped
+  caring about — signalling one as the other would trigger a `--resend-all`
+  that re-pushes exactly the rows just pruned.
+- **There is no operator reset command**, and no Payload field asks for one.
+  Adding one would put a *remote destructive command* on an unauthenticated
+  link (trap 11). Clearing the Pi is `rm /opt/zeropi-display/data.db` over SSH
+  plus a restart — already supported by construction, since the version gate
+  (§8.1) makes a missing DB and a stale DB take the identical path.
+
+**Revisit signal, for a human, never a code path**: if `data.db` ever passes
+~50 MB, or the display milestone's graph query over `readings` is visibly slow,
+re-open this. Disk is not the plausible trigger; a query over a large table is.
+
 ---
 
 ## 9. The display contract
@@ -1080,8 +1124,9 @@ reader.
 - **Weather and calendar Payload fields.**
 - **The context-size readout on the display.** The field stays on the wire
   (§5.2); nothing draws it.
-- **Retention/pruning of Readings on the Pi** — open as
-  [#30](https://github.com/peterderkoala/zeropi.display/issues/30).
+- **Retention/pruning of Readings on the Pi** — **no longer open**. Settled by
+  [#30](https://github.com/peterderkoala/zeropi.display/issues/30): there is no
+  pruning, on either end. See §8.7 (the Pi) and §4.5 (the store).
 - **Link authentication / BLE bonding** (trap 11).
 - **A hardware RTC.** Nothing in the data path reads a wall clock any more.
 - **Reading Readings back for the graph** — query shape and aggregation window
