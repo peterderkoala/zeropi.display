@@ -30,7 +30,8 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
 
 ## Maps
 
-Two maps are open. #13 is where the work is; #7 has one ticket left.
+Two maps are open. **#13 has reached its destination** — the spec is written;
+only the off-path #30 remains. #7 has three tickets, #33 the only takeable one.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
@@ -155,19 +156,39 @@ design rendered at `docs/research/gauge-mocks/settled-*.png` on
 `prototype/live-gauge` (`dde1c58`) — **drawing it broke it twice**, which is
 why it was drawn.
 
+**[#20 (the spec) is DONE and closed** — 2026-09-06, and it is **the map's
+destination**. `docs/spec-usage-pipeline.md` is on `dev` (`d925bb0`): thirteen
+sections, written to stand alone as a session's brief. ⚠ **It names
+`CONTEXT.md` and ADRs 0003–0010 as the only other required reading and says
+outright that THIS FILE is not a source of truth.** If the spec and this
+handoff disagree, the spec wins.
+
+It corrected three places the older material still disagreed with the settled
+position, all of which would have bitten an implementer: the **#26 prototype's
+Gauge Payload sends instants** (ADR-0009 superseded that — durations only), the
+**#18 prototype aggregates on the Project Label** (#36 made the Project *Key*
+the stored key), and **#17's DDL still carries `received_at`** while milestone
+1's Payload still carries `oneliner` — neither survives.
+
+The gap check found **twelve** places an implementer would have had to invent
+an answer, all closed and recorded in the spec's §13. The two worth knowing
+here: **Gauge Age is seeded with `snapshot_age_s`** (without it ADR-0010's
+"nothing on the panel is untrustworthy" is only approximately true, and the
+field has no other consumer), and **the Desktop store refuses to run on a
+schema mismatch rather than dropping** — deliberately the opposite of the Pi's
+version gate, because one is an archive of record and one is a rebuildable
+cache. **Spun out nothing.**
+
 Frontier — open, unblocked, unclaimed:
 
-1. **[#20 — write the spec](https://github.com/peterderkoala/zeropi.display/issues/20)**
-   — `wayfinder:task`. **This is the destination.** All twelve of its blockers
-   are closed. `docs/spec-usage-pipeline.md`, precise enough that a Sonnet 5
-   session implements it without reopening a decision. Read `CONTEXT.md` and
-   ADRs 0003–0010 first; they are binding, and this handoff is not.
+1. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+   — `wayfinder:grilling`, unblocked by #28. **The only child left open**, and
+   it was never on the critical path.
 
-2. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
-   — unblocked by #28. Not a blocker of #20.
-
-**Every decision ticket on this map is now closed.** #20 is the map's
-destination, not another decision.
+**The map's destination is reached.** The map is deliberately left open, not
+closed, because #30 is a genuine undecided question on it — closing it is the
+maintainer's call. Implementation is **its own map**, opened against the
+finished spec.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -637,10 +658,12 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — the frontier is #25, #26
-  and #30. **Take #25 or #26**: they are the only two things left between
-  this map and its destination, #20's spec. #30 is real but off the critical
-  path.
+- **The spec is done. The next real move is implementation** — a new map
+  opened against `docs/spec-usage-pipeline.md`, per map #13's own Destination
+  ("Implementation is not part of this map"). Read the spec, not this file.
+- **`mattpocock-skills:wayfinder`** with map #13 — only #30 is left, and it is
+  off the critical path. The map is reached but not closed; whether to close it
+  with #30 still open is the maintainer's call.
 - **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
   ticket and it is execution, not a decision; the deciding was done by the
   redraw.
