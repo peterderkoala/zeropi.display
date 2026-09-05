@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0003
+---
+
 # Single BLE write per Payload, no chunking protocol
 
 BLE's default ATT MTU (23 bytes, ~20 usable) is smaller than even the
@@ -11,6 +15,11 @@ scalar/string fields) comfortably fit in a negotiated MTU. Chunking adds
 real framing/reassembly complexity that isn't needed yet. If a future
 Payload (e.g. richer weather/calendar data) outgrows the negotiated MTU,
 this decision should be revisited.
+
+**Superseded by [ADR-0003](./0003-one-write-per-reading.md).**
+A Window of daily Usage outgrew the negotiated MTU exactly as anticipated
+here. The resolution splits per Reading rather than adopting the chunking
+protocol rejected below, so the reasoning survives the supersession.
 
 ## Considered Options
 

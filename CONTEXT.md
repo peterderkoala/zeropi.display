@@ -1,16 +1,20 @@
 # zeropi.display
 
-Pi Zero e-ink display project reusing pwnagotchi hardware to show a daily
-Claude Code usage summary. Current phase: prove out the Bluetooth (BLE) link
-between a desktop and the Pi, ahead of e-ink rendering or real data parsing.
+Pi Zero e-ink display project reusing pwnagotchi hardware to show live Claude
+Code usage: a gauge of current consumption against the rolling limit windows,
+backed by a daily history graph. Current phase: specifying the pipeline that
+reads usage on the Desktop and pushes it over Bluetooth (BLE) to the Pi.
 
 ## Language
+
+### The two ends
 
 **Desktop (BLE Central)**:
 The machine that owns the real data sources (weather, calendar, Claude Code
 usage) and initiates the BLE connection to push a Payload to the Pi. Need
 not be the maintainer's dev machine — any Linux box running Claude Code can
-be provisioned as one.
+be provisioned as one. A Pi is coupled to **one Desktop at a time**, but that
+Desktop is replaceable.
 _Avoid_: Client, sender
 
 **Pi (BLE Peripheral)**:
@@ -26,23 +30,99 @@ _Avoid_: Server, receiver
 > points the wrong way for *data* flow, where the Desktop is the active
 > party. Use the GATT roles only when discussing the GATT layer itself.
 
+**Desktop Id**:
+The value identifying which Desktop a Pi is currently coupled to. Derived on
+the Desktop rather than assigned, and carried on every Payload so the Pi can
+notice it has been coupled to a different Desktop.
+_Avoid_: Machine id, host id, client id
+
+### On the wire
+
 **Payload**:
 The JSON object the Desktop writes to the Pi's write characteristic in a
-single BLE write. Currently `{"date", "usage_tokens", "oneliner"}`; grows to
-include weather/calendar fields once those sources are wired in.
-_Avoid_: Message, packet
+single BLE write. Comes in two shapes — a Daily Payload or a Gauge Payload.
+_Avoid_: Message, packet, row
 
-**Reading**:
-One row in the Pi's SQLite `readings` table, created when a Payload is
-successfully received and parsed. The persisted history behind the
-long-term usage graph the e-ink display will eventually render.
-_Avoid_: Record, entry
+**Daily Payload**:
+The Payload shape carrying one day's Usage for one Project Key and one model.
+The Pi persists it as a Reading.
+_Avoid_: History payload, usage payload
+
+**Gauge Payload**:
+The Payload shape carrying the live gauge: consumption against the rolling
+limit windows, and the active session's context size. Display-only — the Pi
+never persists it.
+_Avoid_: Live payload, status payload
+
+**Batch**:
+The set of Daily Payloads sent in one push, each written and acknowledged
+separately over a single BLE connection. Every Payload in a Batch knows its
+own position in it, so an incomplete Batch is recognisable without an extra
+round trip.
+_Avoid_: Push (that is the verb), sweep, upload
 
 **Ack**:
 The JSON status object the Pi returns on its notify characteristic after a
-write, reporting whether parsing *and* persistence of the Payload
-succeeded.
+write, reporting whether parsing *and* persistence of the Payload succeeded,
+which Reading it refers to, and whether the Pi has wiped its Readings.
 _Avoid_: Response, reply
+
+### Held on the Pi
+
+**Reading**:
+One stored day of Usage, keyed by date, Project Key and model — created when
+a Daily Payload is successfully received and parsed. The persisted history
+behind the long-term graph the e-ink display will eventually render. A Gauge
+Payload produces **no Reading**; the live gauge is never stored.
+_Avoid_: Record, entry, sample
+
+**Coverage Start**:
+The earliest date the currently coupled Desktop has pushed. It exists so that
+a date the Pi simply never received reads as *outside coverage* rather than
+as zero usage.
+_Avoid_: Since, epoch, first date
+
+### The usage data
+
+**Usage**:
+The five billed token classes, plus cost in USD, plus session count, read
+from the Desktop's local Claude Code logs. Always all three together — a
+token count alone is not Usage.
+_Avoid_: Stats, metrics, consumption
+
+**Gauge**:
+The live reading of how much of the rolling limit windows has been consumed,
+together with the active session's context size. Sourced ready-made rather
+than computed locally, and expressed as a percentage.
+_Avoid_: Meter, usage bar, quota
+
+**Project Key**:
+The stored identity of a project: the encoded absolute path of its working
+directory. Exact and verifiable — a candidate path can be re-encoded and
+compared — which is why it, not a shortened name, is what gets stored.
+_Avoid_: Project name, project id, project dir
+
+**Project Label**:
+The short, human-readable form of a Project Key, derived when something is
+rendered. Never stored, so the display rule can change without re-keying
+history.
+_Avoid_: Display name, short name
+
+**Window**:
+The rolling seven **calendar** days a push covers. Days with no usage are
+skipped rather than sent as zeroes.
+_Avoid_: Period, range, last week
+
+> Deliberately seven *calendar* days, not seven *active* days: on real logs
+> the last seven active days spanned 27 calendar days, which makes "the last
+> week" a lie. The rolling limit windows the Gauge reports are a different
+> thing again, and are not called a Window.
+
+**Cost Complete**:
+Whether every model in a Reading was found in the pricing table. A Reading
+whose model is unrecognised still counts its tokens, but is marked
+incomplete rather than being dropped or failing the push.
+_Avoid_: Priced, valid, accurate
 
 **One-liner**:
 The short AI-generated summary string carried in the Payload, eventually
