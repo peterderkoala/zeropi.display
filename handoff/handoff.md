@@ -42,11 +42,18 @@ now governs only the historic view.
 
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle whether older usage history is backfilled (#21)](https://github.com/peterderkoala/zeropi.display/issues/21)
-   — `wayfinder:grilling`. Raised by #18: the 7-calendar-day window means
-   seven of nine active days, including the largest, never reach the Pi.
+1. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
+   — `wayfinder:grilling`. Raised by #21, and the biggest of the three: a new
+   component the map's architecture did not have. Grain, push marks and the
+   archive-of-record role are already settled on #21 and are **not** open;
+   what is open is the file's location, ingest incrementality and schema.
 
-2. [Get a fresh rate-limit snapshot onto disk (#27)](https://github.com/peterderkoala/zeropi.display/issues/27)
+2. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
+   — `wayfinder:task`. Raised by #21. **No deadline** — pre-prod data is test
+   material, not history. Nothing to decide; the ticket body carries the
+   schema and the method.
+
+3. [Get a fresh rate-limit snapshot onto disk (#27)](https://github.com/peterderkoala/zeropi.display/issues/27)
    — `wayfinder:task`. Raised by #22. **Touches the maintainer's global
    `~/.claude/settings.json` — ask before changing it.**
 
@@ -57,8 +64,16 @@ it. Then [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25
 (← #24, #27), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
 (← #24), [#17 schema](https://github.com/peterderkoala/zeropi.display/issues/17)
 (← #24), [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
-(← #16, #17), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← eight tickets).
+(← #16, #17), [#30 Pi retention/pruning](https://github.com/peterderkoala/zeropi.display/issues/30)
+(← #28), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
+(← eight open tickets, now including #28).
+
+⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
+immediately after the edge was created, while
+`gh api repos/<owner>/<repo>/issues/30/dependencies/blocked_by` correctly
+listed #28. The tracker doc's frontier query leans on that summary field —
+confirm against the `dependencies/blocked_by` list before treating a ticket
+as takeable.
 
 **The primary goal is achievable, but not the way this map first assumed.**
 [#22](https://github.com/peterderkoala/zeropi.display/issues/22) (closed)
@@ -85,6 +100,9 @@ Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
 [#18 prototype](https://github.com/peterderkoala/zeropi.display/issues/18)
 (`desktop/usage_prototype.py`, branch `prototype/usage-reader`). All three
 branches are unmerged; the findings are summarised in the map body.
+Also closed: [#21 backfill](https://github.com/peterderkoala/zeropi.display/issues/21),
+which spun out #28, #29 and #30 — read its resolution comment before touching
+any of them.
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -155,6 +173,36 @@ Live-gauge facts, established 2026-09-05 (detail in the map body):
 - **Never read `~/.claude/.credentials.json`.** It sits next to the useful
   files; nothing in this project needs it.
 
+Backfill and retention facts, established 2026-09-05 by
+[#21](https://github.com/peterderkoala/zeropi.display/issues/21):
+
+- **⚠ The Pi has no read path.** `pi/receive.py:70` builds the Ack as
+  `{status, received_at, reason?}` and nothing else, so **the Desktop can never
+  ask the Pi what it holds**. Every "does it already have this?" question has
+  to be answered from Desktop-side state. This is the single constraint that
+  forced the Desktop store into existence.
+- **⚠ The Desktop's logs self-delete on a rolling 30-day sweep.**
+  `cleanupPeriodDays` defaults to 30 and the sweep deletes
+  `projects/<project>/<session>.jsonl` outright. It is unset on this machine,
+  so the default applies. Proof it already fired: `~/.claude/stats-cache.json`
+  is exempt from the sweep and still remembers 2026-07-13 → 2026-07-19, days
+  that no longer exist in the JSONL logs.
+- **This is not an emergency.** Real use starts at the first prod build;
+  everything before is *test material*, not history. #29 carries no deadline.
+- **A day's completeness degrades gradually**, which is subtler than the sweep
+  itself: 2026-07-28's usage survives only because it sits in a session file
+  last written 2026-08-07, while that day's other sessions are already gone. So
+  re-reading the logs later can yield a **smaller** row for a day already
+  stored in full. Computing rows from the Desktop store rather than from the
+  logs is what removes this; do not reintroduce a log-sourced push path.
+- **The full history is 12 rows / 2,736 bytes / $317.43** across 9 active days
+  and 3 projects — not the ~20 rows #21 originally estimated. Entry grain is
+  6,022 records / 1.54 MB; a raw log copy would be 70.9 MB and would durably
+  retain prompts.
+- **`~/.claude/stats-cache.json` is not a usable data source** despite
+  surviving the sweep: frozen at `lastComputedDate: 2026-07-19`, `costUSD: 0`,
+  no project dimension.
+
 Usage-log facts, from map #13's research (full detail in the map body and
 in `docs/research/`):
 
@@ -189,10 +237,11 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #16, #17 or #18 from
-  the frontier, resolve one, record, advance.
-- **`mattpocock-skills:grilling`** for #16 and #17, which are genuine open
-  decisions; **`mattpocock-skills:prototype`** for #18.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #28, #29 or #27 from
+  the frontier, resolve one, record, advance. #28 is the one that unblocks
+  most.
+- **`mattpocock-skills:grilling`** for #28, which is a genuine open decision;
+  #29 is a task with nothing to decide.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
