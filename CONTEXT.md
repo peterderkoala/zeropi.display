@@ -122,8 +122,23 @@ _Avoid_: Period, range, last week
 The rolling server-side period a Claude Code rate limit accrues over — the
 five-hour one or the seven-day one. Its boundary is read from the snapshot's
 `resets_at`, never modelled locally, and it is account-wide rather than
-per-machine. What the Gauge is a percentage *of*.
+per-machine. What the Gauge is a percentage *of*. `resets_at` stops on the
+Desktop: what crosses the wire is a Reset Countdown.
 _Avoid_: Window (that is history coverage), block, quota period, reset window
+
+**Reset Countdown**:
+The seconds remaining in a Limit Window, computed on the Desktop at push time
+and advanced on the Pi against a boot-relative monotonic counter. A duration,
+never an instant — the Pi has no clock it can trust to interpret one. Clamps
+at zero rather than going negative.
+_Avoid_: resets_at, deadline, expiry, TTL
+
+**Gauge Age**:
+How long ago the Pi received the Gauge it is showing, in monotonic seconds
+since that Payload arrived. The Pi's only measure of freshness, and the reason
+it needs no wall clock. At 300 s the Gauge is **expired** and no longer a live
+reading.
+_Avoid_: Staleness, last updated, timestamp, received_at
 
 **Cost Complete**:
 Whether every model in a Reading was found in the pricing table. A Reading

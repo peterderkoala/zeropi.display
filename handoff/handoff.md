@@ -17,11 +17,14 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
 - Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**
   Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
   Coverage Start, Usage, Gauge, Project Key, Project Label, Window, **Limit
-  Window** (added by #25), Cost Complete, One-liner.
+  Window** (added by #25), **Reset Countdown** and **Gauge Age** (added by
+  #37), Cost Complete, One-liner.
 - ADRs: `docs/adr/0001` (**superseded by 0003**), `0002` readings-on-the-Pi,
   `0003` one-write-per-Reading, `0004` dedup-winner-rank, `0005`
   Desktop-store-is-archive-of-record, `0006` wipe-on-Desktop-Id-change,
-  `0007` full-refresh-only-no-two-speed, `0008` pi-enforces-the-redraw-floor.
+  `0007` full-refresh-only-no-two-speed, `0008` pi-enforces-the-redraw-floor
+  (its unsatisfied clock dependency now **resolved by 0009**), `0009`
+  pi-is-given-durations-not-timestamps.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
@@ -106,8 +109,8 @@ written (`0007`, `0008`) and the term **Limit Window** added to `CONTEXT.md`.
 Full detail in its resolution comment and the map's Decisions-so-far.
 
 ⚠ **It did not shorten the critical path — it spun out
-[#37](https://github.com/peterderkoala/zeropi.display/issues/37)**, which now
-blocks #20 in #25's place. See "the Pi has no clock" below.
+[#37](https://github.com/peterderkoala/zeropi.display/issues/37)**, which
+blocked #20 in #25's place. **#37 has since closed** — see below.
 
 **[#26 (the live-gauge prototype) is resolved and closed** — also this
 session. Branch `prototype/live-gauge`, mocks committed at
@@ -117,25 +120,36 @@ corrected two facts this handoff had recorded as settled.** Read its
 resolution comment before touching the gauge. Spun out
 [#38](https://github.com/peterderkoala/zeropi.display/issues/38).
 
-⚠ **Two tickets in, two tickets out.** #25 and #26 both closed this session and
-the critical path to #20 is the same length: #37 and #38 replaced them. That is
+⚠ **Two tickets in, two tickets out.** #25 and #26 both closed that session and
+the critical path to #20 was the same length: #37 and #38 replaced them. That is
 the prototype doing its job — both new tickets exist because contact with real
 data and a real panel invalidated decisions made on paper.
 
+**[#37 (how the Pi knows the time) is resolved and closed** — 2026-09-05,
+latest session, and it **spun out nothing**, so the critical path finally got
+shorter. **The answer is that the Pi does not know the time and no longer needs
+to.** Three of its four open decisions dissolved rather than resolving. The
+wire now carries **durations, not instants**: a **Reset Countdown** in place of
+`resets_at`, a snapshot age in seconds in place of `updated_at`, both computed
+on the Desktop, both advanced on the Pi with `time.monotonic()`.
+[ADR-0009](../blob/dev/docs/adr/0009-pi-is-given-durations-not-timestamps.md)
+is on `dev`; **Reset Countdown** and **Gauge Age** are in `CONTEXT.md`.
+⚠ **It supersedes the time fields #24 and #25 assumed** — read it before
+writing the Gauge Payload's shape into #20.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle how the Pi knows the time (#37)](https://github.com/peterderkoala/zeropi.display/issues/37)
-   — `wayfinder:grilling`, new this session. **A blocker of the spec.**
-
-2. [Re-settle the gauge readout (#38)](https://github.com/peterderkoala/zeropi.display/issues/38)
-   — `wayfinder:grilling`, new this session. **The other blocker of the spec.**
+1. [Re-settle the gauge readout (#38)](https://github.com/peterderkoala/zeropi.display/issues/38)
+   — `wayfinder:grilling`. **The sole remaining blocker of the spec.**
    Look at `docs/research/gauge-mocks/` first; the decisions are about pictures.
+   #37 handed it a rule to draw against: a Gauge **expires at 300 s of Gauge
+   Age**, and #38 decides what the panel shows once it has.
 
-3. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+2. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — unblocked by #28. Not a blocker of #20.
 
-**#37 and #38 are now the entire critical path to #20, the spec.** Everything
-else on this map is closed.
+**#38 alone is now the critical path to #20, the spec.** Everything else on
+this map is closed.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -150,8 +164,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← **only #37 and #38** still open; #16, #17, #18, #19, #21, #24, #25, #26,
-#27, #28, #36 all closed).
+(← **only #38** still open; #16, #17, #18, #19, #21, #24, #25, #26, #27, #28,
+#36, #37 all closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -407,14 +421,19 @@ correct earlier entries in this file, so prefer them:
 Cadence and panel facts, established 2026-09-05 by
 [#25](https://github.com/peterderkoala/zeropi.display/issues/25):
 
-- **⚠ The Pi has no idea what time it is, and two settled decisions assume it
-  does.** The Pi Zero 2W has **no RTC** and `pi/install.sh` configures **no
-  time source at all** — no NTP, no `fake-hwclock` handling. Yet #24's
-  staleness dimming and #25's self-clocked countdown both compare against the
-  Pi's own clock. A Pi whose clock is behind would **dim a perfectly fresh
-  reading** and render a nonsense countdown, silently, in a way that
-  implicates the Desktop or the BLE link rather than the clock. This is
-  [#37](https://github.com/peterderkoala/zeropi.display/issues/37).
+- **⚠ The Pi has no idea what time it is — and by decision, it never needs
+  to.** **Resolved by [#37](https://github.com/peterderkoala/zeropi.display/issues/37)
+  and [ADR-0009](../blob/dev/docs/adr/0009-pi-is-given-durations-not-timestamps.md):**
+  everything time-shaped crosses the wire as a **duration computed on the
+  Desktop**, and the Pi advances it with `time.monotonic()`. Never send the Pi
+  an instant it has to interpret. The hardware facts, measured: **no RTC**, and
+  — contrary to expectation — **`fake-hwclock` is not installed** either. But
+  `systemd-timesyncd` **is enabled and active** out of the box (the OS image
+  ships it; `install.sh` does not), and the dev Pi has **WiFi on the LAN**, so
+  the clock is usually right. Usually is not a guarantee: boot at `13:47:32`,
+  first NTP sync at `13:48:17` — a **45-second window** — with
+  `systemd-time-wait-sync` disabled, so nothing holds `receive.py` back through
+  it, and a Pi off for a week starts that window a week behind.
 - **⚠ Partial refresh is unusable here, and the reason is not obvious.** Two
   vendor statements combine: the panel must not be left in a high-voltage
   state, so every cycle ends in `epd.sleep()` — and deep sleep does **not
@@ -436,9 +455,11 @@ Cadence and panel facts, established 2026-09-05 by
   recommended operating point, claude-hud's `externalUsageFreshnessMs` default
   (300 000 ms), and #24's Pi-side staleness mark. #23's 180 s is headroom, not
   the setting.
-- **The likely UPS is a PiSugar 3** (maintainer, this session). Not designed
-  for — mains is an explicit assumption — but it carries an RTC, which makes
-  it one candidate answer to #37.
+- **The likely UPS is a PiSugar 3** (maintainer). Not designed for — mains is
+  an explicit assumption — and its RTC is **not** the answer to #37, which
+  removed the clock dependency instead. Fitting one is now explicitly **out of
+  scope** on map #13; it would improve `journalctl` and would not require
+  revisiting ADR-0009.
 
 Rate-limit snapshot facts, established 2026-09-05 by
 [#27](https://github.com/peterderkoala/zeropi.display/issues/27):

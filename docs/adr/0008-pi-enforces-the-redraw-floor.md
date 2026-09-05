@@ -31,6 +31,12 @@ distinguish "the Pi is showing my value" from "the Pi accepted my value and
 threw it away", which are different states for anything that later reasons
 about what the panel shows.
 
+> **Resolved by [ADR-0009](./0009-pi-is-given-durations-not-timestamps.md).**
+> The dependency below was answered by removing it: the Pi is given durations,
+> not instants, and animates the countdown on a monotonic counter. The
+> paragraph is kept as written so the open question, and its wrong guesses at
+> the answer, stay visible.
+
 The Pi now depends on knowing what time it is — for the countdown and for
 staleness — and **that dependency is not yet satisfied**. The Pi Zero 2W has
 no RTC and `pi/install.sh` configures no time source, so a Pi with a wrong
