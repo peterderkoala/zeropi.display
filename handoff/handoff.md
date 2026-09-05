@@ -73,6 +73,16 @@ change, since install.sh isn't touched. Table keeps the name `readings`.
 Full DDL (readings + a key-value `meta` table for `coverage_start`,
 auto-derived on every insert) in the resolution comment. Unblocked #19.
 
+**[#36 (what a second Desktop means for the data) is resolved and closed.**
+Charted this session by graduating the fog entry the previous handoff flagged,
+then resolved. **Its premise was wrong and that is the main result**: this is a
+*lifecycle* question, not a concurrency one. The maintainer wants one Desktop
+at a time, with the Pi **freshly couplable to a different Desktop** — so no
+machine dimension enters the grain (#17's PK and #16's Ack fields both
+untouched), the machine id is a **scalar in the `meta` table**, and the Pi
+**drops and recreates `readings` when it changes**. See its resolution comment
+for the eight-part answer. Unblocked #19.
+
 Frontier — open, unblocked, unclaimed:
 
 1. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
@@ -85,7 +95,9 @@ Frontier — open, unblocked, unclaimed:
    — newly unblocked by #28.
 
 4. [Record the vocabulary and ADRs (#19)](https://github.com/peterderkoala/zeropi.display/issues/19)
-   — newly unblocked by #17 (its other blocker, #16, was already closed).
+   — now fully unblocked (#16, #17, #36 all closed). **#36 handed it four
+   concrete inputs and an ADR to write** — read #36's "Inputs handed to #19"
+   section before starting.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -100,7 +112,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← #19, #25, #26 still open; #16, #17, #18, #21, #24, #27, #28 already closed).
+(← #19, #25, #26 still open; #16, #17, #18, #21, #24, #27, #28, #36 already
+closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -284,6 +297,33 @@ Live-gauge facts, established 2026-09-05 (detail in the map body):
 - **Never read `~/.claude/.credentials.json`.** It sits next to the useful
   files; nothing in this project needs it.
 
+Hand-off facts, established 2026-09-05 by
+[#36](https://github.com/peterderkoala/zeropi.display/issues/36):
+
+- **⚠ There is no coupling between Desktop and Pi, at any layer.**
+  `pi/receive.py:139` declares `flags=["write"]` / `flags=["notify"]` — not
+  `encrypt-write`, not `secure-write` — and there is no pairing, bonding or
+  trusted-device list in `install.sh` or `push.py`. The Desktop finds the Pi by
+  **scanning for the service UUID**, not a stored address. So "couple the Pi to
+  a different Desktop" is currently a **no-op**: run `install-desktop.sh` on the
+  new machine and it works. There is nothing to un-couple. This stays
+  unauthenticated **by decision**, not oversight — #20 must say so.
+- **⚠ `project` is an absolute-path label, not a repo name** —
+  `-home-ryzen-git-zeropi-display`. Two Desktops collide on the PK only at the
+  *identical* absolute path. A different username is the worse case, not the
+  safer one: no overwrite, no error, just a graph that grows a permanent second
+  set of series.
+- **⚠ The hand-off wipe desyncs against push marks on a hand-BACK.** Pi goes
+  A→B fine (B has no marks, pushes everything). Back to A, the Pi wipes on the
+  id change while A's store still says everything is pushed — **the Pi sits
+  empty and A never resends**, silently. The `wiped` flag on the first Ack
+  after a wipe is what closes this; do not drop it as a nicety.
+- **`ReceiveState.ack_characteristic` is a class attribute**
+  (`pi/receive.py:76`), set by whichever Desktop last subscribed to notify — so
+  two *concurrent* Desktops would clobber each other's Ack channel. Moot under
+  the sequential shape settled by #36, but it is why concurrent multi-Desktop
+  would have cost far more than a schema change.
+
 Rate-limit snapshot facts, established 2026-09-05 by
 [#27](https://github.com/peterderkoala/zeropi.display/issues/27):
 
@@ -436,10 +476,9 @@ in `docs/research/`):
 
 - **`mattpocock-skills:wayfinder`** with map #13 — take #19, #25, #26 or
   #30 from the frontier, resolve one, record, advance. #24, #28, #29, #31,
-  #16 and #17 are all resolved. Note #13 gained a new fog entry from #7's
-  redraw: **what a second Desktop means for the data** (two machines, two
-  Readings per date, no machine identity in the Payload) — worth settling
-  before #19 fixes the vocabulary and #20 writes the spec.
+  #16, #17 and #36 are all resolved. **#19 is the one to take next**: it is
+  the last blocker of the spec that isn't a live-gauge question, and #36 just
+  handed it its remaining inputs.
 - **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
   ticket and it is execution, not a decision; the deciding was done by the
   redraw.
