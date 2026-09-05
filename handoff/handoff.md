@@ -71,10 +71,17 @@ Frontier — open, unblocked, unclaimed:
 6. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
    — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
 
-7. [Research per-model context-window sizes (#31)](https://github.com/peterderkoala/zeropi.display/issues/31)
-   — spun out of #24. **A research subagent is running on this now**, on
-   branch `research/context-window-table`, mirroring #14's pricing-table
-   work. Check its state before re-doing it.
+**[#31 (context-window research) is resolved and closed.**
+`docs/research/context-window-table.md` (branch `research/context-window-table`,
+unmerged) found that the commonly-assumed 200K window is wrong for the two
+models that matter most: Opus 5 and Sonnet 5 both carry a **1,000,000-token
+window** (combined input+output), now GA with no pricing surcharge — doesn't
+touch #14's pricing table. Haiku 4.5 stays at 200K, no extended option. Max
+output: 128,000 for Opus 5/Sonnet 5 (300K on Batch API beta), 64,000 for
+Haiku 4.5. This is an input to whatever ticket implements #24's
+percentage-against-a-per-model-table decision — no open frontier ticket
+consumes it yet, but it'll matter once #17 (schema) or the eventual spec
+touches the context-size field.
 
 Blocked: [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
 (← #16, #17), [#30 Pi retention/pruning](https://github.com/peterderkoala/zeropi.display/issues/30)
@@ -117,7 +124,9 @@ branches are unmerged; the findings are summarised in the map body.
 Also closed: [#21 backfill](https://github.com/peterderkoala/zeropi.display/issues/21),
 which spun out #28, #29 and #30 — read its resolution comment before touching
 any of them. Also closed: [#24 the live-usage data model](https://github.com/peterderkoala/zeropi.display/issues/24),
-which spun out #31.
+which spun out #31, and [#31 context-window research](https://github.com/peterderkoala/zeropi.display/issues/31)
+itself (`docs/research/context-window-table.md`, branch
+`research/context-window-table`).
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -236,8 +245,14 @@ Live-usage data-model facts, established 2026-09-05 by
   sessions renders blank, not a stale number.
 - **Context size displays as a percentage**, not a bare token count, against
   a hardcoded per-model context-window table — same pattern as #14's pricing
-  table, spun out as [#31](https://github.com/peterderkoala/zeropi.display/issues/31)
-  because the actual numbers aren't researched yet.
+  table. **Resolved by [#31](https://github.com/peterderkoala/zeropi.display/issues/31)**:
+  the commonly-assumed 200K window is wrong for the two models that matter
+  most — Opus 5 and Sonnet 5 both carry a **1,000,000-token window** (combined
+  input+output), now GA with no pricing surcharge (doesn't touch #14's
+  table). Haiku 4.5 stays at 200K, no extended option. Max output: 128,000
+  for Opus 5/Sonnet 5 (300K on Batch API beta), 64,000 for Haiku 4.5. Table
+  in `docs/research/context-window-table.md`
+  (branch `research/context-window-table`).
 - **A null `used_percentage` gets its own explicit state** ("no data yet"),
   distinct from both zero and stale — collapsing it into either would
   misrepresent a real, observed condition (per #27, not hypothetical).
