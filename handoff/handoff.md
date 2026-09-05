@@ -50,28 +50,27 @@ Resolving it unblocked four tickets at once.
 location, ingest incrementality, winner-rank timing, store-only-aggregation
 and schema are all settled — see the map's Decisions-so-far. Unblocked #30.
 
+**[#29 (dev-era capture) is also done and closed.** The entries live at
+`~/.local/share/zeropi-display/usage-archive.db` — 6,201 rows, 1.59 MB, not
+committed. Quarry for #20's future test fixture; unblocked nothing further.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
-   — `wayfinder:task`. Raised by #21. **No deadline** — pre-prod data is test
-   material, not history. Nothing to decide; the ticket body carries the
-   schema and the method.
-
-2. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
+1. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
    — newly unblocked by #24.
 
-3. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
+2. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
    — newly unblocked by #24. Note it may change what #7's #11 has to verify,
    and should be designed with #28's Desktop-store shape in mind (the Pi's
    `coverage_start` meta table).
 
-4. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
+3. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
    — newly unblocked by #24, and by #23's eink-refresh research.
 
-5. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+4. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
    — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
 
-6. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+5. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — newly unblocked by #28.
 
 **[#31 (context-window research) is resolved and closed.**
@@ -128,8 +127,9 @@ which spun out #28, #29 and #30 — read its resolution comment before touching
 any of them. Also closed: [#24 the live-usage data model](https://github.com/peterderkoala/zeropi.display/issues/24),
 which spun out #31; [#31 context-window research](https://github.com/peterderkoala/zeropi.display/issues/31)
 itself (`docs/research/context-window-table.md`, branch
-`research/context-window-table`); and [#28 the Desktop-side usage store](https://github.com/peterderkoala/zeropi.display/issues/28),
-which unblocked #30.
+`research/context-window-table`); [#28 the Desktop-side usage store](https://github.com/peterderkoala/zeropi.display/issues/28),
+which unblocked #30; and [#29 the dev-era capture](https://github.com/peterderkoala/zeropi.display/issues/29)
+(`~/.local/share/zeropi-display/usage-archive.db`, 6,201 rows, not committed).
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -351,11 +351,11 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #29, #16, #17, #25,
-  #26 or #30 from the frontier, resolve one, record, advance. #24, #28 and
+- **`mattpocock-skills:wayfinder`** with map #13 — take #16, #17, #25, #26
+  or #30 from the frontier, resolve one, record, advance. #24, #28, #29 and
   #31 are all resolved.
 - **`mattpocock-skills:grilling`** for #16, #17, #25 and #30, all genuine
-  open decisions; #29 is a task with nothing to decide; #26 is a prototype.
+  open decisions; #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
