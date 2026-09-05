@@ -8,8 +8,9 @@ an Ack — verified 18/18 on the happy path, plus all four malformed-Payload
 cases and reconnect-after-restart. Full write-up:
 `docs/e2e-verification.md`.
 
-The catch: it works because of **system config applied by hand over SSH**,
-which exists nowhere executable. That is what the current map addresses.
+That system config is **no longer hand-applied**: `pi/install.sh` owns it,
+and #11 verified the whole provisioning path from a torn-down Pi (see
+`docs/provisioning-verification.md`). Map #7 has no open tickets left.
 
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
@@ -157,11 +158,23 @@ Get a stock Pi to an unattended, reboot-surviving install with one
 repeatable provisioning path. The map body carries the full inventory of
 hand-applied Pi state — read it before touching the Pi.
 
-**Only [#11](https://github.com/peterderkoala/zeropi.display/issues/11)
-remains open** (verify provisioning from scratch); #8, #9 and #10 are
-closed. Map #13's #17 (now resolved) confirmed `install.sh` stays untouched
-by the schema change, so #11's checklist doesn't change — but #17 settled
-that the schema change itself lands **after** #11 closes, so run #11 first.
+**All four tickets are now closed** (#8, #9, #10, #11) and the
+destination is reached — the map itself is still open pending the
+maintainer's call. #11 verified it on hardware: `install.sh` runs clean
+from a torn-down Pi and is idempotent, reboot and `bluetoothd` restart both
+survive unattended, **20/20** consecutive pushes and **23/23** round trips
+with 0 `bluetoothd` crashes. Write-up: `docs/provisioning-verification.md`.
+
+**#17's sequencing gate is now lifted** — it settled that the new SQLite
+schema lands *after* #11 closes. It has closed, so #17's schema change is
+free to land.
+
+Two things #11 left open, both recorded under the map's "Not yet
+specified": how the repo's code reaches the Pi on update (the run used
+`scp` purely as transport, which settles nothing), and whether the path is
+ever confirmed against a **genuinely fresh SD card** — no spare was
+available, so "from scratch" meant tearing the hand-applied state off the
+dev Pi.
 
 ### Closed: [Milestone 1 BLE prototype (#1)](https://github.com/peterderkoala/zeropi.display/issues/1)
 
@@ -178,10 +191,24 @@ closed. The round trip is verified on real hardware — see
 - **`DisablePlugins` in `/etc/bluetooth/main.conf` does nothing** — not a
   valid BlueZ 5.82 key. Plugin exclusion is a `bluetoothd` command-line
   option; see the drop-in described in #7.
-- **`receive.py` does not survive a `bluetoothd` restart** (ticket #9). When
-  the Desktop says "no device advertising service …", check
-  `bluetoothctl show | grep ActiveInstances` on the Pi and
-  `journalctl -u bluetooth` for a crash before suspecting the radio.
+- **`receive.py` not surviving a `bluetoothd` restart is fixed** (ticket #9,
+  verified by #11): `BindsTo=bluetooth.service` cycles the receiver with the
+  daemon, settling in ~2 s. When the Desktop says "no device advertising
+  service …", check the advertisement on the Pi and `journalctl -u bluetooth`
+  for a crash before suspecting the radio. Read the advertisement with
+  `busctl get-property org.bluez /org/bluez/hci0
+  org.bluez.LEAdvertisingManager1 ActiveInstances` (→ `y 1`), **not** by
+  grepping `bluetoothctl show` — bluetoothctl interleaves colourised async
+  `[CHG] Controller … ActiveInstances` lines with its own property block, so
+  a grep can return two lines with different values.
+- **A venv on the Pi must be created with `--system-site-packages`** (#11).
+  `bluezero` needs PyGObject and dbus-python, both C extensions; a sealed
+  venv makes pip build them from sdists and the build dies at `Dependency
+  "cairo" not found`. The apt-installed `python3-gi`/`python3-dbus` satisfy
+  them instead. `install.sh` rebuilds a flagless venv rather than reusing it.
+- **The LE advertisement takes ~1.5 s to appear** after `receive.py` starts,
+  and longer on a cold install racing a `bluetoothd` restart. Poll for it;
+  do not sample once after a fixed sleep.
 - `push.py`'s `finally: stop_notify(...)` masks the real exception when a
   connect fails, reporting "Service Discovery has not been performed yet"
   over the top of the actual error. Tracked as
