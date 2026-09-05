@@ -46,30 +46,33 @@ context-size-as-percentage, ephemeral live gauge, two Payload shapes, an
 explicit "no data yet" null state, and a 5-minute Pi-side staleness mark).
 Resolving it unblocked four tickets at once.
 
+**[#28 (Desktop-side usage store) is also resolved and closed.** File
+location, ingest incrementality, winner-rank timing, store-only-aggregation
+and schema are all settled — see the map's Decisions-so-far. Unblocked #30.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
-   — `wayfinder:grilling`. Raised by #21: a new component the map's
-   architecture did not have. Grain, push marks and the archive-of-record role
-   are already settled on #21 and are **not** open; what is open is the file's
-   location, ingest incrementality and schema.
-
-2. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
+1. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
    — `wayfinder:task`. Raised by #21. **No deadline** — pre-prod data is test
    material, not history. Nothing to decide; the ticket body carries the
    schema and the method.
 
-3. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
+2. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
    — newly unblocked by #24.
 
-4. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
-   — newly unblocked by #24. Note it may change what #7's #11 has to verify.
+3. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
+   — newly unblocked by #24. Note it may change what #7's #11 has to verify,
+   and should be designed with #28's Desktop-store shape in mind (the Pi's
+   `coverage_start` meta table).
 
-5. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
+4. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
    — newly unblocked by #24, and by #23's eink-refresh research.
 
-6. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+5. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
    — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
+
+6. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
+   — newly unblocked by #28.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -84,9 +87,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
-(← #16, #17), [#30 Pi retention/pruning](https://github.com/peterderkoala/zeropi.display/issues/30)
-(← #28), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← eight open tickets).
+(← #16, #17), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
+(← six open tickets).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -124,9 +126,10 @@ branches are unmerged; the findings are summarised in the map body.
 Also closed: [#21 backfill](https://github.com/peterderkoala/zeropi.display/issues/21),
 which spun out #28, #29 and #30 — read its resolution comment before touching
 any of them. Also closed: [#24 the live-usage data model](https://github.com/peterderkoala/zeropi.display/issues/24),
-which spun out #31, and [#31 context-window research](https://github.com/peterderkoala/zeropi.display/issues/31)
+which spun out #31; [#31 context-window research](https://github.com/peterderkoala/zeropi.display/issues/31)
 itself (`docs/research/context-window-table.md`, branch
-`research/context-window-table`).
+`research/context-window-table`); and [#28 the Desktop-side usage store](https://github.com/peterderkoala/zeropi.display/issues/28),
+which unblocked #30.
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -262,6 +265,28 @@ Live-usage data-model facts, established 2026-09-05 by
   This matters because the Pi can go without a push longer than 5 minutes
   even when the Desktop's own read was fresh at push time.
 
+Desktop-side usage store facts, established 2026-09-05 by
+[#28](https://github.com/peterderkoala/zeropi.display/issues/28):
+
+- **The store's location is configurable** — an env var or a `push.py` CLI
+  flag, falling back to `~/.local/share/zeropi-display/usage-archive.db`
+  when neither is set. This is the first configurable path in the codebase;
+  everything else (Pi's `DB_PATH`, the GATT UUIDs) is a hardcoded constant.
+- **Ingest resumes via a per-session high-water mark**, not a whole-file
+  mtime check — a session's JSONL grows across days, so mtime alone would
+  wrongly skip a file that's been partially ingested and then appended to.
+- **The #15 winner-rank runs at ingest, and this is a one-way door.** Only
+  the winner of each `(requestId, message.id)` duplicate group is stored;
+  losers are discarded permanently. If the rank rule ever changes, only
+  newly-ingested entries follow it — old stored history can't be re-ranked.
+- **Store-only aggregation is an absolute rule, no repair escape hatch.**
+  There is no `--rebuild-from-logs` mode; a corrupt store is restored from a
+  backup of the store itself. Re-deriving from logs would reintroduce the
+  exact degradation hazard (#21) the store exists to remove.
+- **Schema is one entry table with a push-marks column** — no separate
+  marks table, no separate ingest-offset table. All store state (dedup
+  winner, push status, ingest position) lives in one SQLite file.
+
 Backfill and retention facts, established 2026-09-05 by
 [#21](https://github.com/peterderkoala/zeropi.display/issues/21):
 
@@ -326,12 +351,11 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #28, #16, #17, #25 or
-  #26 from the frontier, resolve one, record, advance. #24 (the hinge) is
-  resolved; check on the #31 research subagent's state before starting new
-  work — it may have already landed a branch and closed its ticket.
-- **`mattpocock-skills:grilling`** for #28, #16, #17 and #25, all genuine open
-  decisions; #29 is a task with nothing to decide; #26 is a prototype.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #29, #16, #17, #25,
+  #26 or #30 from the frontier, resolve one, record, advance. #24, #28 and
+  #31 are all resolved.
+- **`mattpocock-skills:grilling`** for #16, #17, #25 and #30, all genuine
+  open decisions; #29 is a task with nothing to decide; #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
