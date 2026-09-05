@@ -40,33 +40,46 @@ in the map's tables rather than deleted, so you can see what changed:
 cadence is no longer out of scope, and the "cost is the headline" decision
 now governs only the historic view.
 
+**[#24 (the hinge) is resolved and closed** — see its resolution comment and
+the map's Decisions-so-far for the six-part answer (active-session rule,
+context-size-as-percentage, ephemeral live gauge, two Payload shapes, an
+explicit "no data yet" null state, and a 5-minute Pi-side staleness mark).
+Resolving it unblocked four tickets at once.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the live-usage data model (#24)](https://github.com/peterderkoala/zeropi.display/issues/24)
-   — `wayfinder:grilling`. **The hinge, and newly unblocked** — #27 closed its
-   last blocker. The transport (#16), the schema (#17), the cadence (#25) and
-   the live prototype (#26) all wait on it. Take this one first. Its inputs are
-   now real: the snapshot file exists and its exact shape is on #27.
-
-2. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
+1. [Settle the Desktop-side usage store (#28)](https://github.com/peterderkoala/zeropi.display/issues/28)
    — `wayfinder:grilling`. Raised by #21: a new component the map's
    architecture did not have. Grain, push marks and the archive-of-record role
    are already settled on #21 and are **not** open; what is open is the file's
    location, ingest incrementality and schema.
 
-3. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
+2. [Capture the dev-era usage entries (#29)](https://github.com/peterderkoala/zeropi.display/issues/29)
    — `wayfinder:task`. Raised by #21. **No deadline** — pre-prod data is test
    material, not history. Nothing to decide; the ticket body carries the
    schema and the method.
 
-Blocked: [#25 cadence](https://github.com/peterderkoala/zeropi.display/issues/25)
-(← #24), [#26 live prototype](https://github.com/peterderkoala/zeropi.display/issues/26)
-(← #24), [#16 transport](https://github.com/peterderkoala/zeropi.display/issues/16)
-(← #24), [#17 schema](https://github.com/peterderkoala/zeropi.display/issues/17)
-(← #24), [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
+3. [Settle the live Payload transport (#16)](https://github.com/peterderkoala/zeropi.display/issues/16)
+   — newly unblocked by #24.
+
+4. [Settle the live Payload schema (#17)](https://github.com/peterderkoala/zeropi.display/issues/17)
+   — newly unblocked by #24. Note it may change what #7's #11 has to verify.
+
+5. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
+   — newly unblocked by #24, and by #23's eink-refresh research.
+
+6. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+   — `wayfinder:prototype`, newly unblocked by #24, #22 and #27 together.
+
+7. [Research per-model context-window sizes (#31)](https://github.com/peterderkoala/zeropi.display/issues/31)
+   — spun out of #24. **A research subagent is running on this now**, on
+   branch `research/context-window-table`, mirroring #14's pricing-table
+   work. Check its state before re-doing it.
+
+Blocked: [#19 vocabulary/ADRs](https://github.com/peterderkoala/zeropi.display/issues/19)
 (← #16, #17), [#30 Pi retention/pruning](https://github.com/peterderkoala/zeropi.display/issues/30)
 (← #28), [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← seven open tickets).
+(← eight open tickets).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -103,7 +116,8 @@ Closed: [#14 pricing](https://github.com/peterderkoala/zeropi.display/issues/14)
 branches are unmerged; the findings are summarised in the map body.
 Also closed: [#21 backfill](https://github.com/peterderkoala/zeropi.display/issues/21),
 which spun out #28, #29 and #30 — read its resolution comment before touching
-any of them.
+any of them. Also closed: [#24 the live-usage data model](https://github.com/peterderkoala/zeropi.display/issues/24),
+which spun out #31.
 
 **The prototype is worth running before you touch this pipeline** —
 `python3 desktop/usage_prototype.py` on `prototype/usage-reader` prints the
@@ -204,6 +218,35 @@ Rate-limit snapshot facts, established 2026-09-05 by
   reader default (`externalUsageFreshnessMs`, 300 000 ms), independently the
   same number as #23's recommended 300 s panel operating point.
 
+Live-usage data-model facts, established 2026-09-05 by
+[#24](https://github.com/peterderkoala/zeropi.display/issues/24):
+
+- **The live gauge is ephemeral** — never persisted to the Pi's SQLite,
+  display-only. The daily table already covers the trend use case; a
+  5-minute-grain history would just burn SD write cycles for no product
+  value.
+- **Two Payload shapes, not one.** The live-gauge Payload and the daily-row
+  Payload are structurally different (window consumption/resets_at/context
+  vs. tokens/cost/grain) and stay separate rather than one shape with fields
+  left null depending on which kind of row it is. Field naming is #19's job,
+  not settled here.
+- **Active session = most-recent `updatedAt`** in
+  `~/.claude/sessions/<pid>.json` — the single rule for both "which session"
+  among several `busy` ones and "is anything live at all." Zero live
+  sessions renders blank, not a stale number.
+- **Context size displays as a percentage**, not a bare token count, against
+  a hardcoded per-model context-window table — same pattern as #14's pricing
+  table, spun out as [#31](https://github.com/peterderkoala/zeropi.display/issues/31)
+  because the actual numbers aren't researched yet.
+- **A null `used_percentage` gets its own explicit state** ("no data yet"),
+  distinct from both zero and stale — collapsing it into either would
+  misrepresent a real, observed condition (per #27, not hypothetical).
+- **Staleness is Pi-side, not Desktop-suppressed.** The Payload carries a
+  generated-at timestamp (from claude-hud's `updated_at`); the Pi compares
+  against its own clock and dims (never blanks) a reading past 5 minutes.
+  This matters because the Pi can go without a push longer than 5 minutes
+  even when the Desktop's own read was fresh at push time.
+
 Backfill and retention facts, established 2026-09-05 by
 [#21](https://github.com/peterderkoala/zeropi.display/issues/21):
 
@@ -268,11 +311,12 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #13 — take #24, #28 or #29 from
-  the frontier, resolve one, record, advance. **#24 is the hinge**: four
-  tickets unblock behind it, and #27 has just made its inputs concrete.
-- **`mattpocock-skills:grilling`** for #24 and #28, both genuine open
-  decisions; #29 is a task with nothing to decide.
+- **`mattpocock-skills:wayfinder`** with map #13 — take #28, #16, #17, #25 or
+  #26 from the frontier, resolve one, record, advance. #24 (the hinge) is
+  resolved; check on the #31 research subagent's state before starting new
+  work — it may have already landed a branch and closed its ticket.
+- **`mattpocock-skills:grilling`** for #28, #16, #17 and #25, all genuine open
+  decisions; #29 is a task with nothing to decide; #26 is a prototype.
 - **`mattpocock-skills:domain-modeling`** for #19, which rewrites the
   Payload/Reading vocabulary and supersedes ADR 0001.
 
