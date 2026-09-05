@@ -73,20 +73,35 @@ def read_snapshot():
 
 
 def active_session():
-    """#24's rule: the session with the most recent updatedAt.
+    """#24's rule: the session with the most recent updatedAt — PLUS two
+    guards this prototype found are load-bearing.
 
-    Note .key files live alongside the .json ones — glob narrowly.
+    MEASURED: updatedAt == statusUpdatedAt exactly, and both sat frozen at
+    467s while the session was actively working with status "busy". It is a
+    status-TRANSITION timestamp, not a heartbeat, so "is anything live at
+    all" must NOT be a freshness test on it — that would call a busy session
+    dead. Liveness is whether the pid is still running.
+
+    Also filters kind == "interactive": per #27 a headless -p session writes
+    no rate-limit snapshot, so treating one as the active session gives a
+    permanently frozen gauge.
+
+    .key files sit alongside the .json ones — glob narrowly.
     """
     sessions = []
     for f in SESSIONS.glob("*.json"):
         try:
-            sessions.append(json.loads(f.read_text()))
+            s = json.loads(f.read_text())
         except Exception:
-            pass
-    if not sessions:
-        return None, []
-    sessions.sort(key=lambda s: s.get("updatedAt", 0), reverse=True)
-    return sessions[0], sessions
+            continue
+        s["_alive"] = Path(f"/proc/{s['pid']}").exists()
+        sessions.append(s)
+    live = [s for s in sessions
+            if s["_alive"] and s.get("kind") == "interactive"]
+    if not live:
+        return None, sessions
+    live.sort(key=lambda s: s.get("updatedAt", 0), reverse=True)
+    return live[0], sessions
 
 
 def context_for(session):
@@ -234,7 +249,9 @@ def print_state(st):
     else:
         age = (st["now"].timestamp() * 1000 - sess.get("updatedAt", 0)) / 1000
         print(f"    active: pid {sess['pid']}  status={sess.get('status')}  "
-              f"updatedAt {age:.0f}s ago")
+              f"kind={sess.get('kind')}  alive={sess['_alive']}")
+        print(f"            updatedAt {age:.0f}s ago  <-- TRANSITION time, "
+              f"not a heartbeat; do NOT test liveness with it")
         print(f"            cwd  {sess.get('cwd')}")
     if ctx:
         known = "" if ctx["window_known"] else "  ** MODEL NOT IN TABLE **"
