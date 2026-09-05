@@ -140,6 +140,12 @@ it needs no wall clock. At 300 s the Gauge is **expired** and no longer a live
 reading.
 _Avoid_: Staleness, last updated, timestamp, received_at
 
+**Historic View**:
+What the panel shows when there is no live Gauge — the daily trend drawn from
+stored Readings. Not a fallback screen or an error state: it is the display's
+resting picture, and the Gauge is what temporarily replaces it.
+_Avoid_: Idle screen, default view, fallback
+
 **Cost Complete**:
 Whether every model in a Reading was found in the pricing table. A Reading
 whose model is unrecognised still counts its tokens, but is marked

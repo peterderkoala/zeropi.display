@@ -18,13 +18,14 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
   Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
   Coverage Start, Usage, Gauge, Project Key, Project Label, Window, **Limit
   Window** (added by #25), **Reset Countdown** and **Gauge Age** (added by
-  #37), Cost Complete, One-liner.
+  #37), **Historic View** (added by #38), Cost Complete, One-liner.
 - ADRs: `docs/adr/0001` (**superseded by 0003**), `0002` readings-on-the-Pi,
   `0003` one-write-per-Reading, `0004` dedup-winner-rank, `0005`
   Desktop-store-is-archive-of-record, `0006` wipe-on-Desktop-Id-change,
   `0007` full-refresh-only-no-two-speed, `0008` pi-enforces-the-redraw-floor
-  (its unsatisfied clock dependency now **resolved by 0009**), `0009`
-  pi-is-given-durations-not-timestamps.
+  (its unsatisfied clock dependency now **resolved by 0009**, and amended by
+  0010 for the daily keep-alive), `0009` pi-is-given-durations-not-timestamps,
+  `0010` an-expired-gauge-is-not-drawn.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
@@ -137,19 +138,36 @@ is on `dev`; **Reset Countdown** and **Gauge Age** are in `CONTEXT.md`.
 ⚠ **It supersedes the time fields #24 and #25 assumed** — read it before
 writing the Gauge Payload's shape into #20.
 
+**[#38 (re-settle the gauge readout) is resolved and closed** — 2026-09-06,
+and it **spun out nothing**. **Two of its five decisions dissolved, and the
+gauge lost a row, a footer and a readout**: what is left is one split headline
+row, one 7D row, and white space. **Layout C confirmed.** The **context
+readout is dropped from the display** — that **narrowed the map's Destination**
+— though the **field stays in the Gauge Payload** by the maintainer's call, so
+the spec must still define active-session detection and the context computation
+for a value nothing draws. **There is no stale rendering, because an expired
+Gauge is not drawn**: at 300 s of Gauge Age the panel falls back to the
+Historic View. Null reads **`NO USAGE DATA`**; the countdown clamps to `<1m`
+then **`RESETS NOW`**; the idle panel gains a **24-hour keep-alive refresh**
+(amending #25). [ADR-0010](../blob/dev/docs/adr/0010-an-expired-gauge-is-not-drawn.md)
+written, **Historic View** added to `CONTEXT.md`, ADR-0008 amended. Settled
+design rendered at `docs/research/gauge-mocks/settled-*.png` on
+`prototype/live-gauge` (`dde1c58`) — **drawing it broke it twice**, which is
+why it was drawn.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Re-settle the gauge readout (#38)](https://github.com/peterderkoala/zeropi.display/issues/38)
-   — `wayfinder:grilling`. **The sole remaining blocker of the spec.**
-   Look at `docs/research/gauge-mocks/` first; the decisions are about pictures.
-   #37 handed it a rule to draw against: a Gauge **expires at 300 s of Gauge
-   Age**, and #38 decides what the panel shows once it has.
+1. **[#20 — write the spec](https://github.com/peterderkoala/zeropi.display/issues/20)**
+   — `wayfinder:task`. **This is the destination.** All twelve of its blockers
+   are closed. `docs/spec-usage-pipeline.md`, precise enough that a Sonnet 5
+   session implements it without reopening a decision. Read `CONTEXT.md` and
+   ADRs 0003–0010 first; they are binding, and this handoff is not.
 
 2. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — unblocked by #28. Not a blocker of #20.
 
-**#38 alone is now the critical path to #20, the spec.** Everything else on
-this map is closed.
+**Every decision ticket on this map is now closed.** #20 is the map's
+destination, not another decision.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -163,9 +181,9 @@ percentage-against-a-per-model-table decision — no open frontier ticket
 consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
-Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← **only #38** still open; #16, #17, #18, #19, #21, #24, #25, #26, #27, #28,
-#36, #37 all closed).
+**Unblocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)**
+— all twelve blockers closed (#16, #17, #18, #19, #21, #24, #25, #26, #27, #28,
+#36, #37, #38).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -410,10 +428,18 @@ correct earlier entries in this file, so prefer them:
   window, 42 real sessions peaked at **589,408 (59%)**, median peak **15.8%**,
   and **0 of 42** ever passed 900K. The bar is a permanent stub. (The 589,408
   peak does independently **confirm** #31's 1M table — it exceeds any 200K
-  window.)
+  window.) **#38 went further and dropped the context readout from the display
+  entirely**, narrowing the map's Destination. The **field still crosses the
+  wire**, so the active-session machinery below is still spec'd — it exists
+  only for this field.
 - **⚠ "Dim a stale reading" is not implementable.** The panel is 1-bit
-  monochrome: there is no grey. #24 settled dimming anyway. This is
-  [#38](https://github.com/peterderkoala/zeropi.display/issues/38).
+  monochrome: there is no grey. #24 settled dimming anyway. **Resolved by
+  [#38](https://github.com/peterderkoala/zeropi.display/issues/38) and
+  [ADR-0010](../blob/dev/docs/adr/0010-an-expired-gauge-is-not-drawn.md):**
+  nothing is ever marked stale, because an **expired Gauge is not drawn at
+  all** — the panel falls back to the Historic View. Do not re-propose hatching,
+  a banner or inversion; all three were considered and rejected on the ground
+  that a marked-stale number is one you are asking a viewer not to trust.
 - **The 5h and 7d windows have visibly different shapes**, confirming #22 by
   observation: `five_hour.resets_at` was 23:40Z — **off any clock hour** —
   while `seven_day.resets_at` was 13:00Z, **exactly on one**.

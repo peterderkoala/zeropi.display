@@ -31,6 +31,10 @@ distinguish "the Pi is showing my value" from "the Pi accepted my value and
 threw it away", which are different states for anything that later reasons
 about what the panel shows.
 
+> **Amended by [ADR-0010](./0010-an-expired-gauge-is-not-drawn.md):** the Pi's
+> own-clock redraw also carries a **24-hour keep-alive full refresh** while
+> idle, which #25 had ruled out as "held indefinitely with no further redraws".
+>
 > **Resolved by [ADR-0009](./0009-pi-is-given-durations-not-timestamps.md).**
 > The dependency below was answered by removing it: the Pi is given durations,
 > not instants, and animates the countdown on a monotonic counter. The
