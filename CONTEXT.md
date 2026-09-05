@@ -115,8 +115,15 @@ _Avoid_: Period, range, last week
 
 > Deliberately seven *calendar* days, not seven *active* days: on real logs
 > the last seven active days spanned 27 calendar days, which makes "the last
-> week" a lie. The rolling limit windows the Gauge reports are a different
-> thing again, and are not called a Window.
+> week" a lie. A **Limit Window** is a different thing again, and is never
+> called a Window.
+
+**Limit Window**:
+The rolling server-side period a Claude Code rate limit accrues over — the
+five-hour one or the seven-day one. Its boundary is read from the snapshot's
+`resets_at`, never modelled locally, and it is account-wide rather than
+per-machine. What the Gauge is a percentage *of*.
+_Avoid_: Window (that is history coverage), block, quota period, reset window
 
 **Cost Complete**:
 Whether every model in a Reading was found in the pricing table. A Reading

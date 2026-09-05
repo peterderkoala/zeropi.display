@@ -16,11 +16,12 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
 - Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**
   Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
-  Coverage Start, Usage, Gauge, Project Key, Project Label, Window, Cost
-  Complete, One-liner.
+  Coverage Start, Usage, Gauge, Project Key, Project Label, Window, **Limit
+  Window** (added by #25), Cost Complete, One-liner.
 - ADRs: `docs/adr/0001` (**superseded by 0003**), `0002` readings-on-the-Pi,
   `0003` one-write-per-Reading, `0004` dedup-winner-rank, `0005`
-  Desktop-store-is-archive-of-record, `0006` wipe-on-Desktop-Id-change.
+  Desktop-store-is-archive-of-record, `0006` wipe-on-Desktop-Id-change,
+  `0007` full-refresh-only-no-two-speed, `0008` pi-enforces-the-redraw-floor.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
@@ -96,21 +97,33 @@ are **Daily Payload** / **Gauge Payload**, and nine further terms are pinned
 `CONTEXT.md` before naming anything in #20's spec — that is now the binding
 vocabulary, not this handoff.
 
+**[#25 (push cadence and redraw floor) is resolved and closed** — this
+session's ticket. Eleven decisions; the deliverable is **push on any integer
+change** (a resident `systemd --user` service polling the snapshot every 30 s),
+a **300 s redraw floor enforced by the Pi as a hard gate**, **full refresh
+only — no two-speed**, and **idle showing the historic view, held**. Two ADRs
+written (`0007`, `0008`) and the term **Limit Window** added to `CONTEXT.md`.
+Full detail in its resolution comment and the map's Decisions-so-far.
+
+⚠ **It did not shorten the critical path — it spun out
+[#37](https://github.com/peterderkoala/zeropi.display/issues/37)**, which now
+blocks #20 in #25's place. See "the Pi has no clock" below.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Settle the gauge push cadence (#25)](https://github.com/peterderkoala/zeropi.display/issues/25)
-   — unblocked by #24 and #23's eink-refresh research. **One of the last two
-   blockers of the spec.**
+1. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
+   — `wayfinder:prototype`, unblocked by #24, #22 and #27 together. **A
+   blocker of the spec.**
 
-2. [The live-gauge prototype (#26)](https://github.com/peterderkoala/zeropi.display/issues/26)
-   — `wayfinder:prototype`, unblocked by #24, #22 and #27 together. **The
-   other one.**
+2. [Settle how the Pi knows the time (#37)](https://github.com/peterderkoala/zeropi.display/issues/37)
+   — `wayfinder:grilling`, new this session, unblocked from birth. **The other
+   blocker of the spec.**
 
 3. [Pi retention/pruning (#30)](https://github.com/peterderkoala/zeropi.display/issues/30)
    — unblocked by #28. Not a blocker of #20.
 
-**#25 and #26 are now the entire critical path to #20, the spec — and both are
-live-gauge questions.** Everything else on this map is closed.
+**#26 and #37 are now the entire critical path to #20, the spec.** Everything
+else on this map is closed.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -125,8 +138,8 @@ consumes it yet, but it'll matter once #17 (schema) or the eventual spec
 touches the context-size field.
 
 Blocked: [#20 the spec](https://github.com/peterderkoala/zeropi.display/issues/20)
-(← **only #25 and #26** still open; #16, #17, #18, #19, #21, #24, #27, #28,
-#36 all closed).
+(← **only #26 and #37** still open; #16, #17, #18, #19, #21, #24, #25, #27,
+#28, #36 all closed).
 
 ⚠ **`issue_dependencies_summary.blocked_by` lags.** It read `0` for #30
 immediately after the edge was created, while
@@ -336,6 +349,42 @@ Hand-off facts, established 2026-09-05 by
   two *concurrent* Desktops would clobber each other's Ack channel. Moot under
   the sequential shape settled by #36, but it is why concurrent multi-Desktop
   would have cost far more than a schema change.
+
+Cadence and panel facts, established 2026-09-05 by
+[#25](https://github.com/peterderkoala/zeropi.display/issues/25):
+
+- **⚠ The Pi has no idea what time it is, and two settled decisions assume it
+  does.** The Pi Zero 2W has **no RTC** and `pi/install.sh` configures **no
+  time source at all** — no NTP, no `fake-hwclock` handling. Yet #24's
+  staleness dimming and #25's self-clocked countdown both compare against the
+  Pi's own clock. A Pi whose clock is behind would **dim a perfectly fresh
+  reading** and render a nonsense countdown, silently, in a way that
+  implicates the Desktop or the BLE link rather than the clock. This is
+  [#37](https://github.com/peterderkoala/zeropi.display/issues/37).
+- **⚠ Partial refresh is unusable here, and the reason is not obvious.** Two
+  vendor statements combine: the panel must not be left in a high-voltage
+  state, so every cycle ends in `epd.sleep()` — and deep sleep does **not
+  retain RAM**, which destroys the partial-refresh base image. Partial only
+  pays off across a burst you stay awake for, and a 300 s floor never produces
+  a burst. **Do not re-propose a two-speed scheme**; see
+  `docs/adr/0007-full-refresh-only-no-two-speed.md`. #23's **N = 5** bound
+  consequently never binds.
+- **⚠ Poll the snapshot; do not inotify it.** claude-hud writes
+  `rate-limits.json` atomically via temp+rename, so a watch on the *file*
+  misses every write — it would have to watch the directory. A 30 s poll of a
+  small local JSON file is cheaper than getting that right.
+- **Idle is the common state, not the exception.** Per #27 the snapshot only
+  advances while an interactive TUI is open, so the panel spends most of the
+  day with no live gauge. That is why idle shows the historic view rather than
+  blanking — blanking would waste the display's standing purpose for the
+  majority of hours.
+- **The floor is 300 s and three independent sources agree on it**: #23's
+  recommended operating point, claude-hud's `externalUsageFreshnessMs` default
+  (300 000 ms), and #24's Pi-side staleness mark. #23's 180 s is headroom, not
+  the setting.
+- **The likely UPS is a PiSugar 3** (maintainer, this session). Not designed
+  for — mains is an explicit assumption — but it carries an RTC, which makes
+  it one candidate answer to #37.
 
 Rate-limit snapshot facts, established 2026-09-05 by
 [#27](https://github.com/peterderkoala/zeropi.display/issues/27):
