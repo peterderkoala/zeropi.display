@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# pi/install.sh -- provisions a stock Raspberry Pi OS (Debian 13 / trixie)
+# pi/install-pi.sh -- provisions a stock Raspberry Pi OS (Debian 13 / trixie)
 # Pi to run the zeropi-display BLE receiver unattended.
 #
-# Run locally on the Pi as root (sudo ./install.sh), with this repo's pi/
-# directory present on disk. Safe to re-run on an already-provisioned Pi.
+# Normally reached via the repo-root curl bootstrap (install.sh pi), which
+# fetches a versioned tarball, runs this script under sudo from the staging
+# unpack, and passes the staging root as $1. It also still runs standalone
+# on the Pi as root (sudo ./install-pi.sh) with this repo's pi/ directory
+# present on disk -- ticket #33's local-correctness bar, not #35's hardware
+# verification. Safe to re-run on an already-provisioned Pi either way.
 #
-# See issue #7 (map) for why each step exists and #8 for the decisions
-# behind this script's shape (local, idempotent, venv-based).
+# See issue #7 (map) for why each step exists, #8 for the decisions behind
+# this script's shape (local, idempotent, venv-based), and #33 for the
+# bootstrap contract (argv: staging root; env: ZEROPI_REF/ZEROPI_SHA/
+# ZEROPI_TIMESTAMP, all optional).
 
 set -euo pipefail
 
@@ -19,10 +25,17 @@ DROPIN_FILE="$DROPIN_DIR/noplugin.conf"
 MAIN_CONF="/etc/bluetooth/main.conf"
 ADAPTER="hci0"
 ADVERT_POLL_TRIES=20
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# $1, when given, is the staging root the bootstrap unpacked (see the header
+# comment) -- authoritative over BASH_SOURCE, which only happens to land in
+# the right place because of how the bootstrap currently invokes this script.
+if [[ -n "${1:-}" ]]; then
+    SCRIPT_DIR="$1/pi"
+else
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
 if [[ $EUID -ne 0 ]]; then
-    echo "install.sh must run as root, e.g.: sudo ./install.sh" >&2
+    echo "install-pi.sh must run as root, e.g.: sudo ./install-pi.sh" >&2
     exit 1
 fi
 
@@ -78,6 +91,26 @@ fi
 echo "==> Deploying receive.py to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp "$SCRIPT_DIR/receive.py" "$INSTALL_DIR/receive.py"
+
+echo "==> Stamping VERSION"
+# ZEROPI_REF/ZEROPI_SHA/ZEROPI_TIMESTAMP come from the curl bootstrap
+# (install.sh), which resolves the fetched ref to a commit sha before
+# handing off here -- see #33. A standalone local run (no bootstrap) has no
+# sha to report; fall back to the checked-out git commit, if any, so the
+# file still says something rather than nothing.
+VERSION_SHA="${ZEROPI_SHA:-}"
+VERSION_REF="${ZEROPI_REF:-}"
+VERSION_TIMESTAMP="${ZEROPI_TIMESTAMP:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+if [[ -z "$VERSION_SHA" ]]; then
+    VERSION_SHA="$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")"
+    VERSION_REF="${VERSION_REF:-local}"
+fi
+cat > "$INSTALL_DIR/VERSION" <<EOF
+sha=$VERSION_SHA
+ref=$VERSION_REF
+installed_at=$VERSION_TIMESTAMP
+EOF
+
 chown -R "$RUN_AS_USER:$RUN_AS_USER" "$INSTALL_DIR"
 
 echo "==> Installing bluezero into a venv"

@@ -15,20 +15,23 @@ Milestone 1 (the BLE link) is implemented and verified on real hardware:
 Reading to SQLite and returns an Ack. See `docs/e2e-verification.md` for
 the verification run and the BlueZ configuration it depends on.
 
-The Pi is provisioned by `pi/install.sh` and runs `receive.py` unattended
+The Pi is provisioned by `pi/install-pi.sh` and runs `receive.py` unattended
 under systemd — verified from scratch on real hardware, including reboot
 and `bluetoothd`-restart survival, in `docs/provisioning-verification.md`.
-Copy `pi/` to the Pi and run it there as root; it is idempotent:
+As of #33 there is a repo-root curl bootstrap that fetches a versioned
+tarball (no `git` on the Pi) and delegates to it — run on the Pi itself,
+no scp needed:
 
 ```bash
-scp -r pi/ pi@<pi-ip>:~/zeropi-display-pi   # creds in infrastructure.md
-ssh pi@<pi-ip> 'cd ~/zeropi-display-pi && sudo ./install.sh'
+curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- pi
 ```
 
-That script owns the BlueZ configuration the link depends on — most
+`install.sh` runs unprivileged and re-execs `pi/install-pi.sh` under `sudo`
+itself. That script owns the BlueZ configuration the link depends on — most
 critically a `bluetoothd --noplugin=midi,sap,avrcp` systemd drop-in,
 without which `bluetoothd` segfaults on every incoming LE connection. Do
-not hand-apply Pi state; add it to `install.sh` instead.
+not hand-apply Pi state; add it to `pi/install-pi.sh` instead. The Desktop
+role (`desktop/install-desktop.sh`) is stubbed pending #34.
 
 There is still no build, lint, or test tooling. The Desktop entry point is
 run by hand:
