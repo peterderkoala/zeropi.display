@@ -58,6 +58,11 @@ BUSY reading 1 and then 0 means something is actively driving the line.
 
 ## Measurements
 
+These came from an ad-hoc probe script during the run. **`epd-selftest.py`
+now prints the same evidence itself** — BUSY before and after `init()`, and
+each refresh timed — so the table below can be re-derived by anyone with the
+HAT, rather than taken on trust from a script that no longer exists.
+
 ```
 busy pin reads 1 before init (0 = idle)
 init()                           0.05s
@@ -89,8 +94,13 @@ sleep()                          2.00s
 - **The `PWR_PIN` caveat stands.** `epdconfig.module_init()` drives BCM 18
   unconditionally. Whether this HAT wires it is still unknown; nothing here
   distinguishes "power gating worked" from "there is no power gate". The
-  vendor's don't-leave-it-powered rule therefore still rests on `epd.sleep()`
-  alone, which is why every code path ends in it.
+  vendor's don't-leave-it-powered rule therefore rests on `epd.sleep()` alone.
+
+  **A review after this run found that it did not.** `epd.init()` sat outside
+  the `try`, so a failure inside it — where the panel is already powered, and
+  where three `ReadBusy()` spins can be interrupted — would have skipped
+  `sleep()` entirely. Fixed in the follow-up commit; the measurements above
+  are unaffected, since that run took the happy path throughout.
 - **Nothing was read off the glass by a human.** The panel was left showing
   the self-test frame (hostname, UTC timestamp, a border and eight
   alternating blocks); confirming the border is unclipped and no block is

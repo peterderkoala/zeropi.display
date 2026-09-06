@@ -62,8 +62,10 @@ the one-liner/usage stat from local Claude Code session data (JSONL logs in
 `~/.claude/projects/*.jsonl`) rather than a separate paid API key.
 
 **Current phase**: prove out a Bluetooth (BLE) link between a desktop
-machine and the Pi — no e-ink rendering, no real data parsing, no
-case/UPS yet.
+machine and the Pi — no real data parsing, no case/UPS yet. **The e-ink
+panel driver is now set up and proven to draw** (#39), but nothing renders
+to it: `receive.py` does not import the driver, and no Payload reaches the
+glass. Driver, not rendering.
 
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`. Will own
@@ -75,8 +77,9 @@ Roles (see `CONTEXT.md` for the domain vocabulary):
   compute anything itself.
 
 Explicitly out of scope for the current prototype milestone: e-ink
-rendering, real weather/calendar/usage parsing, power/UPS/enclosure
-hardware, any cloud/API-key fallback.
+**rendering** (the driver beneath it is set up — see #39 — but drawing a
+Payload to the panel is not), real weather/calendar/usage parsing,
+power/UPS/enclosure hardware, any cloud/API-key fallback.
 
 ## Hardware / infrastructure notes
 

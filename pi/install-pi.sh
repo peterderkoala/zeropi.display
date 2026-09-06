@@ -103,9 +103,23 @@ echo "==> Enabling the SPI bus (the e-ink panel's transport)"
 # rather than failed on, since the BLE service this script's self-check
 # covers does not depend on SPI.
 if command -v raspi-config >/dev/null 2>&1; then
-    raspi-config nonint do_spi 0
-elif ! grep -qE '^\s*dtparam=spi=on' "$BOOT_CONFIG" 2>/dev/null; then
-    printf '\ndtparam=spi=on\n' >> "$BOOT_CONFIG"
+    # Explicitly tolerated: this runs under `set -e`, and a bare call would
+    # abort the whole script here -- before receive.py is even deployed --
+    # turning "SPI could not be enabled" into "the BLE receiver was never
+    # installed". The panel is the only casualty of a failure; say so and go on.
+    if ! raspi-config nonint do_spi 0; then
+        echo "    WARNING: raspi-config could not enable SPI. The panel will not" >&2
+        echo "    work until it is enabled by hand; the BLE service is unaffected." >&2
+    fi
+elif [[ -f "$BOOT_CONFIG" ]]; then
+    # The -f test is load-bearing: a bare `grep ... || append` would also fire
+    # when the file does not exist, creating /boot/firmware/config.txt on an
+    # image that actually reads /boot/config.txt -- an edit nothing would apply.
+    if ! grep -qE '^\s*dtparam=spi=on' "$BOOT_CONFIG"; then
+        printf '\ndtparam=spi=on\n' >> "$BOOT_CONFIG"
+    fi
+else
+    echo "    WARNING: no raspi-config and no $BOOT_CONFIG; cannot enable SPI." >&2
 fi
 if [[ -e "$SPI_DEV" ]]; then
     echo "    $SPI_DEV present"
@@ -201,14 +215,29 @@ fi
 # the power pin at module scope, so importing it is already touching the
 # hardware. Provisioning should not drive the panel; epd-selftest.py is the
 # thing that does, on purpose and by hand.
-if ! sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/python" \
-        -c 'import spidev, gpiozero, PIL' 2>/dev/null; then
-    echo "    FAIL: the e-ink stack (spidev/gpiozero/PIL) is not importable" >&2
-    echo "    from $VENV_DIR -- check that the venv has system site-packages" >&2
-    FAIL=1
-else
+# lgpio is imported explicitly, not left implicit in gpiozero: importing
+# gpiozero does not instantiate a pin factory, so without this the check
+# passes on a Pi where the driver cannot actually drive a pin.
+#
+# stderr is kept, not sent to /dev/null. Discarding it would throw away the
+# one line saying *which* module failed and why -- the same mistake #12 fixed
+# in push.py three commits ago (bdcedb2).
+if IMPORT_ERR="$(sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/python" \
+        -c 'import spidev, gpiozero, lgpio, PIL' 2>&1)"; then
     echo "    e-ink python stack importable"
+else
+    echo "    FAIL: the e-ink stack is not importable from $VENV_DIR" >&2
+    echo "    ${IMPORT_ERR:-(no error output)}" >&2
+    FAIL=1
 fi
+
+for artefact in "$INSTALL_DIR/waveshare_epd/epd2in13_V4.py" \
+                "$INSTALL_DIR/epd-selftest.py"; do
+    if [[ ! -f "$artefact" ]]; then
+        echo "    FAIL: $artefact was not deployed" >&2
+        FAIL=1
+    fi
+done
 
 # Verified against real hardware by ticket #11 and promoted from a warning
 # to a hard failure: an install that leaves no advertisement on the air is
@@ -254,8 +283,7 @@ if [[ "$REBOOT_REQUIRED" -eq 1 ]]; then
     echo
     echo "==> ACTION NEEDED: reboot to bring up SPI, then prove the panel:"
     echo "    sudo reboot"
-    echo "    $VENV_DIR/bin/python $INSTALL_DIR/epd-selftest.py"
 else
     echo "==> To prove the e-ink panel:"
-    echo "    $VENV_DIR/bin/python $INSTALL_DIR/epd-selftest.py"
 fi
+echo "    $VENV_DIR/bin/python $INSTALL_DIR/epd-selftest.py"
