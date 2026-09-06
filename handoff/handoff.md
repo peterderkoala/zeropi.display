@@ -74,21 +74,37 @@ not decisions to grill. Full ticket bodies and blocking edges live on the
 map itself — don't re-derive them here, read
 [the map](https://github.com/peterderkoala/zeropi.display/issues/41).
 
-Frontier at charting time — **four tickets open in parallel, no
-inter-dependencies**: [Build desktop/usage.py — the reader (#42)](https://github.com/peterderkoala/zeropi.display/issues/42),
-[Build desktop/gauge.py — the Gauge reader (#43)](https://github.com/peterderkoala/zeropi.display/issues/43),
-[Rewrite pi/receive.py — the Pi (#44)](https://github.com/peterderkoala/zeropi.display/issues/44),
-[Set up pytest and the synthetic fixture (#45)](https://github.com/peterderkoala/zeropi.display/issues/45).
-Chained behind them: [Rewrite desktop/push.py — the transport (#46)](https://github.com/peterderkoala/zeropi.display/issues/46)
-(blocked by #42, #43, #44) → [Build the resident systemd service (#47)](https://github.com/peterderkoala/zeropi.display/issues/47)
+**Update, same day: the four-ticket frontier is closed.** #42, #43, #44 and
+#45 were each run as a parallel worktree-isolated subagent and merged into
+`dev` sequentially (#45 first, since #42/#43/#44 all wanted its pytest
+harness for TDD despite the ticket's own "no inter-dependencies" framing —
+a real practical dependency the map didn't surface). All four landed clean,
+each closed its own ticket after a `/code-review` pass caught and fixed real
+bugs (see each ticket's closing comment for specifics — a shared Gauge/Historic
+dirty flag in #44, a `NOT NULL` crash on bad timestamps in #42, a corrupt-JSON
+crash in #43, a wrong fixture-README claim in #45). Full suite after all four
+merges: **118 passed, 0 skipped.** `desktop/usage.py`, `desktop/gauge.py` and
+the rewritten `pi/receive.py` all now exist and are independently unit-tested
+against the synthetic fixture — none of them touch BLE.
+
+**Unblocked: [Rewrite desktop/push.py — the transport (#46)](https://github.com/peterderkoala/zeropi.display/issues/46)**
+(was blocked by #42, #43, #44 — all closed). Chained behind it:
+[Build the resident systemd service (#47)](https://github.com/peterderkoala/zeropi.display/issues/47)
 (blocked by #46) → [Verify the pipeline end-to-end on real hardware (#48)](https://github.com/peterderkoala/zeropi.display/issues/48)
-(blocked by #47 and #45).
+(blocked by #47 and #45, both now satisfied). These three are chained, not
+parallelizable — #48 in particular wants the dev Pi, check the Environment
+notes below before touching it.
 
 ⚠ **If you're running #42/#43/#44/#45 as parallel sessions or subagents,
 give each its own worktree** — trap 12 in the spec (§10) records a prior
 collision from sharing one working tree across parallel agents. Also: #44
 (the Pi rewrite) and #48 (hardware verification) will want the dev Pi —
 check the Environment notes below before touching it, since it's shared.
+⚠ **Every one of #42/#43/#44's spawned worktrees came up on a stale base**
+(the repo's bare initial commit, not `dev`'s tip) rather than `dev` as
+requested — each agent had to `git reset --hard`/fast-forward onto `dev`
+itself before starting. Confirm a fresh worktree is actually on `dev` before
+handing it real work; don't assume the isolation tooling got the base right.
 
 **#13 is closed** (2026-09-06). All 20 child tickets resolved and the spec —
 `docs/spec-usage-pipeline.md` — is on `dev` (`d925bb0`, extended by `e93d80d`).
