@@ -17,6 +17,24 @@ versioned tarball and delegates to it. As of #34,
 `desktop/install-desktop.sh` is built too — Map #7's only remaining open
 ticket is #35 (hardware verification of both roles), now unblocked.
 
+**The e-ink panel draws on real hardware.** The Waveshare V4 driver is
+vendored at a pinned upstream commit in `pi/waveshare_epd/`,
+`pi/install-pi.sh` provisions it (SPI + `python3-{spidev,gpiozero,lgpio,pil}`
+from apt + deployment), and `pi/epd-selftest.py` is the by-hand bench check.
+Verified 2026-09-06 on the dev Pi: **full refresh 2.29 s** (ADR-0007 assumed
+~3 s), framebuffer exactly 4000 bytes, `epd-selftest.py` 6.7 s end to end.
+Write-up: `docs/eink-driver-verification.md`. This is the first work past the
+BLE-only scope line, and it stops deliberately short of rendering —
+`receive.py` does not import the driver.
+
+Read that doc's last section before building on this. **The driver is
+verified; the provisioning of the driver is not.** A parallel session was
+mid-teardown on the dev Pi, so the run went through a scratch directory with
+SPI enabled at runtime (`dtparam spi=on`, which does not survive a reboot)
+rather than through `install-pi.sh`. Its panel steps have never executed. The
+`PWR_PIN`-on-BCM-18 caveat in `pi/waveshare_epd/README.md` also still stands,
+and nobody has actually looked at the glass.
+
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
 - Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**

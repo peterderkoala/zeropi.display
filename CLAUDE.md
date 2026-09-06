@@ -33,6 +33,16 @@ without which `bluetoothd` segfaults on every incoming LE connection. Do
 not hand-apply Pi state; add it to `pi/install-pi.sh` instead. The Desktop
 role (`desktop/install-desktop.sh`) is stubbed pending #34.
 
+`pi/install-pi.sh` also provisions the **e-ink panel driver**: it enables SPI,
+installs the apt-side stack (`python3-spidev`, `python3-gpiozero`,
+`python3-lgpio`, `python3-pil`) and deploys the vendored Waveshare V4 driver.
+The driver is vendored at a pinned upstream commit in `pi/waveshare_epd/` —
+read that directory's `README.md` before touching it, in particular why the
+PyPI package is the wrong thing and why importing `epdconfig` claims GPIO as a
+side effect. `pi/epd-selftest.py` is the by-hand bench check that the panel
+actually draws. **Rendering is still not wired into the BLE path** — nothing
+in `receive.py` imports the driver.
+
 There is still no build, lint, or test tooling. The Desktop entry point is
 run by hand:
 
