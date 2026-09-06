@@ -65,19 +65,22 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
-Two maps are open. **#13 has reached its destination** — the spec is written
-and #30, the last child, is resolved. **#7's destination is also fully
-reached, and now so is its frontier** — #35 verified both roles through the
-documented one-liner on real hardware, and **#40 (2026-09-06) closed the one
-remaining gap**: `install-pi.sh`'s e-ink panel steps (SPI persistence, the
+**#13 has reached its destination** — the spec is written and #30, the last
+child, is resolved; closing it is the maintainer's call, and the next real
+move is an implementation map opened against the spec.
+
+**#7 is closed** (2026-09-06). Its destination — both ends of the link
+reproducible from scratch through one documented `curl ... | bash -s --
+<role>` command — was fully reached, and every child ticket resolved: #8-#11
+(the original Pi BLE provisioning), #33-#35 (the curl-delivery redraw), and
+#39-#40 (e-ink panel provisioning, added mid-map). **#40 (2026-09-06) closed
+the last gap**: `install-pi.sh`'s e-ink panel steps (SPI persistence, the
 four apt packages, deployment) had never actually executed, since #35's
 hardware run predated the branch merge that added them. Teardown +
 documented one-liner + reboot all passed with no manual steps, and the panel
 glass was finally looked at by a human (border and all eight alternating
 blocks clean). Write-up: `docs/eink-driver-verification.md`'s "Provisioning
-verification" section. **#7 has no open children left.** Closing either map
-is the maintainer's call; the next real move on #13 is an implementation map
-opened against the spec.
+verification" section.
 
 One loose end, deliberately left as fog rather than a ticket: **whether this
 ex-pwnagotchi HAT wires `PWR_PIN` on BCM 18** is still unconfirmed (open
@@ -830,11 +833,11 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
   The map is reached with every child closed; whether to close the map itself
   is the maintainer's call.
-- **`mattpocock-skills:wayfinder`** with map #7 — **nothing left to grab.**
-  #40 (hardware-verifying #39's e-ink panel steps) closed 2026-09-06; every
-  child of #7 is now closed. Whether to close the map itself is the
-  maintainer's call. One loose end is deliberately fog, not a ticket: whether
-  this HAT wires `PWR_PIN` on BCM 18 — see the map's Not-yet-specified.
+- **`mattpocock-skills:wayfinder`** with map #7 — **closed, 2026-09-06.**
+  Nothing to grab; the map itself no longer exists as an open effort. One
+  loose end is deliberately fog, not a ticket: whether this HAT wires
+  `PWR_PIN` on BCM 18 — logged in the closed map's Not-yet-specified for
+  whoever charts the e-ink-rendering map it belongs to.
 - **`mattpocock-skills:grilling`** has no open decisions left on #13 or #7 —
   all resolved. Reach for it on the implementation map when that is charted.
 - **`mattpocock-skills:domain-modeling`** is **done for now** — #19 rewrote
