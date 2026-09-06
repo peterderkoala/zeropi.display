@@ -43,13 +43,22 @@ side effect. `pi/epd-selftest.py` is the by-hand bench check that the panel
 actually draws. **Rendering is still not wired into the BLE path** — nothing
 in `receive.py` imports the driver.
 
-There is still no build, lint, or test tooling. The Desktop entry point is
-run by hand:
+There is still no build or lint tooling. The Desktop entry point is run by
+hand:
 
 ```bash
 # Desktop (needs bleak; venv is gitignored)
 uv venv .venv && uv pip install -r desktop/requirements.txt
 .venv/bin/python desktop/push.py
+```
+
+As of #45 there is a pytest harness (root `pytest.ini` sets
+`pythonpath = desktop`, so `import usage` / `import gauge` works without
+packaging):
+
+```bash
+uv pip install -r desktop/requirements-dev.txt
+.venv/bin/python -m pytest
 ```
 
 ## What this project is
