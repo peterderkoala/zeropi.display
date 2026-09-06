@@ -95,6 +95,46 @@ against the synthetic fixture — none of them touch BLE.
 parallelizable — #48 in particular wants the dev Pi, check the Environment
 notes below before touching it.
 
+**Update, same day: #46 is closed too.** `desktop/push.py` is rewritten per
+spec §7 against `usage.py`/`gauge.py` (kept the existing BLE mechanics —
+scan-by-service-UUID, one held connection, `_acquire_mtu`, no `finally:
+stop_notify` — §10 traps #2/#4 untouched). The BLE-calling code is a thin
+shell around a dependency-injected `send_one` callable, so the Batch loop,
+the Gauge push, wipe handling and CLI dispatch are unit-tested with a fake
+radio (30 new tests, 153 total). Two functions are the seam #47's resident
+service should import directly rather than subprocessing into the CLI:
+`run_batch_pass(store_path=None)` and `run_gauge_push(store_path=None)` —
+both return without ever touching BLE if there's nothing to send.
+
+⚠ **A `/code-review` pass caught a real spec violation before this landed**:
+the first draft only checked `wiped: true` on the Daily-batch Ack path, so a
+wipe signalled on a Gauge Ack (entirely plausible — a resident service's 30 s
+Gauge poll fires far more often than the 04:00 Batch) would have been
+silently dropped, reproducing exactly the "Pi sits permanently empty" bug
+§7.2 exists to prevent (see #36's hand-off facts below). Fixed: a wiped Gauge
+Ack now clears every `pushed_at` and runs one extra Batch pass in the same
+invocation, same as the Daily path. Review also caught `--resend-all
+--gauge-only` silently clearing marks without ever re-Batching them — now
+rejected by `parse_args`. **If you write another Ack-consuming code path,
+check `wiped` on it regardless of Payload kind — this is the second time the
+"of either kind" clause in §7.2 has almost been missed.**
+
+**Verified `--dry-run` against the maintainer's real logs (§11.4's
+acceptance check)**: correct Project Labels via R1 for both the main project
+and its worktree, all Payload sizes well under the 514-byte budget, and a
+real (non-null) Gauge state. Also exercised `--batch-only`/`--gauge-only`
+against the **actual dev Pi** — it answered the scan, connected, and
+negotiated the MTU fine (confirming the BLE mechanics carried over
+untouched), but rejected every Payload with `missing field(s): usage_tokens,
+oneliner` — **that Pi is still running the old milestone-1 `receive.py`, not
+the #44 rewrite on `dev`**, so it hasn't been re-provisioned yet. Not a
+`push.py` bug; flagging it here so #48 (hardware verification) or whoever
+next touches the dev Pi knows to re-run `install-pi.sh` (or otherwise deploy
+the rewritten `receive.py`) before expecting a real round trip. `push.py`'s
+own behavior was correct throughout: continue-past-failure, no row marked
+pushed, non-zero exit on a wholly-failed Batch, Gauge failure dropped
+silently with exit 0.
+
 ⚠ **If you're running #42/#43/#44/#45 as parallel sessions or subagents,
 give each its own worktree** — trap 12 in the spec (§10) records a prior
 collision from sharing one working tree across parallel agents. Also: #44
