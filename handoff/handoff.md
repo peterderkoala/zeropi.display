@@ -65,9 +65,9 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
-**#13 has reached its destination** — the spec is written and #30, the last
-child, is resolved; closing it is the maintainer's call, and the next real
-move is an implementation map opened against the spec.
+**#13 is closed** (2026-09-06). All 20 child tickets resolved and the spec —
+`docs/spec-usage-pipeline.md` — is on `dev` (`d925bb0`, extended by `e93d80d`).
+The next real move is an implementation map opened against the spec.
 
 **#7 is closed** (2026-09-06). Its destination — both ends of the link
 reproducible from scratch through one documented `curl ... | bash -s --
@@ -256,9 +256,9 @@ is the path); and the Desktop archive is never pruned either, as an ADR-0005
 corollary. Recorded as spec §8.7 and §4.5, plus a deletion lifecycle on
 `CONTEXT.md`'s **Reading**. No ADR — additive and easily reversed.
 
-**The map's destination is reached and nothing is open on it.** It is still
-left open rather than closed — that call is the maintainer's. Implementation is
-**its own map**, opened against the finished spec.
+**The map's destination is reached and nothing is open on it. Closed
+2026-09-06.** Implementation is **its own map**, opened against the finished
+spec.
 
 **[#31 (context-window research) is resolved and closed.**
 `docs/research/context-window-table.md` (branch `research/context-window-table`,
@@ -830,9 +830,9 @@ in `docs/research/`):
 - **The spec is done. The next real move is implementation** — a new map
   opened against `docs/spec-usage-pipeline.md`, per map #13's own Destination
   ("Implementation is not part of this map"). Read the spec, not this file.
-- **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
-  The map is reached with every child closed; whether to close the map itself
-  is the maintainer's call.
+- **`mattpocock-skills:wayfinder`** with map #13 — **closed, 2026-09-06.**
+  Nothing to grab; the map itself no longer exists as an open effort. Chart a
+  fresh map for implementation instead of reopening this one.
 - **`mattpocock-skills:wayfinder`** with map #7 — **closed, 2026-09-06.**
   Nothing to grab; the map itself no longer exists as an open effort. One
   loose end is deliberately fog, not a ticket: whether this HAT wires
