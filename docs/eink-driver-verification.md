@@ -88,9 +88,9 @@ sleep()                          2.00s
 
 ## What is still unproven
 
-- **`install-pi.sh`'s panel steps have not been run** — SPI persistence, the
-  apt block and deployment to `/opt/zeropi-display`. Only the driver they
-  deploy has been exercised.
+- ~~**`install-pi.sh`'s panel steps have not been run**~~ **Verified 2026-09-06
+  by [#40](https://github.com/peterderkoala/zeropi.display/issues/40) — see
+  below.**
 - **The `PWR_PIN` caveat stands.** `epdconfig.module_init()` drives BCM 18
   unconditionally. Whether this HAT wires it is still unknown; nothing here
   distinguishes "power gating worked" from "there is no power gate". The
@@ -100,10 +100,71 @@ sleep()                          2.00s
   the `try`, so a failure inside it — where the panel is already powered, and
   where three `ReadBusy()` spins can be interrupted — would have skipped
   `sleep()` entirely. Fixed in the follow-up commit; the measurements above
-  are unaffected, since that run took the happy path throughout.
-- **Nothing was read off the glass by a human.** The panel was left showing
-  the self-test frame (hostname, UTC timestamp, a border and eight
-  alternating blocks); confirming the border is unclipped and no block is
-  stuck is a look-at-it check that has not happened.
+  are unaffected, since that run took the happy path throughout. **Still
+  unconfirmed after #40** — the bench check (does BCM 18 actually drop) was
+  skipped there too; see below.
+- ~~**Nothing was read off the glass by a human.**~~ **Done in #40**: the
+  border and all eight alternating blocks were confirmed clean, nothing
+  clipped or stuck.
 - **No rendering is wired into the BLE path.** `receive.py` does not import
   the driver.
+
+## Provisioning verification (2026-09-06, #40)
+
+Where the run above deliberately bypassed `install-pi.sh` (a parallel session
+held the Pi), this closes that gap: the panel steps added to `install-pi.sh`
+by this same effort (#39) had **never executed** until now. Verified the way
+[#11](https://github.com/peterderkoala/zeropi.display/issues/11) and
+[#35](https://github.com/peterderkoala/zeropi.display/issues/35) verified the
+BLE path — tear down, then run the **documented one-liner**, not a script in
+a working copy.
+
+**Result: pass.** All four apt packages, SPI persistence, deployment, and the
+self-test from its installed location all worked with no manual steps beyond
+the documented `curl ... | bash -s -- pi` and a reboot.
+
+**Teardown**: `python3-spidev`, `python3-gpiozero`, `python3-lgpio` and
+`python3-pil` were removed first — three of the four had survived from #39's
+scratch-directory bench run and would otherwise have made "the apt block
+works" untested. SPI was already off (`/dev/spidev0.0` absent, `config.txt`
+unmodified) from the same prior state, so no separate reset was needed there.
+
+**Run**: `curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- pi`
+resolved `dev` to `4363498192c61f21552fada3304b9e0409883101` (the commit that
+merged the e-ink driver branch), installed all four packages fresh, reported
+SPI "not present yet -- reboot needed" as designed, deployed
+`waveshare_epd/` and `epd-selftest.py` alongside `receive.py`, and passed its
+own self-check (e-ink stack importable, LE advertisement active) with no
+FAIL lines.
+
+**SPI persistence**: `sudo reboot`, reconnected, `/dev/spidev0.0` was present
+with **no manual step** — `raspi-config nonint do_spi 0`'s `config.txt`
+change survived the reboot as designed.
+
+**Self-test from the installed location** (not the disposable `epd-bench`
+copy), `/opt/zeropi-display/venv/bin/python /opt/zeropi-display/epd-selftest.py`:
+
+```
+panel is 122x250 portrait
+busy reads 1 before init (a real panel asserts 1)
+init()             0.06s
+busy reads 0 after init
+Clear(white)       2.29s
+framebuffer is 4000 bytes (expect 4000)
+display(frame)     2.29s
+drew the test frame in 6.7s; panel asleep
+```
+
+Matches the first run's numbers almost exactly (0.06s vs. 0.05s `init()`,
+identical 2.29s refresh and 4000-byte framebuffer, 6.7s vs. 6.7s
+end-to-end) — the same discriminating evidence (BUSY 1→0, multi-second
+refresh, not a near-zero one) rules out a false pass from an absent panel.
+
+**The glass, finally looked at by a human**: border and all eight
+alternating blocks displayed clean, nothing clipped at the edges or stuck
+from a prior frame.
+
+**Still open**: `PWR_PIN` (BCM 18) wiring was not checked during this run
+either — no multimeter/LED handy at the time. Whether this ex-pwnagotchi HAT
+actually wires it remains unknown since #23; `epd.sleep()` is still the only
+thing standing between a happy-path run and leaving the panel powered.
