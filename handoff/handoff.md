@@ -13,8 +13,9 @@ That system config is **no longer hand-applied**: `pi/install-pi.sh` owns it
 provisioning path from a torn-down Pi (see
 `docs/provisioning-verification.md`). As of #33, it's also no longer reached
 by hand-run `scp` — a repo-root `install.sh` curl bootstrap fetches a
-versioned tarball and delegates to it. Map #7 has two tickets left, #34 the
-only takeable one — see its section below.
+versioned tarball and delegates to it. As of #34,
+`desktop/install-desktop.sh` is built too — Map #7's only remaining open
+ticket is #35 (hardware verification of both roles), now unblocked.
 
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
@@ -331,17 +332,34 @@ sender," both on the avoid-list (`_Avoid_: Server, receiver` /
 `_Avoid_: Client, sender`). Caught by review, not by writing it. Check new
 prose against the avoid-lists before it ships, not after.
 
-Frontier — open, unblocked, unclaimed:
+**[#34 (desktop/install-desktop.sh) is resolved and closed** —
+2026-09-06, `dev` (`6b86e94`). Two modes, auto-detected: a real clone
+(`.git` present — checked with `-e`, not `-d`, so a **git-worktree**
+checkout counts too, since worktrees make `.git` a file not a directory)
+gets `.venv` set up in place; anything else, including every curl-bootstrap
+run (a GitHub archive tarball never carries `.git`), installs standalone to
+`~/.local/share/zeropi-display/` with a `zeropi-push` shim on `PATH`.
+`--in-place` / `--prefix <dir>` override the detection. Linux-only refusal
+up front (#32's BlueZ-specific bleak API). **Idempotent, and deliberately
+non-destructive of an existing venv**: one already present but missing pip
+(e.g. one made by `uv venv`, this project's own documented dev setup) gets
+pip added via `ensurepip` rather than `rm -rf`'d, and `python -m pip` is
+used throughout since ensurepip's entry-point names aren't guaranteed
+(observed: `pip3`/`pip3.12` but no bare `pip`). VERSION is stamped inside
+the venv, not the install root — for in-place that root is the
+maintainer's tracked checkout, where a stray file would be clutter. The
+end-of-install reachability check reuses `push.py`'s own
+`matches_service()`/`SERVICE_UUID` (no duplicated UUID to drift) and
+**warns rather than fails** if no Pi answers, since the two roles are
+provisioned independently. Verified live: a push through the standalone
+shim round-tripped against the dev Pi. README documents the desktop
+one-liner and the override flag. **Review caught three real bugs before
+landing**: the worktree-is-a-file case, the destructive `rm -rf` on a
+pip-less venv, and a broken doubled `--` in the README's override example —
+all fixed. Unblocked #35.
 
-1. [Build desktop/install-desktop.sh, in-place and standalone (#34)](https://github.com/peterderkoala/zeropi.display/issues/34)
-   — the only takeable one now. Build against the contract documented in
-   `desktop/install-desktop.sh`'s header (written by #33): argv is the
-   staging root, env is `ZEROPI_REF`/`ZEROPI_SHA`/`ZEROPI_TIMESTAMP`, always
-   unprivileged, auto-detects in-place-clone vs. standalone per map #7's
-   Delivery shape section.
-
-Blocked: [#35 hardware verification of both roles](https://github.com/peterderkoala/zeropi.display/issues/35)
-(← #34).
+Frontier — **empty**. #35 is the only ticket left on the map, and it needs
+the maintainer's hardware to run.
 
 Also spun out, **not** a map child:
 [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
@@ -710,10 +728,10 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
   The map is reached with every child closed; whether to close the map itself
   is the maintainer's call.
-- **`mattpocock-skills:wayfinder`** with map #7 — #34 is the only takeable
-  ticket and it is execution, not a decision; the deciding was done by the
-  redraw. Build against the contract `desktop/install-desktop.sh`'s header
-  already documents.
+- **`mattpocock-skills:wayfinder`** with map #7 — only #35 is left, and it
+  needs the maintainer's own hardware (a second machine, or the same dev
+  box, to actually run `install-desktop.sh` and `install-pi.sh` on real
+  gear); not a session-only task.
 - **`mattpocock-skills:grilling`** has no open decisions left on #13 — #25,
   #26 and #30 are all resolved. Reach for it on map #7 or on the
   implementation map when that is charted.
