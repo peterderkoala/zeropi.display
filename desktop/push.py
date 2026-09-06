@@ -68,12 +68,15 @@ async def push_payload(payload: dict, device: BLEDevice) -> dict:
         await client._backend._acquire_mtu()
         await client.start_notify(NOTIFY_CHARACTERISTIC_UUID, handle_ack)
         print(f"Connected to {device.address} (negotiated MTU: {client.mtu_size})")
-        try:
-            body = json.dumps(payload).encode("utf-8")
-            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, body, response=True)
-            await asyncio.wait_for(ack_received.wait(), timeout=ACK_TIMEOUT_SECONDS)
-        finally:
-            await client.stop_notify(NOTIFY_CHARACTERISTIC_UUID)
+        # No explicit stop_notify: exiting this context manager disconnects,
+        # which implicitly stops notifications. An explicit stop_notify()
+        # here would re-resolve the characteristic against client.services,
+        # which raises a misleading BleakError ("Service Discovery has not
+        # been performed yet") when the real failure happened before
+        # discovery completed — masking the actual exception (#12).
+        body = json.dumps(payload).encode("utf-8")
+        await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, body, response=True)
+        await asyncio.wait_for(ack_received.wait(), timeout=ACK_TIMEOUT_SECONDS)
 
     return ack
 
