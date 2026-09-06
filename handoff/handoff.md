@@ -8,9 +8,13 @@ an Ack — verified 18/18 on the happy path, plus all four malformed-Payload
 cases and reconnect-after-restart. Full write-up:
 `docs/e2e-verification.md`.
 
-That system config is **no longer hand-applied**: `pi/install.sh` owns it,
-and #11 verified the whole provisioning path from a torn-down Pi (see
-`docs/provisioning-verification.md`). Map #7 has no open tickets left.
+That system config is **no longer hand-applied**: `pi/install-pi.sh` owns it
+(renamed from `pi/install.sh` by #33), and #11 verified the whole
+provisioning path from a torn-down Pi (see
+`docs/provisioning-verification.md`). As of #33, it's also no longer reached
+by hand-run `scp` — a repo-root `install.sh` curl bootstrap fetches a
+versioned tarball and delegates to it. Map #7 has two tickets left, #34 the
+only takeable one — see its section below.
 
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
@@ -33,7 +37,7 @@ and #11 verified the whole provisioning path from a torn-down Pi (see
 Two maps are open. **#13 has reached its destination and has no open tickets
 left** — the spec is written and #30, the last child, is resolved. Closing the
 map is the maintainer's call; the next real move is an implementation map
-opened against the spec. #7 has three tickets, #33 the only takeable one.
+opened against the spec. #7 has two tickets left, #34 the only takeable one.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
@@ -296,14 +300,48 @@ live in the map's **Delivery shape** section. The load-bearing ones:
   and says which mode it picked.
 - **Points at `dev`** — no `dev` → `main` PR yet, the maintainer's call.
 
+**[#33 (the curl bootstrap) is resolved and closed** — 2026-09-06. Repo-root
+`install.sh` resolves `ZEROPI_REF` (default `dev`) to a commit sha via the
+GitHub API, fetches/unpacks the sha tarball to a `/tmp` staging dir, and
+delegates to `pi/install-pi.sh` (re-exec'd under `sudo`) or
+`desktop/install-desktop.sh`. `pi/install.sh` renamed to `pi/install-pi.sh`
+— needed only the rename plus VERSION-stamping (`sha`/`ref`/`installed_at`
+at `/opt/zeropi-display/VERSION`); `SCRIPT_DIR` already resolved correctly
+under the bootstrap via `BASH_SOURCE`, so **don't re-add a staging-root argv
+override** — one was tried, flagged by review as unneeded complexity that
+silently changed the script's argument contract, and reverted.
+`desktop/install-desktop.sh` is a stub (`exit 1`, points at #34) whose
+header comment fixes the contract #34 builds against: argv[1] is the
+staging root, env carries `ZEROPI_REF`/`ZEROPI_SHA`/`ZEROPI_TIMESTAMP`,
+always unprivileged. `data.db` untouched by construction — the deploy step
+copies only the files it owns, never syncs a directory wholesale. Commits
+`b6eaa2e`, `17c3182` on `dev`; full detail in the issue's resolution
+comment.
+
+⚠ **`sudo`'s password prompt breaks under the documented one-liner run
+non-interactively** — `curl -fsSL ... | bash -s -- pi` leaves `sudo` with
+the exhausted curl pipe as stdin and no controlling terminal, which fails
+confusingly (not a hang) without `ssh -t`. `install.sh` now checks for
+`/dev/tty` (or already-passwordless sudo) up front and fails with a clear
+message and the `-t` fix instead. Relevant if #34 or #35 touch invocation.
+
+⚠ **CONTEXT.md's avoid-list bites documentation too, not just code** — this
+session's README draft called Pi "the BLE receiver" and Desktop "the BLE
+sender," both on the avoid-list (`_Avoid_: Server, receiver` /
+`_Avoid_: Client, sender`). Caught by review, not by writing it. Check new
+prose against the avoid-lists before it ships, not after.
+
 Frontier — open, unblocked, unclaimed:
 
-1. [Build the curl bootstrap (install.sh) and move the Pi role behind it (#33)](https://github.com/peterderkoala/zeropi.display/issues/33)
-   — the only takeable one; #34 and #35 both wait on it.
+1. [Build desktop/install-desktop.sh, in-place and standalone (#34)](https://github.com/peterderkoala/zeropi.display/issues/34)
+   — the only takeable one now. Build against the contract documented in
+   `desktop/install-desktop.sh`'s header (written by #33): argv is the
+   staging root, env is `ZEROPI_REF`/`ZEROPI_SHA`/`ZEROPI_TIMESTAMP`, always
+   unprivileged, auto-detects in-place-clone vs. standalone per map #7's
+   Delivery shape section.
 
-Blocked: [#34 the Desktop installer](https://github.com/peterderkoala/zeropi.display/issues/34)
-(← #33), [#35 hardware verification of both roles](https://github.com/peterderkoala/zeropi.display/issues/35)
-(← #33, #34).
+Blocked: [#35 hardware verification of both roles](https://github.com/peterderkoala/zeropi.display/issues/35)
+(← #34).
 
 Also spun out, **not** a map child:
 [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
@@ -672,9 +710,10 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
   The map is reached with every child closed; whether to close the map itself
   is the maintainer's call.
-- **`mattpocock-skills:wayfinder`** with map #7 — #33 is the only takeable
+- **`mattpocock-skills:wayfinder`** with map #7 — #34 is the only takeable
   ticket and it is execution, not a decision; the deciding was done by the
-  redraw.
+  redraw. Build against the contract `desktop/install-desktop.sh`'s header
+  already documents.
 - **`mattpocock-skills:grilling`** has no open decisions left on #13 — #25,
   #26 and #30 are all resolved. Reach for it on map #7 or on the
   implementation map when that is charted.

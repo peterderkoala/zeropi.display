@@ -90,6 +90,10 @@ Default vocabulary — the five canonical roles, label strings equal to their na
 
 Single-context layout (root `CONTEXT.md` + `docs/adr/`, created lazily as decisions are made). See `docs/agents/domain.md`.
 
+### Handoff document
+
+`handoff/handoff.md`, tracked in git, is the continuity document between sessions — not a temp file, and not what a generic handoff skill's own default (write to the OS temp directory) should produce here. Update it in place when a ticket resolves or a recorded fact goes stale; see `docs/agents/handoff.md`.
+
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
