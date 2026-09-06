@@ -1,0 +1,10 @@
+{
+  "sessionId": "sess-gaugeA",
+  "cwd": "/home/tester/code/gauge-fixture",
+  "pid": 40002,
+  "kind": "interactive",
+  "status": "busy",
+  "startedAt": "2026-09-05T07:30:00.000Z",
+  "updatedAt": "2026-09-05T08:55:00.000Z",
+  "statusUpdatedAt": "2026-09-05T08:55:00.000Z"
+}
