@@ -135,6 +135,46 @@ own behavior was correct throughout: continue-past-failure, no row marked
 pushed, non-zero exit on a wholly-failed Batch, Gauge failure dropped
 silently with exit 0.
 
+**Update, same day: #47 is closed too.** `desktop/service.py` is the
+resident `systemd --user` loop from spec §7.5, built directly against #46's
+seam (`push.run_batch_pass`/`push.run_gauge_push` — no subprocessing). Two
+pure, clock-injected classes carry the decision logic: `GaugeGate` (the
+300s-throttled, coalescing Gauge-push trigger off `DisplayedGaugeState` —
+`five_hour`/`seven_day` `used_percentage` value-or-null-ness plus
+`resets_at`; the context percentage is deliberately excluded per §13
+judgment call #5) and `BatchScheduler` (04:00-local plus a >24h-stale
+startup catch-up). `run_forever` itself takes injectable clocks/IO, so the
+wired loop — not just the two pure classes — is driven directly in tests
+with no real sleeping. Ships `desktop/zeropi-push.service` (unit file only,
+per the ticket; #34 still owns installing it). 30 new tests, **181 total.**
+
+⚠ **`/code-review` caught a real wiring bug**: `batch_in_progress` was reset
+in a `finally` immediately after the Batch's own `await`, before
+`gate.observe()` ran — so "the Gauge waits for an in-flight Batch" never
+actually held within one tick, and a Gauge push could open a second BLE
+connection back-to-back with the Batch's. Fixed by resetting the flag only
+at the top of each tick (so it survives through that tick's Gauge check and
+only clears for the *next* one); added a regression test verified to fail
+against the reverted buggy code.
+
+⚠ **Flagged, not fixed (out of #47's scope)**: `install-desktop.sh`'s
+standalone mode (the common non-maintainer-Desktop path) currently deploys
+only `push.py` into `~/.local/share/zeropi-display/` — not `gauge.py`,
+`usage.py`, or now `service.py`. The shipped unit file's `ExecStart`
+targets that standalone layout by convention, but it won't actually run
+there until this is fixed. Whoever next touches #34 or provisions a
+standalone Desktop for real should know this.
+
+**For #48**: to run this loop today with no installer support, from a repo
+clone with `.venv` set up: `.venv/bin/python desktop/service.py`
+(`--store PATH` to override the store). To exercise the actual systemd
+unit, copy `desktop/zeropi-push.service` to `~/.config/systemd/user/`,
+rewrite `ExecStart` to the in-place layout (`<repo>/.venv/bin/python3
+<repo>/desktop/service.py`), then the usual `daemon-reload` / `enable --now`
+/ `journalctl -f` dance. The loop's first tick always attempts a startup
+Batch catch-up, so a Batch pass (and a BLE connection attempt) should show
+up in the log immediately.
+
 ⚠ **If you're running #42/#43/#44/#45 as parallel sessions or subagents,
 give each its own worktree** — trap 12 in the spec (§10) records a prior
 collision from sharing one working tree across parallel agents. Also: #44
