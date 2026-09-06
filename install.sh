@@ -103,7 +103,12 @@ case "$ROLE" in
             # with no controlling terminal (a plain `ssh host 'cmd'`, no -t),
             # so that test is true and `< /dev/tty` then fails to open with
             # "No such device or address". Test openability instead.
-            tty_usable() { exec 3</dev/tty 2>/dev/null && exec 3<&-; }
+            # Run the probe in a subshell: an unqualified `exec` applies its
+            # redirections to the *current* shell, so testing this inline
+            # would leave fd 3 (or worse, a stray stderr redirect if a stderr
+            # clause were added carelessly) dangling for the rest of the
+            # script on success. A subshell's fd table dies with it.
+            tty_usable() { ( exec 3</dev/tty ) 2>/dev/null; }
             if ! tty_usable && ! sudo -n true 2>/dev/null; then
                 echo "FAIL: this needs sudo and there's no terminal to prompt on." >&2
                 echo "Over ssh, add -t: ssh -t <host> 'curl ... | bash -s -- pi'" >&2
