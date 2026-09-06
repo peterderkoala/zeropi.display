@@ -451,6 +451,34 @@ def test_gauge_draw_does_not_clear_pending_historic_redraw():
     assert gate.historic_pending is True
 
 
+def test_periodic_tick_forces_historic_fallback_on_gauge_expiry(monkeypatch):
+    # Spec §9.2 / ADR-0010: an expired Gauge must fall back to the Historic
+    # View, even with no new Payload ever arriving to trigger it. Regression
+    # test for a code-review finding: without an expiry-transition check, a
+    # Desktop that simply stops pushing left the stale Gauge frame on the
+    # panel forever, since neither historic_pending nor the idle keepalive
+    # would ever become true on their own.
+    fake_now = [0.0]
+    monkeypatch.setattr(receive.time, "monotonic", lambda: fake_now[0])
+
+    rendered = []
+    monkeypatch.setattr(receive, "render", lambda view: rendered.append(view))
+
+    receive.ReceiveState.gauge = receive.GaugeState()
+    receive.ReceiveState.redraw_gate = receive.RedrawGate()
+    receive.ReceiveState._gauge_was_shown = False
+
+    receive.ReceiveState.gauge.update(gauge_payload(snapshot_age_s=0))
+    receive.ReceiveState.periodic_tick()  # draws the live Gauge frame
+    assert rendered[-1] == receive.ReceiveState.gauge.view()
+
+    # Advance well past the 300s Gauge expiry, but nothing else happens —
+    # no new Payload, no Reading.
+    fake_now[0] = 400.0
+    receive.ReceiveState.periodic_tick()
+    assert rendered[-1] == {"historic": True}  # forced fallback, not silence
+
+
 def test_on_write_daily_coalesced_reports_drawn_false(db_path, monkeypatch):
     monkeypatch.setattr(receive, "DB_PATH", db_path)
     receive.init_db(db_path)

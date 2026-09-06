@@ -473,6 +473,11 @@ class ReceiveState:
     gauge = GaugeState()
     redraw_gate = RedrawGate()
     db_path = DB_PATH
+    # Tracks whether the Gauge was live-and-unexpired as of the last tick,
+    # so an expiry transition (with no new Payload arriving) can force a
+    # fallback redraw to the Historic View (spec §9.2, ADR-0010) instead of
+    # leaving a stale Gauge frame on the panel indefinitely.
+    _gauge_was_shown = False
 
     @classmethod
     def on_connect(cls, ble_device) -> None:
@@ -510,11 +515,21 @@ class ReceiveState:
         countdown moves every minute even with no usage change, and the
         24h idle keep-alive rides the same check. Returns True to keep the
         bluezero timer repeating.
+
+        Also the only place an expiry transition is ever observed with no
+        new Payload arriving: if the Gauge was showing last tick and has
+        now expired, force a Historic fallback redraw (spec §9.2,
+        ADR-0010) — otherwise a Desktop that simply stops pushing would
+        leave a stale Gauge frame on the panel forever.
         """
-        if cls.gauge.is_live() and not cls.gauge.is_expired():
+        gauge_showing = cls.gauge.is_live() and not cls.gauge.is_expired()
+        if gauge_showing:
             cls.redraw_gate.try_draw_gauge(cls.gauge.view())
         else:
+            if cls._gauge_was_shown:
+                cls.redraw_gate.mark_historic_pending()
             cls.redraw_gate.try_draw_historic_if_due({"historic": True})
+        cls._gauge_was_shown = gauge_showing
         return True
 
     @classmethod
@@ -534,6 +549,14 @@ class ReceiveState:
             if kind == "daily":
                 upsert_reading(conn, payload)
                 conn.commit()
+                # batch_size/batch_index are consumed for logging only
+                # (spec §6.1) — this is what makes an incomplete Batch
+                # recognisable on the Pi without an extra round trip.
+                print(
+                    f"Reading upserted: {payload['date']} {payload['project']} "
+                    f"{payload['model']} (batch {payload['batch_index'] + 1}/"
+                    f"{payload['batch_size']})"
+                )
                 cls.redraw_gate.mark_historic_pending()
                 drawn = False
                 live_gauge_showing = cls.gauge.is_live() and not cls.gauge.is_expired()
