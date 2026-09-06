@@ -64,7 +64,18 @@ and nobody has actually looked at the glass.
 Two maps are open. **#13 has reached its destination and has no open tickets
 left** — the spec is written and #30, the last child, is resolved. Closing the
 map is the maintainer's call; the next real move is an implementation map
-opened against the spec. #7 has two tickets left, #34 the only takeable one.
+opened against the spec. **#7 is down to one open ticket, #35** — #34 is
+done, and #39 (the e-ink driver) was added to #7 as a child on 2026-09-06
+and closed the same day.
+
+That last addition moved one of #7's scope lines, so read it before assuming
+the old boundary: **e-ink *driver provisioning* is now in scope for #7**
+(`install-pi.sh` owns SPI and the panel's apt stack, on the same "no
+hand-applied system state" logic as the rest of the map), while **e-ink
+*rendering* is still out** and wants its own map when it starts. The #8
+decision's "no e-ink HAT provisioning yet" clause is struck through in the
+map body rather than deleted. #35's surface grew with it — the panel steps
+have never executed, so they land there.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
