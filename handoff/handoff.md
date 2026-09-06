@@ -65,9 +65,34 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
+**#41 is the live map** (charted 2026-09-06), opened against #13's finished
+spec. Destination: `docs/spec-usage-pipeline.md` implemented, tested, and
+verified end-to-end on real hardware. **Execution-mode** — its Notes
+override "plan, don't do" since the spec's own gap check (§13) already
+closed every decision; the seven child tickets are build-and-verify slices,
+not decisions to grill. Full ticket bodies and blocking edges live on the
+map itself — don't re-derive them here, read
+[the map](https://github.com/peterderkoala/zeropi.display/issues/41).
+
+Frontier at charting time — **four tickets open in parallel, no
+inter-dependencies**: [Build desktop/usage.py — the reader (#42)](https://github.com/peterderkoala/zeropi.display/issues/42),
+[Build desktop/gauge.py — the Gauge reader (#43)](https://github.com/peterderkoala/zeropi.display/issues/43),
+[Rewrite pi/receive.py — the Pi (#44)](https://github.com/peterderkoala/zeropi.display/issues/44),
+[Set up pytest and the synthetic fixture (#45)](https://github.com/peterderkoala/zeropi.display/issues/45).
+Chained behind them: [Rewrite desktop/push.py — the transport (#46)](https://github.com/peterderkoala/zeropi.display/issues/46)
+(blocked by #42, #43, #44) → [Build the resident systemd service (#47)](https://github.com/peterderkoala/zeropi.display/issues/47)
+(blocked by #46) → [Verify the pipeline end-to-end on real hardware (#48)](https://github.com/peterderkoala/zeropi.display/issues/48)
+(blocked by #47 and #45).
+
+⚠ **If you're running #42/#43/#44/#45 as parallel sessions or subagents,
+give each its own worktree** — trap 12 in the spec (§10) records a prior
+collision from sharing one working tree across parallel agents. Also: #44
+(the Pi rewrite) and #48 (hardware verification) will want the dev Pi —
+check the Environment notes below before touching it, since it's shared.
+
 **#13 is closed** (2026-09-06). All 20 child tickets resolved and the spec —
 `docs/spec-usage-pipeline.md` — is on `dev` (`d925bb0`, extended by `e93d80d`).
-The next real move is an implementation map opened against the spec.
+#41 is the implementation map opened against it.
 
 **#7 is closed** (2026-09-06). Its destination — both ends of the link
 reproducible from scratch through one documented `curl ... | bash -s --
@@ -827,12 +852,17 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **The spec is done. The next real move is implementation** — a new map
-  opened against `docs/spec-usage-pipeline.md`, per map #13's own Destination
-  ("Implementation is not part of this map"). Read the spec, not this file.
+- **`mattpocock-skills:wayfinder`** with map #41 — **the live map, four
+  tickets takeable in parallel right now** (#42, #43, #44, #45; see Maps
+  above). Claim one (`gh issue edit <n> --add-assignee @me`), read the spec
+  section it points at, build it.
+- **`mattpocock-skills:tdd`** — the map's Notes recommend it for each unit,
+  since the spec (§11) is written test-first-friendly: a synthetic fixture
+  with 14 named cases and explicit per-unit assertions (§11.3).
+- Read `docs/spec-usage-pipeline.md` before touching any of #42/#43/#44/#45 —
+  it is the binding source, not this file, not map #13's closed decisions.
 - **`mattpocock-skills:wayfinder`** with map #13 — **closed, 2026-09-06.**
-  Nothing to grab; the map itself no longer exists as an open effort. Chart a
-  fresh map for implementation instead of reopening this one.
+  Nothing to grab; superseded by #41.
 - **`mattpocock-skills:wayfinder`** with map #7 — **closed, 2026-09-06.**
   Nothing to grab; the map itself no longer exists as an open effort. One
   loose end is deliberately fog, not a ticket: whether this HAT wires
