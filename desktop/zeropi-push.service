@@ -1,0 +1,52 @@
+# desktop/zeropi-push.service -- the resident systemd --user service that
+# owns cadence for the Desktop role (spec §7.5, ticket #47): a 30s snapshot
+# poll, throttled/coalesced Gauge pushes, and a 04:00-local Batch (plus a
+# startup catch-up if the last one is >24h stale). The decision logic lives
+# in desktop/service.py; this unit just keeps that loop running.
+#
+# MUST run as a systemd --user service, never system-level as a different
+# user: the rate-limit snapshot it polls is 0600 under ~/.local/state,
+# readable only by the owning user.
+#
+# This ticket ships this file only -- it does not install it.
+# #34 (desktop/install-desktop.sh) owns getting a working file into
+# ~/.config/systemd/user/ and is expected to rewrite ExecStart/WorkingDirectory
+# below for whichever install layout it detected:
+#
+#   - standalone (the common case: a non-maintainer Desktop provisioned via
+#     the curl bootstrap) installs push.py to ~/.local/share/zeropi-display/
+#     with its own venv at .../venv -- ExecStart below assumes that layout,
+#     since it is the one existing generic convention in the repo. Note that
+#     as of #47, install-desktop.sh's standalone mode only deploys push.py
+#     (not gauge.py/usage.py/service.py) into that directory -- getting this
+#     unit actually running standalone needs that fixed first (flagged in
+#     #47's closing report, not fixed here: out of this ticket's scope).
+#   - in-place (the maintainer's own git clone) instead runs everything out
+#     of the repo's own .venv, the same way push.py itself is already run by
+#     hand ("$VENV_DIR/bin/python $PUSH_PY", see install-desktop.sh's closing
+#     message) -- point ExecStart at <repo>/.venv/bin/python3
+#     <repo>/desktop/service.py instead.
+#
+# Manual install/test, in the meantime (see #47's closing report for the
+# in-place invocation):
+#   mkdir -p ~/.config/systemd/user
+#   cp desktop/zeropi-push.service ~/.config/systemd/user/
+#   # edit ExecStart to match your layout, per the note above
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now zeropi-push.service
+#   journalctl --user -u zeropi-push.service -f
+
+[Unit]
+Description=zeropi.display Desktop push service (Gauge poll + Batch loop)
+Documentation=https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-usage-pipeline.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/zeropi-display/venv/bin/python3 %h/.local/share/zeropi-display/service.py
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
