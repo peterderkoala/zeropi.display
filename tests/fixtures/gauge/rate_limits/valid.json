@@ -1,0 +1,5 @@
+{
+  "updated_at": "2026-09-05T08:59:38.000Z",
+  "five_hour": { "used_percentage": 26, "resets_at": "2026-09-05T11:40:00.000Z" },
+  "seven_day": { "used_percentage": 18, "resets_at": "2026-09-11T13:00:00.000Z" }
+}
