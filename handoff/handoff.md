@@ -14,8 +14,12 @@ provisioning path from a torn-down Pi (see
 `docs/provisioning-verification.md`). As of #33, it's also no longer reached
 by hand-run `scp` — a repo-root `install.sh` curl bootstrap fetches a
 versioned tarball and delegates to it. As of #34,
-`desktop/install-desktop.sh` is built too — Map #7's only remaining open
-ticket is #35 (hardware verification of both roles), now unblocked.
+`desktop/install-desktop.sh` is built too, and **as of #35, both roles are
+hardware-verified through the documented one-liner** — see
+`docs/curl-delivery-verification.md`. #39's e-ink panel provisioning has
+since been **merged into `dev`**, so `install-pi.sh` now does more than #35
+exercised: that verification ran before the merge, and **the panel steps
+still need their own hardware pass** (#40).
 
 **The e-ink panel draws on real hardware.** The Waveshare V4 driver is
 vendored at a pinned upstream commit in `pi/waveshare_epd/`,
@@ -61,21 +65,27 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
-Two maps are open. **#13 has reached its destination and has no open tickets
-left** — the spec is written and #30, the last child, is resolved. Closing the
-map is the maintainer's call; the next real move is an implementation map
-opened against the spec. **#7 is down to one open ticket, #35** — #34 is
-done, and #39 (the e-ink driver) was added to #7 as a child on 2026-09-06
-and closed the same day.
+Two maps are open. **#13 has reached its destination** — the spec is written
+and #30, the last child, is resolved. **#7's original destination is also
+fully reached** — #35 verified both roles through the documented one-liner on
+real hardware. Closing either map is the maintainer's call; the next real
+move on #13 is an implementation map opened against the spec.
 
-That last addition moved one of #7's scope lines, so read it before assuming
-the old boundary: **e-ink *driver provisioning* is now in scope for #7**
+**#7's frontier is not empty, though — one ticket, #40.** #39 (the e-ink
+driver) was added to #7 as a child on 2026-09-06, closed the same day, and is
+now merged to `dev`. But **its panel provisioning steps have still never
+executed.** #35's hardware run happened *before* that merge and verified a
+`dev` that did not contain them, so SPI persistence, the four apt packages
+and the driver deployment are all unverified — #35 passing says nothing about
+them. #40 exists to close that, and is the only takeable ticket on either map.
+
+#39 also moved one of #7's scope lines, so read it before assuming the old
+boundary: **e-ink *driver provisioning* is now in scope for #7**
 (`install-pi.sh` owns SPI and the panel's apt stack, on the same "no
 hand-applied system state" logic as the rest of the map), while **e-ink
 *rendering* is still out** and wants its own map when it starts. The #8
 decision's "no e-ink HAT provisioning yet" clause is struck through in the
-map body rather than deleted. #35's surface grew with it — the panel steps
-have never executed, so they land there.
+map body rather than deleted.
 
 ### Current: [Real Claude Code usage read, pushed, and stored in SQLite (#13)](https://github.com/peterderkoala/zeropi.display/issues/13)
 
@@ -395,8 +405,37 @@ landing**: the worktree-is-a-file case, the destructive `rm -rf` on a
 pip-less venv, and a broken doubled `--` in the README's override example —
 all fixed. Unblocked #35.
 
-Frontier — **empty**. #35 is the only ticket left on the map, and it needs
-the maintainer's hardware to run.
+**[#35 (hardware verification of both roles) is resolved and closed** —
+2026-09-06. Write-up: `docs/curl-delivery-verification.md`. Both roles
+install, survive reboot and a `bluetoothd` restart unattended, and
+round-trip reliably (12/12 this session, 18 total rows) through the single
+documented one-liner. **Found and fixed two real defects, both specific to
+non-interactive automation of the curl path** (a maintainer typing the
+one-liner at a real terminal would not have hit either): (1) `install.sh`'s
+`[[ -e /dev/tty ]]` check is true even with no controlling terminal at all,
+so a plain non-pty `ssh host 'curl ... | bash -s -- pi'` crashed instead of
+falling back to passwordless sudo — replaced with an open/close probe run
+in a subshell; (2) `install-desktop.sh`'s in-place detection checked its
+own script location, which under the curl bootstrap is always a `/tmp`
+staging unpack that never carries `.git` — so in-place could **never** fire
+through the documented invocation path, silently installing standalone
+even from inside the tracked clone. Fixed to detect from the invoking
+shell's `$PWD` instead, which survives the pipe unchanged. **Desktop
+standalone** ran on the same physical machine from a non-clone directory —
+no second machine was available, so cross-machine/cross-OS behavior is
+still unverified. Also: this run collided in real time with a concurrent
+session's e-ink driver work (#39) on the same shared dev Pi — coordinated
+directly, confirmed no disruption either way. **This session's own scope
+was the `dev` branch**, which doesn't carry #39's e-ink panel steps
+(unmerged, see below) — so despite a note left on #39 expecting otherwise,
+that hardware verification was never reachable from here and is carried
+forward as fog.
+
+Frontier — **one open ticket, #40.** The map's original destination is fully
+reached. What remains is the gap this run could not close: #39's e-ink panel
+steps in `install-pi.sh` have never executed. That branch has **since been
+merged to `dev`** (and #39 is a child of this map, added after this run), so
+the fog is now a takeable ticket rather than a note — see #40.
 
 Also spun out, **not** a map child:
 [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
@@ -747,6 +786,20 @@ in `docs/research/`):
 - Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
   `sshpass` is installed in this dev environment for non-interactive SSH;
   the sudo password is the same as the SSH password.
+- **⚠ The dev Pi is shared with other concurrent sessions/jobs.** Before
+  touching `/opt`, systemd units, `config.txt`, or rebooting, check for a
+  live collision (`who`/`w` over SSH, recent `/var/log/dpkg.log`) — a
+  scratch directory (e.g. `/home/pi/epd-bench`) is the safe default when
+  another job might be mid-run. Surfaced 2026-09-06 when #35's teardown
+  and #39's e-ink bench work overlapped; coordinated directly with no
+  actual damage, but it was luck as much as care.
+- **⚠ `install.sh`'s non-interactive `sudo` path had two real bugs**, fixed
+  2026-09-06 while verifying #35 (`370129a`, `fdf9192`, `e91e623` on
+  `dev`): `[[ -e /dev/tty ]]` is true with no controlling terminal at all,
+  so it's not a valid liveness check; and `install-desktop.sh`'s in-place
+  detection must be based on the invoking shell's `$PWD`, never on the
+  script's own location, since the curl bootstrap always runs it out of a
+  tarball staging dir. See `docs/curl-delivery-verification.md`.
 - Pi: Debian 13 (trixie), Python 3.13.5, aarch64, BlueZ `5.82-1.1+rpt2`,
   `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
@@ -767,10 +820,10 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
   The map is reached with every child closed; whether to close the map itself
   is the maintainer's call.
-- **`mattpocock-skills:wayfinder`** with map #7 — only #35 is left, and it
-  needs the maintainer's own hardware (a second machine, or the same dev
-  box, to actually run `install-desktop.sh` and `install-pi.sh` on real
-  gear); not a session-only task.
+- **`mattpocock-skills:wayfinder`** with map #7 — **one ticket to grab,
+  #40**: hardware-verifying #39's e-ink panel steps in `install-pi.sh`, which
+  have never executed. The branch is merged, so it is takeable now. The map
+  cannot close until it is done.
 - **`mattpocock-skills:grilling`** has no open decisions left on #13 — #25,
   #26 and #30 are all resolved. Reach for it on map #7 or on the
   implementation map when that is charted.

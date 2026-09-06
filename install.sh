@@ -98,13 +98,24 @@ case "$ROLE" in
             # `curl ... | bash -s -- pi` on a terminal, or `ssh -t`), but with
             # neither a tty nor passwordless sudo already configured it would
             # otherwise fail confusingly mid-install. Check up front instead.
-            if [[ ! -e /dev/tty ]] && ! sudo -n true 2>/dev/null; then
+            #
+            # `[[ -e /dev/tty ]]` is not enough: the node always exists, even
+            # with no controlling terminal (a plain `ssh host 'cmd'`, no -t),
+            # so that test is true and `< /dev/tty` then fails to open with
+            # "No such device or address". Test openability instead.
+            # Run the probe in a subshell: an unqualified `exec` applies its
+            # redirections to the *current* shell, so testing this inline
+            # would leave fd 3 (or worse, a stray stderr redirect if a stderr
+            # clause were added carelessly) dangling for the rest of the
+            # script on success. A subshell's fd table dies with it.
+            tty_usable() { ( exec 3</dev/tty ) 2>/dev/null; }
+            if ! tty_usable && ! sudo -n true 2>/dev/null; then
                 echo "FAIL: this needs sudo and there's no terminal to prompt on." >&2
                 echo "Over ssh, add -t: ssh -t <host> 'curl ... | bash -s -- pi'" >&2
                 echo "or configure passwordless sudo for this command first." >&2
                 exit 1
             fi
-            if [[ -e /dev/tty ]]; then
+            if tty_usable; then
                 sudo env ZEROPI_REF="$ZEROPI_REF" ZEROPI_SHA="$SHA" ZEROPI_TIMESTAMP="$ZEROPI_TIMESTAMP" \
                     bash "$ROLE_SCRIPT" "$STAGING_DIR" "$@" < /dev/tty
             else

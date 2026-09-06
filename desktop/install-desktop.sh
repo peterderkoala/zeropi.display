@@ -51,6 +51,12 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# The clone actually worth installing into, if any -- found from the
+# invoking shell's cwd (see the in-place detection note below), not from
+# where this script itself happens to be running out of. Resolved once,
+# up front, so both auto-detection and an explicit --in-place agree on it.
+CWD_REPO_ROOT="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+[[ -n "$CWD_REPO_ROOT" && -e "$CWD_REPO_ROOT/desktop/install-desktop.sh" ]] || CWD_REPO_ROOT=""
 
 # argv[1] is the bootstrap's staging root when present -- unused (see
 # header) but consumed so flags parse correctly either way.
@@ -86,9 +92,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$MODE" ]]; then
-    # -e, not -d: a git worktree checkout has .git as a *file* (`gitdir:
-    # ...`), not a directory, and is just as much a real clone.
-    if [[ -e "$REPO_ROOT/.git" ]]; then
+    # Via the curl bootstrap this script always runs out of a /tmp staging
+    # unpack of a tarball that never carries .git (see header), so basing
+    # detection on where this script itself lives ($REPO_ROOT, above) can
+    # *never* find a clone -- it would be dead code on the one documented
+    # invocation path. $PWD survives `curl ... | bash` unchanged (bash
+    # inherits the caller's cwd), which is why $CWD_REPO_ROOT is resolved
+    # from there instead, up front.
+    if [[ -n "$CWD_REPO_ROOT" ]]; then
         MODE="in-place"
     else
         MODE="standalone"
@@ -96,6 +107,12 @@ if [[ -z "$MODE" ]]; then
 fi
 
 if [[ "$MODE" == "in-place" ]]; then
+    # An explicit --in-place still needs the *real* clone root, not
+    # $REPO_ROOT -- which is the staging tarball under the curl bootstrap.
+    # Falls back to $REPO_ROOT only for a direct, non-bootstrap invocation
+    # from outside any git worktree (e.g. this script copied out on its
+    # own), where that's the best guess available.
+    REPO_ROOT="${CWD_REPO_ROOT:-$REPO_ROOT}"
     echo "==> Mode: in-place (clone detected at $REPO_ROOT)"
     VENV_DIR="$REPO_ROOT/.venv"
     PUSH_PY="$REPO_ROOT/desktop/push.py"
