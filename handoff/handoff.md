@@ -66,18 +66,25 @@ and nobody has actually looked at the glass.
 ## Maps
 
 Two maps are open. **#13 has reached its destination** — the spec is written
-and #30, the last child, is resolved. **#7's original destination is also
-fully reached** — #35 verified both roles through the documented one-liner on
-real hardware. Closing either map is the maintainer's call; the next real
-move on #13 is an implementation map opened against the spec.
+and #30, the last child, is resolved. **#7's destination is also fully
+reached, and now so is its frontier** — #35 verified both roles through the
+documented one-liner on real hardware, and **#40 (2026-09-06) closed the one
+remaining gap**: `install-pi.sh`'s e-ink panel steps (SPI persistence, the
+four apt packages, deployment) had never actually executed, since #35's
+hardware run predated the branch merge that added them. Teardown +
+documented one-liner + reboot all passed with no manual steps, and the panel
+glass was finally looked at by a human (border and all eight alternating
+blocks clean). Write-up: `docs/eink-driver-verification.md`'s "Provisioning
+verification" section. **#7 has no open children left.** Closing either map
+is the maintainer's call; the next real move on #13 is an implementation map
+opened against the spec.
 
-**#7's frontier is not empty, though — one ticket, #40.** #39 (the e-ink
-driver) was added to #7 as a child on 2026-09-06, closed the same day, and is
-now merged to `dev`. But **its panel provisioning steps have still never
-executed.** #35's hardware run happened *before* that merge and verified a
-`dev` that did not contain them, so SPI persistence, the four apt packages
-and the driver deployment are all unverified — #35 passing says nothing about
-them. #40 exists to close that, and is the only takeable ticket on either map.
+One loose end, deliberately left as fog rather than a ticket: **whether this
+ex-pwnagotchi HAT wires `PWR_PIN` on BCM 18** is still unconfirmed (open
+since #23, not settled by #39 or #40 — no multimeter/LED on hand either
+time). It is a hardware-characterization question, not a provisioning one,
+so it belongs to whichever effort first drives the panel for real, not to
+#7.
 
 #39 also moved one of #7's scope lines, so read it before assuming the old
 boundary: **e-ink *driver provisioning* is now in scope for #7**
@@ -436,6 +443,9 @@ reached. What remains is the gap this run could not close: #39's e-ink panel
 steps in `install-pi.sh` have never executed. That branch has **since been
 merged to `dev`** (and #39 is a child of this map, added after this run), so
 the fog is now a takeable ticket rather than a note — see #40.
+
+**Update, same day: #40 closed too.** See the Maps section at the top of
+this file for the full result — the frontier described above is now empty.
 
 Also spun out, **not** a map child:
 [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
@@ -820,13 +830,13 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** with map #13 — **nothing left to grab.**
   The map is reached with every child closed; whether to close the map itself
   is the maintainer's call.
-- **`mattpocock-skills:wayfinder`** with map #7 — **one ticket to grab,
-  #40**: hardware-verifying #39's e-ink panel steps in `install-pi.sh`, which
-  have never executed. The branch is merged, so it is takeable now. The map
-  cannot close until it is done.
-- **`mattpocock-skills:grilling`** has no open decisions left on #13 — #25,
-  #26 and #30 are all resolved. Reach for it on map #7 or on the
-  implementation map when that is charted.
+- **`mattpocock-skills:wayfinder`** with map #7 — **nothing left to grab.**
+  #40 (hardware-verifying #39's e-ink panel steps) closed 2026-09-06; every
+  child of #7 is now closed. Whether to close the map itself is the
+  maintainer's call. One loose end is deliberately fog, not a ticket: whether
+  this HAT wires `PWR_PIN` on BCM 18 — see the map's Not-yet-specified.
+- **`mattpocock-skills:grilling`** has no open decisions left on #13 or #7 —
+  all resolved. Reach for it on the implementation map when that is charted.
 - **`mattpocock-skills:domain-modeling`** is **done for now** — #19 rewrote
   the vocabulary and superseded ADR 0001. Reach for it again only if #25 or
   #26 coins a term the glossary does not have.
