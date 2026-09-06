@@ -27,6 +27,14 @@ Write-up: `docs/eink-driver-verification.md`. This is the first work past the
 BLE-only scope line, and it stops deliberately short of rendering —
 `receive.py` does not import the driver.
 
+A review after that run caught two defects, fixed in `ca68517`: `epd.init()`
+sat outside the `try`, so the `finally` that sleeps the panel did not cover
+the phase where it is already powered (an ADR-0007 violation), and the
+`raspi-config` call was bare under `set -e`, so a failure to enable SPI would
+have aborted provisioning before `receive.py` was deployed. **If you write
+any further panel code, the `sleep()`-on-every-path property is the one to
+re-check** — it is easy to get wrong and expensive to get wrong.
+
 Read that doc's last section before building on this. **The driver is
 verified; the provisioning of the driver is not.** A parallel session was
 mid-teardown on the dev Pi, so the run went through a scratch directory with
