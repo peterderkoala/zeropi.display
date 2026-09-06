@@ -417,12 +417,14 @@ closed. The round trip is verified on real hardware — see
 - **The LE advertisement takes ~1.5 s to appear** after `receive.py` starts,
   and longer on a cold install racing a `bluetoothd` restart. Poll for it;
   do not sample once after a fixed sleep.
-- `push.py`'s `finally: stop_notify(...)` masks the real exception when a
-  connect fails, reporting "Service Discovery has not been performed yet"
-  over the top of the actual error. Tracked as
-  [#12](https://github.com/peterderkoala/zeropi.display/issues/12); until
-  it is fixed, delete that `finally` block by hand when diagnosing a BLE
-  failure.
+- **[#12 (the masked BLE exception) is resolved and closed** — 2026-09-06,
+  `dev` (`bdcedb2`). `push_payload()`'s `try/finally: stop_notify(...)` is
+  gone; exiting `BleakClient`'s `async with` block already disconnects,
+  which implicitly stops notifications (verified against the installed
+  `bleak` source, not assumed), so the explicit cleanup that was masking the
+  real connect error is simply unnecessary. Also untracked a stray
+  `desktop/__pycache__/push.cpython-312.pyc` and added `__pycache__/`/`*.pyc`
+  to `.gitignore` — caught by review, unrelated to the fix itself.
 
 Live-gauge facts, established 2026-09-05 (detail in the map body):
 
