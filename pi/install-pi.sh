@@ -3,16 +3,18 @@
 # Pi to run the zeropi-display BLE receiver unattended.
 #
 # Normally reached via the repo-root curl bootstrap (install.sh pi), which
-# fetches a versioned tarball, runs this script under sudo from the staging
-# unpack, and passes the staging root as $1. It also still runs standalone
-# on the Pi as root (sudo ./install-pi.sh) with this repo's pi/ directory
-# present on disk -- ticket #33's local-correctness bar, not #35's hardware
-# verification. Safe to re-run on an already-provisioned Pi either way.
+# fetches a versioned tarball and runs this script under sudo from the
+# staging unpack -- SCRIPT_DIR below resolves correctly there without any
+# extra handling, since BASH_SOURCE[0] already points into the unpack. It
+# also still runs standalone on the Pi as root (sudo ./install-pi.sh) with
+# this repo's pi/ directory present on disk -- ticket #33's local-correctness
+# bar, not #35's hardware verification. Safe to re-run on an
+# already-provisioned Pi either way.
 #
 # See issue #7 (map) for why each step exists, #8 for the decisions behind
 # this script's shape (local, idempotent, venv-based), and #33 for the
-# bootstrap contract (argv: staging root; env: ZEROPI_REF/ZEROPI_SHA/
-# ZEROPI_TIMESTAMP, all optional).
+# bootstrap's env contract (ZEROPI_REF/ZEROPI_SHA/ZEROPI_TIMESTAMP, all
+# optional -- unset on a standalone run).
 
 set -euo pipefail
 
@@ -25,14 +27,7 @@ DROPIN_FILE="$DROPIN_DIR/noplugin.conf"
 MAIN_CONF="/etc/bluetooth/main.conf"
 ADAPTER="hci0"
 ADVERT_POLL_TRIES=20
-# $1, when given, is the staging root the bootstrap unpacked (see the header
-# comment) -- authoritative over BASH_SOURCE, which only happens to land in
-# the right place because of how the bootstrap currently invokes this script.
-if [[ -n "${1:-}" ]]; then
-    SCRIPT_DIR="$1/pi"
-else
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $EUID -ne 0 ]]; then
     echo "install-pi.sh must run as root, e.g.: sudo ./install-pi.sh" >&2

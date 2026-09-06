@@ -9,13 +9,13 @@ vocabulary.
 One command per role, run on the machine being provisioned. Neither needs
 `git` or a clone -- it fetches a versioned tarball of the `dev` branch.
 
-Pi (the BLE receiver -- run this on the Pi itself):
+Pi (run this on the Pi itself):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- pi
 ```
 
-Desktop (the BLE sender -- run this on the machine that will push):
+Desktop (run this on the machine that will push):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- desktop
