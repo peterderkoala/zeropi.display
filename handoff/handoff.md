@@ -128,16 +128,37 @@ Method note the map fixes: **mocks first, exactly one bench session on real
 glass before the spec is written.** Not a design loop that stalls on the
 maintainer each round.
 
-Frontier — **three takeable in parallel** (four at charting; the research one
-resolved immediately):
-[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52) (prototype),
+**Update, same day: [Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)
+is closed.** The resting picture is **a list of the most recent Active Days**
+— date, cost in dollars, a bar — over a footer carrying **Coverage Start** and
+the **average cost per Active Day**; `~` marks a cost that is not Cost
+Complete; an empty Pi reads `NO HISTORY YET`. Mocks and the throwaway renderer
+are on branch `prototype/historic-view` (unmerged); **Active Day** is now a
+term in `CONTEXT.md` (`a9f3e3a`).
+
+⚠ **Three findings from drawing it that you should not have to rediscover**:
+(1) usage is **11 Active Days over 44 calendar days**, so any calendar window
+is mostly gaps — that is what killed the bar-chart and sparkline candidates;
+(2) the Pi's partial history renders **pixel-identical** to idleness, which is
+the whole reason the Coverage Start footer exists; (3) **10px bold labels
+rasterise unevenly in 1-bit** (`TODAY` reads `TOD AY`) — the settled design's
+smallest text is 12px because of it, and the bench check should confirm that
+on real glass, since a 3× PNG flatters small text.
+
+It also **narrowed #53**: the trend is per-day totals across every project, so
+**no Project Label is needed on the panel** — #13's parked question is answered
+by the design, not the plumbing.
+
+Frontier — **four takeable** (seven at charting; research and design resolved):
+~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 [Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55) (grilling),
 [How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56) (grilling).
-Blocked behind them:
-[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53) →
-[Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57) →
-[Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58).
+[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)
+and [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
+(⚠ **HITL — needs the maintainer at the bench**; it unblocked when the mocks
+landed). Only [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58)
+is still blocked, by the other four.
 Full bodies live on the tickets — read them there, not here.
 
 ⚠ **The font research also confirmed the stale-base warning below**: the
@@ -1062,9 +1083,9 @@ in `docs/research/`):
   #56; see Maps above). Claim one (`gh issue edit <n> --add-assignee @me`),
   read its body, resolve it. It is a **planning** map: produce decisions and
   mocks, not a renderer.
-- **`mattpocock-skills:prototype`** for #52 (Design the Historic View) — the
-  map's own Notes say prototype before specifying, because #26 and #38 both
-  overturned paper decisions the moment something was drawn.
+- **The bench session (#57) is the one that needs a human.** It is unblocked
+  now: mocks exist and the font options are known. Everything else on the map
+  can be driven without leaving the terminal.
 - **`mattpocock-skills:wayfinder`** with map #41 — **closed 2026-09-09.**
   Nothing to grab; all seven children resolved.
 - **`mattpocock-skills:tdd`** — the map's Notes recommend it for each unit,
