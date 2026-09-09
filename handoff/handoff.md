@@ -179,11 +179,38 @@ Measured, not reasoned: a worker-thread receiver ran the same six-row Batch in
 mid-refresh*, because every wait in the driver is a `time.sleep` and releases
 the GIL.
 
-Frontier — **three takeable** (seven at charting; research, design and the
-event-loop question resolved):
+**Update, same day: [Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55)
+is closed — and it found a worse problem than the one it was opened for.**
+
+⚠ **`GAUGE_EXPIRY_S` (Pi), `REDRAW_FLOOR_S` (Pi) and `GAUGE_THROTTLE_S`
+(Desktop) are all 300 s, and nothing says they should be.** Measured with the
+resident service running against the dev Pi: a replacement Gauge arrives
+**310 s** after its predecessor (300 s throttle + ~7 s scan/connect + jitter),
+so **the Gauge on screen is expired for ~25 s before every replacement, every
+cycle**. Whether the panel visibly flips to the Historic View in that window is
+a phase coincidence between the 60 s tick and the floor — and when it does
+flip, **the floor pins Historic on the panel for a full 300 s while a live
+Gauge sits in memory.** Intermittent, invisible to tests, unreproducible on
+demand.
+
+**Decided**: the **Desktop's Gauge throttle drops to 120 s** (a push has a
+second job §7.5 never costed — keeping the Pi's Gauge alive); expiry and floor
+stay 300 s; ~2.5x the BLE work and **zero extra panel wear**, since the floor
+still gates every draw. The invariant — *expiry must stay comfortably above the
+push interval, roughly `2 x throttle`* — is written into **ADR-0008 and
+ADR-0010** (`76670cf`), each constant naming the other across the two machines.
+ADR-0010's freshness claim is restated as two bounds (at draw ~135 s; on the
+panel at most 600 s, and only when the Desktop has actually died); the
+no-footer decision survives. Floor pre-emption and putting the cadence on the
+wire were both considered and rejected.
+
+⚠ **The constant itself is NOT changed in `desktop/service.py`** — planning
+map. The one-line edit and the spec §7.5 wording belong to the implementation.
+
+Frontier — **two takeable** (seven at charting; four resolved):
 ~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
-[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55) (grilling),
+~~[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55)~~ (**closed**, see above),
 ~~[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56)~~ (**closed**, see above).
 [Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)
 and [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
