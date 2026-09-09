@@ -54,6 +54,19 @@ def test_service_is_active_false_when_no_systemd(monkeypatch):
     assert module._service_is_active() is False
 
 
+def test_service_is_active_true_when_systemctl_hangs(monkeypatch):
+    """A wedged systemd/D-Bus must not hang the self-test forever, and
+    must not be read as "safe to proceed" -- treated the same as active.
+    """
+    module = _load_module()
+
+    def raise_timeout(*a, **k):
+        raise module.subprocess.TimeoutExpired(cmd="systemctl", timeout=10)
+
+    monkeypatch.setattr(module.subprocess, "run", raise_timeout)
+    assert module._service_is_active() is True
+
+
 def test_main_refuses_without_importing_waveshare_epd_when_service_active(monkeypatch):
     """The regression this ticket exists to prevent: main() must return
     non-zero and never reach `from waveshare_epd import ...` while the

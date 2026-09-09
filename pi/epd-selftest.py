@@ -60,12 +60,30 @@ def _service_is_active(name: str = PANEL_SERVICE) -> bool:
     repo would have to keep in sync itself: `zeropi-display.service` is the
     one and only thing that can hold the panel, and systemd already knows
     whether it's running.
+
+    This is a point-in-time check, not a lock: it does not close the window
+    where the service starts between this call and epd.init(). That window
+    is accepted, not fixed, here -- a bench tool run by hand by whoever is
+    at the Pi is the one case where "check just before touching the panel"
+    is a reasonable trade for not needing real interprocess locking.
+
+    Times out rather than hanging forever if systemd/D-Bus is wedged --
+    treated as "can't confirm it's safe", so this refuses, the same call as
+    if the service really were active, rather than a hung self-test giving
+    no indication of why.
     """
     try:
-        result = subprocess.run(["systemctl", "is-active", "--quiet", name])
+        result = subprocess.run(
+            ["systemctl", "is-active", "--quiet", name], timeout=10
+        )
     except FileNotFoundError:
         # No systemd here (e.g. a dev machine) -- nothing to collide with.
         return False
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "could not reach systemd to check %s within 10s; assuming active", name
+        )
+        return True
     return result.returncode == 0
 
 
