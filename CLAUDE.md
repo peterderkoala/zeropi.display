@@ -55,6 +55,11 @@ side effect. `pi/epd-selftest.py` is the by-hand bench check that the panel
 actually draws. **Rendering is still not wired into the BLE path** — nothing
 in `receive.py` imports the driver.
 
+⚠ **The Pi has no fonts installed** (`/usr/share/fonts` does not exist).
+`docs/spec-eink-rendering.md` §3 settles that — `fonts-dejavu-core` via
+`install-pi.sh` — but until it is implemented, anything drawing text on the Pi
+will fail at `ImageFont.truetype()`.
+
 There is still no build or lint tooling. The Desktop entry point is run by
 hand:
 
@@ -87,11 +92,12 @@ project on 2026-09-09** (maintainer's call, while charting the e-ink
 rendering map). Usage is the whole product. Older documents that still frame
 this as a daily summary of those three are historical.
 
-**Current phase**: the BLE link and the **real usage pipeline** over it are
-both done and hardware-verified; no case/UPS yet. **The e-ink panel driver is
-set up and proven to draw** (#39), but nothing renders to it: `receive.py`
-does not import the driver, and no Payload reaches the glass. Real data all
-the way to a `render()` that only logs — rendering is the next milestone.
+**Current phase**: e-ink **rendering**, now **specified and not yet built**.
+`docs/spec-eink-rendering.md` is binding (map #51's destination): it says what
+the panel draws and how, down to pixel geometry verified on real glass.
+`receive.py` still does not import the driver, so no Payload reaches the panel
+— real data all the way to a `render()` that only logs. The BLE link and the
+usage pipeline beneath it are done and hardware-verified; no case/UPS yet.
 
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
