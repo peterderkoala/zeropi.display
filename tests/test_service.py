@@ -2,7 +2,7 @@
 `systemd --user` service loop.
 
 No BLE, no Pi, no real sleeping and no real wall clock — every time-based
-trigger (the 30s poll, the 300s Gauge throttle, the 04:00 Batch, the >24h
+trigger (the 30s poll, the 120s Gauge throttle, the 04:00 Batch, the >24h
 startup catch-up) is exercised through injected clocks/fakes, per the
 ticket's testing brief.
 """
@@ -58,6 +58,13 @@ def test_from_snapshot_extracts_only_the_displayed_fields():
 # ---------------------------------------------------------------------------
 # GaugeGate: no-change / change / null-ness / resets_at / context-excluded
 # ---------------------------------------------------------------------------
+
+
+def test_default_throttle_is_120s():
+    # spec §9: dropped from 300s so a replacement Gauge always lands before
+    # the Pi's 300s GAUGE_EXPIRY_S, not just after it (docs/spec-eink-rendering.md §9).
+    assert service.GAUGE_THROTTLE_S == 120.0
+    assert GaugeGate().throttle_s == 120.0
 
 
 def test_first_observation_never_pushes():

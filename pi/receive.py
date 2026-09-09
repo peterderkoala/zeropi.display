@@ -34,6 +34,10 @@ SCHEMA_VERSION = 1
 REDRAW_FLOOR_S = 300
 
 # Gauge Age expiry (spec §8.4/§8.9, ADR-0009/0010): one redraw floor.
+# Must stay comfortably above the Desktop's GAUGE_THROTTLE_S
+# (desktop/service.py), roughly expiry >= 2 x throttle, or a replacement
+# Gauge arrives after the on-screen one has already expired
+# (docs/spec-eink-rendering.md §9).
 GAUGE_EXPIRY_S = 300
 
 # Idle keep-alive full refresh (spec §8.5, ADR-0007/0010).

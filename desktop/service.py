@@ -10,7 +10,7 @@ this module touches BLE, SQLite, or the JSONL logs directly.
 Two pieces of pure decision logic, each independently testable with an
 injected clock and no real sleeping (spec §"Testing" for #47):
 
-- `GaugeGate` — spec §7.5's push-on-change trigger plus the 300s Desktop-side
+- `GaugeGate` — spec §7.5's push-on-change trigger plus the 120s Desktop-side
   throttle, with coalescing (a pending flag, never a dropped change) and an
   explicit `batch_in_progress` input so "the two jobs never interleave" is a
   property of this class's contract, not just an accident of the loop being
@@ -40,7 +40,10 @@ import gauge
 import push
 
 POLL_INTERVAL_S = 30.0
-GAUGE_THROTTLE_S = 300.0
+# Must stay comfortably below the Pi's GAUGE_EXPIRY_S (pi/receive.py),
+# roughly throttle <= expiry / 2, or a replacement Gauge arrives after the
+# on-screen one has already expired (docs/spec-eink-rendering.md §9).
+GAUGE_THROTTLE_S = 120.0
 BATCH_CATCHUP_THRESHOLD_S = 24 * 60 * 60
 BATCH_SCHEDULED_HOUR = 4  # local, spec §7.5
 
@@ -88,7 +91,7 @@ class DisplayedGaugeState:
 
 
 class GaugeGate:
-    """Pure decision logic for spec §7.5's Gauge-push trigger and its 300s
+    """Pure decision logic for spec §7.5's Gauge-push trigger and its 120s
     Desktop-side throttle. Takes an injectable monotonic-style clock so it
     needs no real sleeping to test.
 
