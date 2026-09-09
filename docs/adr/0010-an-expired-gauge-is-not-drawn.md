@@ -32,11 +32,36 @@ make a diagnosable misconfiguration invisible.
 
 ## Consequences
 
-**Nothing on the panel ever needs to be distrusted.** Whatever the Gauge frame
-shows is under 300 s old by construction. That is what retires the freshness
-footer: a stamp that can only ever say "fresh" is decoration, and in #26's
-mocks it was the *only* thing distinguishing stale from live — doing safety
-work it could not do.
+**Nothing on the panel ever needs to be distrusted.** That is what retires the
+freshness footer: a stamp that can only ever say "fresh" is decoration, and in
+#26's mocks it was the *only* thing distinguishing stale from live — doing
+safety work it could not do.
+
+> **Amended 2026-09-09 by
+> [#55](https://github.com/peterderkoala/zeropi.display/issues/55), on
+> measurement.** This paragraph originally claimed "whatever the Gauge frame
+> shows is under 300 s old by construction". That is not true of the frame's
+> *displayed* lifetime, because the fallback to the Historic View is itself
+> gated by ADR-0008's 300 s floor. Measured on hardware in
+> [#48](https://github.com/peterderkoala/zeropi.display/issues/48): a frame
+> drawn at 268 s of Gauge Age stayed on the panel until it was ~570 s old.
+>
+> The honest statement is two bounds, not one:
+>
+> - **At draw**: under one push interval plus margin — ~135 s in normal
+>   operation, once the Desktop's Gauge throttle is 120 s (see below).
+> - **On the panel**: at most expiry + one floor, i.e. **600 s** — and only in
+>   the case where the Desktop has stopped pushing, which is the case expiry
+>   exists to detect and which ends in the Historic View.
+>
+> **The no-footer decision survives unchanged.** A footer would still only ever
+> say "fresh" in normal operation, and it never covered the dead-Desktop tail:
+> a Desktop that cannot push cannot update a freshness stamp either.
+>
+> Pre-empting the floor for the fallback was considered and **rejected**: the
+> panel's rated one-update-per-180 s leaves headroom, but "the floor is a hard
+> gate, except sometimes" is a much weaker invariant than ADR-0008 wants, and
+> the cadence fix below removes the reason to want it.
 
 **Falling back is a full refresh**, gated by ADR-0008's 300 s floor, so a
 flapping Desktop cannot flap the panel faster than the floor allows.

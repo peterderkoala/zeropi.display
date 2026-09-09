@@ -6,6 +6,27 @@ coalesce or drop a redraw that arrives too soon, and reports which in the Ack.
 The Desktop also throttles its pushes, but as a courtesy that saves BLE and
 battery, never as the guarantee.
 
+> **Amended 2026-09-09 by
+> [#55](https://github.com/peterderkoala/zeropi.display/issues/55):** the
+> Desktop's throttle is **not only** a courtesy. A push also **keeps the Pi's
+> Gauge alive**, and that job was never costed. Setting the throttle equal to
+> the floor (both 300 s) made the two collide: measured on hardware, the
+> replacement Gauge arrives **310 s** after its predecessor (300 s throttle +
+> ~7 s scan/connect + jitter), so the Gauge on screen is **expired for ~25 s
+> before every replacement**, every cycle. Whether the panel visibly flips to
+> the Historic View in that window is a phase coincidence between the 60 s
+> tick and the floor — and when it does flip, **the floor then holds the
+> Historic View for a full 300 s while a live Gauge sits in memory**.
+>
+> The fix is on the Desktop, not here: **the Gauge throttle drops to 120 s**,
+> so a replacement always lands well before expiry. The floor is untouched at
+> 300 s and still gates every draw, so this costs ~2.5x the BLE work and
+> **zero extra panel wear**. **The invariant to keep**: the Pi's
+> `GAUGE_EXPIRY_S` must stay comfortably above the Desktop's push interval —
+> roughly `2 x throttle` — or expiry stops meaning "the Desktop is gone" and
+> starts firing in normal operation. The two constants live in different files
+> on different machines; each must name the other.
+
 The Pi likewise redraws **on its own clock as well as on Payload arrival**,
 whichever comes first. The display shows time-until-reset, which changes every
 minute with no usage change at all, and the Pi already holds `resets_at` and
