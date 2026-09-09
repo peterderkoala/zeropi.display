@@ -4,12 +4,16 @@ Imported by receive.py, not merged into it: the GPIO-claiming import needs
 exactly one door (spec §7), and this module's DB-only functions must stay
 importable with no bluezero, no panel and no SPI, same as receive.py itself.
 
-Only the Historic View's data layer (spec §6, ticket #62) lives here so far.
-Frame builders (§5, ticket #60) and the panel context manager / worker (§7,
-§8, ticket #61) land in this same module from separate tickets.
+The Historic View's data layer (spec §6, ticket #62), the frame builders
+(§5, ticket #60), and the panel context manager, worker and failure
+handling (§7, §8, ticket #61) all live here.
 """
 
+import logging
 import sqlite3
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
@@ -23,6 +27,14 @@ PANEL_W, PANEL_H = 250, 122
 # other fonts, and the 13px floor in §4 was verified on glass with DejaVu
 # specifically -- a different typeface invalidates that evidence.
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
+
+# The worker abandons a stuck refresh after this long (spec §8): ReadBusy()
+# is an unbounded loop with no timeout, pinned upstream, so a stuck panel
+# cannot be interrupted. This only stops us from caring about that one
+# thread -- it does not, and cannot, recover it.
+WATCHDOG_TIMEOUT_S = 30.0
+
+logger = logging.getLogger("zeropi.render")
 
 
 @dataclass(frozen=True)
@@ -214,3 +226,184 @@ def no_usage_data_frame() -> Image.Image:
     d.text((3, 10), "NO USAGE DATA", font=_font(24, True), fill=0)
     d.text((3, 44), "waiting for first snapshot", font=_font(13), fill=0)
     return img
+
+
+# ---------------------------------------------------------------------------
+# The panel context manager (spec §7.2) -- the ONLY thing that touches the
+# driver. `init()` sits *inside* the guarded region: `module_init()` raises
+# the power pin and opens SPI as its first act, so the panel is live from
+# that instant, and `reset()`, three `ReadBusy()` spins and ~10 commands all
+# run before `init()` returns. Putting `init()` outside the try would leave
+# exactly that window uncovered. Every cycle ends in `sleep()`
+# unconditionally, so ADR-0007's rule is structural here, not remembered --
+# a review already caught this exact ordering mistake once in the self-test
+# (ca68517).
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def panel(epd_factory=None):
+    """`epd_factory` is injectable so tests never import the real driver and
+    never claim GPIO. Production leaves it default, which imports
+    waveshare_epd here -- not at module scope -- because merely importing
+    it claims GPIO as a side effect (pi/waveshare_epd/README.md), and
+    receive.py must stay importable with no panel, no SPI and no bluezero.
+    """
+    if epd_factory is None:
+        from waveshare_epd import epd2in13_V4
+
+        epd_factory = epd2in13_V4.EPD
+
+    epd = epd_factory()
+    try:
+        if epd.init() != 0:
+            raise RuntimeError("epd.init() failed")
+        yield epd
+    finally:
+        try:
+            epd.sleep()
+        except Exception:
+            # Never let cleanup mask the real error -- the caller's
+            # exception (if any) is what needs to surface, and a panel
+            # that will not sleep is worth logging, not raising over it.
+            logger.exception("epd.sleep() failed during cleanup")
+
+
+def _draw_via_panel(image: Image.Image) -> None:
+    with panel() as epd:
+        epd.display(epd.getbuffer(image))
+
+
+# ---------------------------------------------------------------------------
+# The worker (spec §7.3, §8): one thread, a one-slot hand-off -- newest
+# state wins, matching what the redraw floor already enforces upstream.
+# Never called inline in the write handler, never on a post-Ack bluezero
+# timer: a 4.35s inline refresh leaves ~0.5s of margin against BlueZ's ~5s
+# write timeout, a limit we do not control (bench/render-blocking, #56).
+#
+# `_WorkerState` is the pure decision logic -- hand-off, failure
+# transitions, the watchdog -- exercised directly with an injected clock,
+# no threads, no real waiting, the same way GaugeGate/RedrawGate already
+# are. `PanelWorker` is the thin real-thread wrapper around it.
+# ---------------------------------------------------------------------------
+
+
+class _WorkerState:
+    def __init__(self, watchdog_timeout_s: float = WATCHDOG_TIMEOUT_S):
+        self.watchdog_timeout_s = watchdog_timeout_s
+        self.pending = None
+        self.job_started_at: Optional[float] = None
+        self.unavailable = False
+
+    def submit(self, image) -> None:
+        """A frame arriving mid-refresh replaces the pending slot -- newest
+        wins, never queued (spec §8)."""
+        self.pending = image
+
+    def take_job(self, now: float):
+        """Claim the pending frame, if any, marking a job in flight."""
+        if self.pending is None:
+            return None
+        image, self.pending = self.pending, None
+        self.job_started_at = now
+        return image
+
+    def on_success(self) -> None:
+        self.job_started_at = None
+        self.unavailable = False
+
+    def on_failure(self) -> bool:
+        """Returns True exactly on the transition into `unavailable`, so
+        the caller logs once per transition, not per attempt (spec §8)."""
+        self.job_started_at = None
+        became_unavailable = not self.unavailable
+        self.unavailable = True
+        return became_unavailable
+
+    def watchdog_fired(self, now: float) -> bool:
+        """True exactly once per stuck episode: a job has been in flight
+        for at least `watchdog_timeout_s` and this episode has not already
+        been flagged. A stuck thread cannot be recovered (ReadBusy is
+        unbounded and pinned upstream) -- this only stops us re-logging it
+        on every subsequent poll.
+        """
+        if self.job_started_at is None or self.unavailable:
+            return False
+        if now - self.job_started_at < self.watchdog_timeout_s:
+            return False
+        self.unavailable = True
+        return True
+
+
+class PanelWorker:
+    """One render worker thread with a one-slot hand-off (spec §8).
+
+    `draw_fn(image)` defaults to drawing through `panel()`; tests inject a
+    fake to avoid touching hardware. `now_fn` is the clock `_WorkerState`
+    uses for job timestamps and the watchdog -- inject a fake to test the
+    watchdog without a real 30s wait.
+    """
+
+    def __init__(
+        self,
+        draw_fn=None,
+        now_fn=time.monotonic,
+        watchdog_timeout_s: float = WATCHDOG_TIMEOUT_S,
+    ):
+        self._draw_fn = draw_fn if draw_fn is not None else _draw_via_panel
+        self._now = now_fn
+        self._state = _WorkerState(watchdog_timeout_s)
+        self._lock = threading.Lock()
+        self._wakeup = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, image) -> None:
+        with self._lock:
+            self._state.submit(image)
+        self._wakeup.set()
+
+    def _run(self) -> None:
+        while True:
+            self._wakeup.wait()
+            with self._lock:
+                image = self._state.take_job(self._now())
+                self._wakeup.clear()
+            if image is None:
+                continue
+            try:
+                self._draw_fn(image)
+            except Exception:
+                with self._lock:
+                    became_unavailable = self._state.on_failure()
+                if became_unavailable:
+                    logger.exception(
+                        "panel render failed; marking the panel unavailable "
+                        "until the next successful redraw"
+                    )
+                continue
+            with self._lock:
+                self._state.on_success()
+
+    def check_watchdog(self) -> None:
+        """Call periodically (spec §8: ~30s) from wherever already runs on
+        the BLE process's own clock -- NOT from a dedicated thread, so a
+        stuck ReadBusy never costs more than the one thread it already
+        owns. Logs once per stuck episode; never touches the stuck thread.
+        The link outlives the panel: this only stops us caring about it,
+        it does not and cannot free it.
+        """
+        with self._lock:
+            fired = self._state.watchdog_fired(self._now())
+            timeout = self._state.watchdog_timeout_s
+        if fired:
+            logger.error(
+                "panel worker stuck for >= %.0fs (unbounded ReadBusy, "
+                "pinned upstream); abandoning this refresh, BLE keeps serving",
+                timeout,
+            )
+
+    @property
+    def unavailable(self) -> bool:
+        with self._lock:
+            return self._state.unavailable
