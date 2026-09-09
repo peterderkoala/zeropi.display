@@ -32,9 +32,15 @@ Three things from that run you would otherwise rediscover the hard way:
   correct — the constants produce it. Flagged on #13, deliberately not "fixed";
   it belongs to whoever charts the rendering map.
 
-**The next milestone is e-ink rendering, and it now HAS a map** — charted
-2026-09-09, see Maps below. Everything below it is proven: real data arrives
-at a `render()` that only logs.
+**E-ink rendering is SPECIFIED, not built.** `docs/spec-eink-rendering.md`
+(`bf6be4b`) is binding — map #51's destination, charted and finished in one
+day, then closed. It says what the panel draws and how, in pixel geometry a
+human approved on real glass. `receive.py` still does not import the driver, so
+nothing reaches the panel yet.
+
+**Next: an implementation map, opened against that spec** — the way #41 was
+opened against #13. Read the spec first; it names its own required reading and
+says outright that THIS FILE is not authoritative.
 
 ⚠ **Weather, calendar and the One-liner were dropped from the project**
 (maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
@@ -112,9 +118,10 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
-### Current: [Map: What the e-ink panel draws, and how (spec)](https://github.com/peterderkoala/zeropi.display/issues/51)
+### [Map: What the e-ink panel draws, and how (spec)](https://github.com/peterderkoala/zeropi.display/issues/51) — **CLOSED 2026-09-09**
 
-Charted 2026-09-09. **A planning map — "plan, don't do" applies.** Destination
+Charted and completed the same day; all seven children resolved. Destination
+reached: `docs/spec-eink-rendering.md`. **A planning map — "plan, don't do" applies.** Destination
 is `docs/spec-eink-rendering.md`; **implementation is a separate map** opened
 against the finished spec, the way #41 was opened against #13's.
 
@@ -260,7 +267,22 @@ were rendered on the Desktop and displayed as prepared 1-bit bitmaps, since the
 Pi still has no fonts — so **the 13 px floor wants re-confirming once text is
 rasterised on the Pi itself** (Pillow 11.1.0 there).
 
-Frontier — **the spec, and only the spec** (seven at charting; six resolved):
+**Update, same day: [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58)
+is closed, and with it the map.** 472 lines, fourteen sections, standing alone
+as an implementing session's brief. **§11 supersedes three clauses of the
+pipeline spec** — the zero-row clause (§9.3), the rendering stub (§8.6), and
+the 300 s Gauge throttle (§7.5) — so do not read those as current. **§14's gap
+check took seven calls no ticket had**, the sharpest being that **nothing draws
+at process start**: after a reboot the panel keeps whatever image it held,
+possibly an arbitrarily stale Gauge frame, undetectable because `monotonic()`
+reset with it. The spec draws the Historic View once at startup.
+
+⚠ **The implementation's first job is named in §14**: re-confirm the 13 px
+floor with text rasterised **on the Pi** rather than the Desktop. Every frame
+verified at the bench was rasterised on the Desktop and displayed as a prepared
+bitmap, because the Pi has no fonts; Pillow differs across the two machines.
+
+Frontier — **empty. The map is closed.** (Historic, for reference:)
 ~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 ~~[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55)~~ (**closed**, see above),
@@ -1194,11 +1216,14 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #51 — **the live map, charted
-  2026-09-09, four tickets takeable in parallel right now** (#52, #54, #55,
-  #56; see Maps above). Claim one (`gh issue edit <n> --add-assignee @me`),
-  read its body, resolve it. It is a **planning** map: produce decisions and
-  mocks, not a renderer.
+- **`mattpocock-skills:wayfinder`** to **chart the implementation map** for
+  e-ink rendering, against `docs/spec-eink-rendering.md`. That is the next
+  effort and there is no map for it. Precedent: #41, charted against #13's
+  finished spec, ran as an **execution** map because the spec had already
+  closed every judgment call — this spec was written to the same standard, so
+  expect the same shape.
+- **`mattpocock-skills:wayfinder`** with map #51 — **closed 2026-09-09.**
+  Nothing to grab; all seven children resolved.
 - **The bench session (#57) is the one that needs a human.** It is unblocked
   now: mocks exist and the font options are known. Everything else on the map
   can be driven without leaving the terminal.
