@@ -15,6 +15,18 @@ Milestone 1 (the BLE link) is implemented and verified on real hardware:
 Reading to SQLite and returns an Ack. See `docs/e2e-verification.md` for
 the verification run and the BlueZ configuration it depends on.
 
+**The usage pipeline of `docs/spec-usage-pipeline.md` is implemented and
+verified end-to-end on real hardware** (map #41, closed by #48): `push.py`
+sends *real* Daily and Gauge Payloads read from the Claude Code JSONL logs
+by `desktop/usage.py` and `desktop/gauge.py`, `desktop/service.py` is the
+resident `systemd --user` loop that owns cadence, and `receive.py` persists,
+gates and (stub-)redraws per the spec. See
+`docs/usage-pipeline-verification.md` for the run — including the two
+`PYTHONUNBUFFERED` defects it found, and the one ADR-0010 consequence it
+showed to be overstated. **Anything this repo runs under systemd needs
+`Environment=PYTHONUNBUFFERED=1` in its unit**, or `print()` logging never
+reaches the journal.
+
 The Pi is provisioned by `pi/install-pi.sh` and runs `receive.py` unattended
 under systemd — verified from scratch on real hardware, including reboot
 and `bluetoothd`-restart survival, in `docs/provisioning-verification.md`.
@@ -70,16 +82,17 @@ calendar, and an AI-generated one-liner. The longer-term goal is to source
 the one-liner/usage stat from local Claude Code session data (JSONL logs in
 `~/.claude/projects/*.jsonl`) rather than a separate paid API key.
 
-**Current phase**: prove out a Bluetooth (BLE) link between a desktop
-machine and the Pi — no real data parsing, no case/UPS yet. **The e-ink
-panel driver is now set up and proven to draw** (#39), but nothing renders
-to it: `receive.py` does not import the driver, and no Payload reaches the
-glass. Driver, not rendering.
+**Current phase**: the BLE link and the **real usage pipeline** over it are
+both done and hardware-verified; no case/UPS yet. **The e-ink panel driver is
+set up and proven to draw** (#39), but nothing renders to it: `receive.py`
+does not import the driver, and no Payload reaches the glass. Real data all
+the way to a `render()` that only logs — rendering is the next milestone.
 
 Roles (see `CONTEXT.md` for the domain vocabulary):
-- **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`. Will own
-  the real data sources (weather API, calendar, Claude Code JSONL logs);
-  currently pushes a hardcoded test Payload in a single write.
+- **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
+  `usage.py`/`gauge.py` as its data layer and `service.py` as the resident
+  loop. Reads the real Claude Code JSONL logs; weather and calendar are
+  still unsourced.
 - **Pi Zero (BLE peripheral)**: `pi/receive.py`, Python + `bluezero`. Dumb
   receiver — advertises the GATT service, accepts a Payload write,
   persists it as a Reading, and returns an Ack. It does not fetch or
@@ -87,8 +100,9 @@ Roles (see `CONTEXT.md` for the domain vocabulary):
 
 Explicitly out of scope for the current prototype milestone: e-ink
 **rendering** (the driver beneath it is set up — see #39 — but drawing a
-Payload to the panel is not), real weather/calendar/usage parsing,
-power/UPS/enclosure hardware, any cloud/API-key fallback.
+Payload to the panel is not), real weather/calendar parsing and the
+One-liner (usage parsing is done — see map #41), power/UPS/enclosure
+hardware, any cloud/API-key fallback.
 
 ## Hardware / infrastructure notes
 
