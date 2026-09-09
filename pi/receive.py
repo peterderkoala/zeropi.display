@@ -19,6 +19,10 @@ import json
 import sqlite3
 import time
 
+# Aliased: this module's own render(view) function -- the well-known seam
+# RedrawGate calls -- would otherwise shadow the module of the same name.
+import render as render_module
+
 SERVICE_UUID = "abbac370-5a95-490d-a1fc-921c1c95300d"
 WRITE_CHARACTERISTIC_UUID = "014ca0e2-c76c-4443-a755-e5a1ad25368d"
 NOTIFY_CHARACTERISTIC_UUID = "08c89458-52f1-47eb-ab58-f7f7995d8efb"
@@ -316,6 +320,10 @@ def build_ack(status: str, kind=None, date=None, project=None, model=None,
         ack["project"] = project
     if model is not None:
         ack["model"] = model
+    # `drawn` means "the redraw floor accepted this for drawing", NOT
+    # "pixels moved" -- the refresh runs on a worker thread and outlives
+    # the Ack (spec §8). Its only consumer is a human reading a log to see
+    # whether the floor coalesced; it is not a promise the panel updated.
     ack["drawn"] = drawn
     ack["wiped"] = wiped
     if reason is not None:
@@ -455,15 +463,90 @@ class RedrawGate:
 
 
 # ---------------------------------------------------------------------------
-# render() — the display stub seam (spec §8.6). The e-ink driver is out of
-# scope for this milestone; this just logs one line naming the frame and
-# its values. The display milestone replaces this function and nothing
-# else.
+# render() — the hand-off to the render worker (spec §7, §8). ReceiveState's
+# `_panel_worker` is set once by main(); stays None under test and before
+# main() has run, and render() is then a safe no-op -- receive.py and its DB
+# functions must stay usable with no panel, no SPI and no bluezero (§7).
 # ---------------------------------------------------------------------------
 
 
+def _build_frame(view: dict):
+    """Turn a RedrawGate view into a concrete frame (spec §5). The Historic
+    View's data comes straight from the readings table via render.py's data
+    layer -- computed on demand at redraw, no cache (spec §6).
+    """
+    if view.get("historic"):
+        conn = sqlite3.connect(ReceiveState.db_path)
+        try:
+            rows = render_module.historic_rows(conn)
+            if not rows:
+                return render_module.empty_frame()
+            return render_module.historic_frame(
+                rows, render_module.coverage_start(conn), render_module.historic_average(conn)
+            )
+        finally:
+            conn.close()
+
+    five_hour = view["five_hour"]
+    seven_day = view["seven_day"]
+    # Either window's pct can independently be null (parse_payload allows
+    # it on each field separately) -- checking only five_hour would draw a
+    # literal "None%" for seven_day if they ever diverge.
+    if five_hour["pct"] is None or seven_day["pct"] is None:
+        return render_module.no_usage_data_frame()
+    return render_module.gauge_frame(
+        five_hour["pct"], five_hour["resets_in_s"], seven_day["pct"], seven_day["resets_in_s"]
+    )
+
+
 def render(view: dict) -> None:
+    """Hand off to the render worker (spec §8). Returns immediately
+    regardless of whether the panel is present, healthy, or even
+    configured -- the refresh runs on its own thread and outlives this
+    call, same as the Ack it precedes.
+
+    `_build_frame` runs here, inline, not on the worker thread -- it is
+    PIL drawing, not the slow panel I/O the worker exists to keep off the
+    write handler. But it still runs on the caller's thread (the BLE event
+    loop, or main() at startup), so a failure in it (a missing font, spec
+    §3; a corrupt DB read) must not escape and crash the link: receiving,
+    persisting and Acking never depend on the display (spec §8).
+
+    ⚠ A build failure on a Historic redraw is NOT re-queued: `try_draw_*`
+    already reports this redraw as accepted and clears `historic_pending`
+    right after calling this (RedrawGate's own contract, out of scope to
+    change here). A failed build therefore self-heals only on the next
+    Reading, or the 24h idle keep-alive -- not immediately. In practice
+    this path is deterministic (a missing font, present or not; a DB file
+    already proven writable moments earlier in the same request) rather
+    than transient, so this is an accepted, bounded gap, not a silent one:
+    it is logged every time it happens.
+    """
+    if ReceiveState._panel_worker is None:
+        return
+    try:
+        image = _build_frame(view)
+    except Exception as exc:
+        print(f"Frame build failed, panel unaffected: {exc}")
+        return
+    ReceiveState._panel_worker.submit(image)
+    # The one line every verification run has grepped for since §8.6's stub
+    # (docs/usage-pipeline-verification.md) -- keep emitting it here now
+    # that it means a frame was actually accepted and handed to the worker.
     print(f"render: {view}")
+
+
+def _draw_startup_frame() -> None:
+    """The panel's first frame after process start (spec §9, gap check
+    §14.4): the Historic View, drawn unconditionally -- `last_drawn_at` is
+    still None so the floor trivially allows it. Without this, a reboot
+    leaves whatever the panel held before the power cut on screen,
+    arbitrarily stale and undetectable, since `monotonic()` reset with it.
+
+    Named rather than inlined in main(): a future boot splash is then a
+    one-line change here, not a rewrite of main() or the redraw floor.
+    """
+    ReceiveState.redraw_gate.try_draw_historic_now({"historic": True})
 
 
 # ---------------------------------------------------------------------------
@@ -482,6 +565,9 @@ class ReceiveState:
     # fallback redraw to the Historic View (spec §9.2, ADR-0010) instead of
     # leaving a stale Gauge frame on the panel indefinitely.
     _gauge_was_shown = False
+    # A render_module.PanelWorker, set once by main(); stays None under test
+    # and before main() has run, and render() is then a safe no-op.
+    _panel_worker = None
 
     @classmethod
     def on_connect(cls, ble_device) -> None:
@@ -525,7 +611,14 @@ class ReceiveState:
         now expired, force a Historic fallback redraw (spec §9.2,
         ADR-0010) — otherwise a Desktop that simply stops pushing would
         leave a stale Gauge frame on the panel forever.
+
+        Also where the render worker's watchdog gets polled (spec §8): a
+        stuck ReadBusy needs no thread of its own, since this timer
+        already runs on the BLE process's own clock once a minute.
         """
+        if cls._panel_worker is not None:
+            cls._panel_worker.check_watchdog()
+
         gauge_showing = cls.gauge.is_live() and not cls.gauge.is_expired()
         if gauge_showing:
             cls.redraw_gate.try_draw_gauge(cls.gauge.view())
@@ -609,6 +702,8 @@ def main(adapter_address: str) -> None:
 
     init_db()
     ReceiveState.db_path = DB_PATH
+    ReceiveState._panel_worker = render_module.PanelWorker()
+    _draw_startup_frame()
 
     ble_receiver = peripheral.Peripheral(adapter_address, local_name="zeropi-display")
     ble_receiver.add_service(srv_id=1, uuid=SERVICE_UUID, primary=True)
