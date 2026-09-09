@@ -128,9 +128,10 @@ Method note the map fixes: **mocks first, exactly one bench session on real
 glass before the spec is written.** Not a design loop that stalls on the
 maintainer each round.
 
-Frontier at charting — **four takeable in parallel**:
+Frontier — **three takeable in parallel** (four at charting; the research one
+resolved immediately):
 [Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52) (prototype),
-[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54) (research, **subagent fired at charting**),
+~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 [Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55) (grilling),
 [How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56) (grilling).
 Blocked behind them:
@@ -138,6 +139,11 @@ Blocked behind them:
 [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57) →
 [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58).
 Full bodies live on the tickets — read them there, not here.
+
+⚠ **The font research also confirmed the stale-base warning below**: the
+subagent's worktree came up on an unrelated "Initial commit", not `dev` — it
+branched from `origin/dev` explicitly instead. That is now three for three.
+**Always confirm a fresh worktree's base before handing it real work.**
 
 ⚠ **#56 is the one with a hidden bite**: `receive.py` calls `render()`
 synchronously inside the bluezero write handler, and a real full refresh takes
