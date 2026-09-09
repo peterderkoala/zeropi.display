@@ -32,8 +32,22 @@ Three things from that run you would otherwise rediscover the hard way:
   correct — the constants produce it. Flagged on #13, deliberately not "fixed";
   it belongs to whoever charts the rendering map.
 
-**The next milestone is e-ink rendering, and it wants its own map.** Everything
-below it is now proven: real data arrives at a `render()` that only logs.
+**The next milestone is e-ink rendering, and it now HAS a map** — charted
+2026-09-09, see Maps below. Everything below it is proven: real data arrives
+at a `render()` that only logs.
+
+⚠ **Weather, calendar and the One-liner were dropped from the project**
+(maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
+usage display and nothing else. `CONTEXT.md` no longer defines **One-liner**;
+`pi-eink-ble-concept.md` and `CLAUDE.md` are rewritten, with the concept
+document's milestone-1 sections kept as the historical record they are. Do not
+reintroduce them from an old document.
+
+⚠ **The Pi has no fonts at all** — `/usr/share/fonts` does not exist, `find`
+returns 0 files. PIL 11.1.0 is installed and working, but #38's settled mock
+renderer loads DejaVu by absolute path and therefore **cannot run on the Pi**.
+Nothing noticed because nothing has ever drawn text there. It is the rendering
+map's own ticket.
 
 **Milestone 1 (BLE prototype) works on real hardware.** The Desktop pushes a
 Payload over BLE, the Pi parses it, persists a Reading to SQLite, and returns
@@ -97,6 +111,40 @@ and nobody has actually looked at the glass.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
+
+### Current: [Map: What the e-ink panel draws, and how (spec)](https://github.com/peterderkoala/zeropi.display/issues/51)
+
+Charted 2026-09-09. **A planning map — "plan, don't do" applies.** Destination
+is `docs/spec-eink-rendering.md`; **implementation is a separate map** opened
+against the finished spec, the way #41 was opened against #13's.
+
+Scope was settled by grilling before charting: the Historic View design is the
+bulk of the work (it has **no** design today), the Gauge frame is carried
+across already-settled from #38, weather/calendar/One-liner are dropped from
+the project entirely, and the `PWR_PIN`-on-BCM-18 question is **Out of scope**
+(maintainer ruled it out — bench work, blocks nothing).
+
+Method note the map fixes: **mocks first, exactly one bench session on real
+glass before the spec is written.** Not a design loop that stalls on the
+maintainer each round.
+
+Frontier at charting — **four takeable in parallel**:
+[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52) (prototype),
+[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54) (research, **subagent fired at charting**),
+[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55) (grilling),
+[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56) (grilling).
+Blocked behind them:
+[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53) →
+[Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57) →
+[Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58).
+Full bodies live on the tickets — read them there, not here.
+
+⚠ **#56 is the one with a hidden bite**: `receive.py` calls `render()`
+synchronously inside the bluezero write handler, and a real full refresh takes
+**2.29 s** against a 10 s per-row Ack timeout on a BlueZ ATT path that is
+already fragile (spec §10 traps 2 and 4). Whoever takes it should read those
+traps before proposing an answer.
+
 
 **#41 is CLOSED (2026-09-09)** — destination reached, all seven children
 resolved. It was charted 2026-09-06 against #13's finished spec. Destination: `docs/spec-usage-pipeline.md` implemented, tested, and
@@ -1003,11 +1051,14 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** to **chart a new map for e-ink
-  rendering** — that is the next milestone and there is no map for it. It
-  inherits two open questions already written down: ADR-0010's overstated
-  300 s freshness bound (see the top of this file and #13's comment), and
-  whether this ex-pwnagotchi HAT wires `PWR_PIN` on BCM 18 (fog left by #7).
+- **`mattpocock-skills:wayfinder`** with map #51 — **the live map, charted
+  2026-09-09, four tickets takeable in parallel right now** (#52, #54, #55,
+  #56; see Maps above). Claim one (`gh issue edit <n> --add-assignee @me`),
+  read its body, resolve it. It is a **planning** map: produce decisions and
+  mocks, not a renderer.
+- **`mattpocock-skills:prototype`** for #52 (Design the Historic View) — the
+  map's own Notes say prototype before specifying, because #26 and #38 both
+  overturned paper decisions the moment something was drawn.
 - **`mattpocock-skills:wayfinder`** with map #41 — **closed 2026-09-09.**
   Nothing to grab; all seven children resolved.
 - **`mattpocock-skills:tdd`** — the map's Notes recommend it for each unit,
