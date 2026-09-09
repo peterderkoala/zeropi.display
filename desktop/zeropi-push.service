@@ -44,6 +44,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# service.py logs only exceptions itself; everything informative on a normal
+# run ("Batch complete: N sent", "Gauge push ok") is a print() in push.py.
+# Under systemd stdout is a journal socket rather than a tty, so Python
+# block-buffers it and `journalctl --user -u zeropi-push -f` (what the header
+# above tells you to run) shows nothing at all. Found while verifying #48.
+Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/.local/share/zeropi-display/venv/bin/python3 %h/.local/share/zeropi-display/service.py
 Restart=on-failure
 RestartSec=10s
