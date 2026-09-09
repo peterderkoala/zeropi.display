@@ -2,6 +2,39 @@
 
 ## Where things stand
 
+**The usage pipeline is DONE and hardware-verified (2026-09-09).** Map #41's
+destination is reached and the map is closed: `docs/spec-usage-pipeline.md` is
+implemented, unit-tested (**181 passing**) and proven end-to-end against the
+dev Pi and the maintainer's real Claude Code logs. Real Daily and Gauge
+Payloads cross the link; the Pi persists, gates and stub-redraws per spec; the
+resident `systemd --user` service does it unattended. Full run:
+`docs/usage-pipeline-verification.md` — read it before touching either end.
+
+Three things from that run you would otherwise rediscover the hard way:
+
+- ⚠ **Anything this repo runs under systemd needs
+  `Environment=PYTHONUNBUFFERED=1` in its unit.** Both services log with
+  `print()`, and under systemd stdout is a journal socket, so CPython
+  block-buffers it: a full 10-Reading Batch produced **zero** journal lines on
+  the Pi — including the `render:` line that is §8.6's entire deliverable —
+  and the Desktop service was silent through its whole startup Batch. Fixed in
+  both units (`31bb8e7`, `94665e3`). It is invisible from a terminal, so it
+  will come back with the next unit file anyone writes.
+- ⚠ **The curl bootstrap resolves `dev` → sha through the unauthenticated
+  GitHub API**, rate-limited to 60/hr per egress IP. When that is exhausted the
+  install dies at its first step with a bare `curl: (22) ... 403`, which reads
+  like a broken script. Check `curl -i https://api.github.com/rate_limit` from
+  the Pi before debugging anything else.
+- ⚠ **ADR-0010's "whatever the Gauge frame shows is under 300 s old" is
+  overstated.** The fallback to the Historic View is itself gated by the 300 s
+  redraw floor, so a frame drawn at 268 s of Gauge Age stayed on the panel until
+  it was ~570 s old (measured), worst case just under 600 s. `receive.py` is
+  correct — the constants produce it. Flagged on #13, deliberately not "fixed";
+  it belongs to whoever charts the rendering map.
+
+**The next milestone is e-ink rendering, and it wants its own map.** Everything
+below it is now proven: real data arrives at a `render()` that only logs.
+
 **Milestone 1 (BLE prototype) works on real hardware.** The Desktop pushes a
 Payload over BLE, the Pi parses it, persists a Reading to SQLite, and returns
 an Ack — verified 18/18 on the happy path, plus all four malformed-Payload
@@ -65,8 +98,8 @@ and nobody has actually looked at the glass.
 
 ## Maps
 
-**#41 is the live map** (charted 2026-09-06), opened against #13's finished
-spec. Destination: `docs/spec-usage-pipeline.md` implemented, tested, and
+**#41 is CLOSED (2026-09-09)** — destination reached, all seven children
+resolved. It was charted 2026-09-06 against #13's finished spec. Destination: `docs/spec-usage-pipeline.md` implemented, tested, and
 verified end-to-end on real hardware. **Execution-mode** — its Notes
 override "plan, don't do" since the spec's own gap check (§13) already
 closed every decision; the seven child tickets are build-and-verify slices,
@@ -165,8 +198,25 @@ targets that standalone layout by convention, but it won't actually run
 there until this is fixed. Whoever next touches #34 or provisions a
 standalone Desktop for real should know this.
 
-**For #48**: to run this loop today with no installer support, from a repo
-clone with `.venv` set up: `.venv/bin/python desktop/service.py`
+**Update, 2026-09-09: #48 is closed, and with it the map.** The pipeline is
+verified end-to-end on real hardware — see `docs/usage-pipeline-verification.md`
+and the summary at the top of this file. Headline numbers: a 10-Reading Batch is
+**10 sent, 0 failed** at MTU 517 with ~2 s for the ten sequential Ack round
+trips; Payloads run **347–390 bytes** against the 514 budget; the redraw floor
+coalesced a second Gauge Payload sent 0.08 s after the first (`drawn: true` then
+`drawn: false`, one `render:` line); and the **wipe/hand-back recovery works on a
+Gauge Ack specifically** — the exact path #46's review caught missing. The
+resident service's startup catch-up fired 8 s after start and pushed all ten
+Readings with no operator involvement.
+
+⚠ **Before you next re-provision the Pi**, note that the run had to fix the Pi's
+unit file (`31bb8e7`) and the Desktop's (`94665e3`) for `PYTHONUNBUFFERED`; the Pi
+is currently on `31bb8e7`, so it is one commit behind `dev`'s tip in its VERSION
+stamp but functionally current (`94665e3` and `a45d964` touch only the Desktop
+unit and docs).
+
+**Historic note, superseded — #48's own instructions for running the service**: to
+run this loop from a repo clone with `.venv` set up: `.venv/bin/python desktop/service.py`
 (`--store PATH` to override the store). To exercise the actual systemd
 unit, copy `desktop/zeropi-push.service` to `~/.config/systemd/user/`,
 rewrite `ExecStart` to the in-place layout (`<repo>/.venv/bin/python3
@@ -934,6 +984,11 @@ in `docs/research/`):
   detection must be based on the invoking shell's `$PWD`, never on the
   script's own location, since the curl bootstrap always runs it out of a
   tarball staging dir. See `docs/curl-delivery-verification.md`.
+- **⚠ `install.sh` resolves its ref through the unauthenticated GitHub API**
+  (60 requests/hour per egress IP). Exhausted, it fails at the first step with
+  a bare `curl: (22) ... 403` and no hint that rate limiting is the cause. Hit
+  during #48 on 2026-09-09; the reset is at most an hour out and
+  `curl -i https://api.github.com/rate_limit` from the Pi says when.
 - Pi: Debian 13 (trixie), Python 3.13.5, aarch64, BlueZ `5.82-1.1+rpt2`,
   `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
@@ -948,10 +1003,13 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #41 — **the live map, four
-  tickets takeable in parallel right now** (#42, #43, #44, #45; see Maps
-  above). Claim one (`gh issue edit <n> --add-assignee @me`), read the spec
-  section it points at, build it.
+- **`mattpocock-skills:wayfinder`** to **chart a new map for e-ink
+  rendering** — that is the next milestone and there is no map for it. It
+  inherits two open questions already written down: ADR-0010's overstated
+  300 s freshness bound (see the top of this file and #13's comment), and
+  whether this ex-pwnagotchi HAT wires `PWR_PIN` on BCM 18 (fog left by #7).
+- **`mattpocock-skills:wayfinder`** with map #41 — **closed 2026-09-09.**
+  Nothing to grab; all seven children resolved.
 - **`mattpocock-skills:tdd`** — the map's Notes recommend it for each unit,
   since the spec (§11) is written test-first-friendly: a synthetic fixture
   with 14 named cases and explicit per-unit assertions (§11.3).
