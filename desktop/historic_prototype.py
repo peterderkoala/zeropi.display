@@ -181,6 +181,10 @@ def main(out):
     variant_c(out, PI_HELD, "C-active-day-list-as-pi-holds-it")
     empty_frame(out)
     contact_sheet(out)
+    render_settled(out, REAL, "2026-07-28", "SETTLED-full")
+    render_settled(out, PI_HELD, "2026-09-04", "SETTLED-as-pi-holds-it",
+                   incomplete={"2026-09-05"})
+    settled_sheet(out)
     print(f"wrote mocks to {out}/")
 
 
@@ -209,6 +213,57 @@ def contact_sheet(out):
         y += ch + pad
     sheet.save(f"{out}/CONTACT-SHEET.png")
     print(f"wrote {out}/CONTACT-SHEET.png")
+
+# --- THE SETTLED DESIGN (#52) ------------------------------------------------
+# C's active-day list, D's per-active-day average folded into the footer, a
+# Coverage Start line so an unobserved day cannot read as an idle one, and a
+# "~" prefix on any day whose cost is incomplete.
+
+def render_settled(out, rows, coverage_start, name, incomplete=()):
+    img, d = frame()
+    days = rows[-5:]
+    peak = max([c for _, c, _, _ in days] + [1])
+    avg = sum(c for _, c, _, _ in rows) / len(rows)
+
+    y = 1
+    for iso, cost, _, _ in reversed(days):
+        dd = date.fromisoformat(iso)
+        d.text((3, y), dd.strftime("%d %b").upper(), font=font(14, True), fill=0)
+        amt = ("~" if iso in incomplete else "") + f"${cost:.0f}"
+        d.text((104 - d.textlength(amt, font=font(14, True)), y), amt, font=font(14, True), fill=0)
+        bw = int(138 * (cost / peak))
+        d.rectangle([110, y + 4, 110 + max(bw, 1), y + 12], fill=0)
+        y += 20
+
+    d.line([0, 101, W, 101], fill=0)
+    cs = date.fromisoformat(coverage_start).strftime("%d %b").upper()
+    d.text((3, 106), f"SINCE {cs}", font=font(12), fill=0)
+    a = f"AVG ${avg:.0f}"
+    d.text((W - 3 - d.textlength(a, font=font(12)), 106), a, font=font(12), fill=0)
+    save(img, out, name)
+
+
+def settled_sheet(out):
+    names = [
+        ("SETTLED-full", "the design: 5 active days, avg + coverage footer"),
+        ("SETTLED-as-pi-holds-it", "as the Pi holds it today: 4 days, one cost incomplete (~)"),
+        ("EMPTY-no-readings", "the empty frame"),
+    ]
+    scale, pad, label_h = 2, 16, 22
+    cw, ch = W * scale, H * scale
+    sheet = Image.new("L", (cw + pad * 2, (ch + label_h + pad) * len(names) + pad), 255)
+    d = ImageDraw.Draw(sheet)
+    y = pad
+    for fn, label in names:
+        d.text((pad, y), label, font=font(14, True), fill=0)
+        y += label_h
+        tile = Image.open(f"{out}/{fn}.png").convert("L").resize((cw, ch), Image.NEAREST)
+        sheet.paste(tile, (pad, y))
+        d.rectangle([pad, y, pad + cw, y + ch], outline=128)
+        y += ch + pad
+    sheet.save(f"{out}/SETTLED-SHEET.png")
+    print(f"wrote {out}/SETTLED-SHEET.png")
+
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else ".")
