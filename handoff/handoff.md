@@ -230,18 +230,52 @@ would conflate two faults that point in different directions.
 both halves** — the design does not show projects, and the data path does not
 need them.
 
-Frontier — **one takeable** (seven at charting; five resolved):
+**Update, same day: [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
+is closed** — nine frames on the panel with the maintainer looking at them.
+
+**The Historic View survived unchanged**: the 12 px footer is readable at
+arm's length, the `~` marker reads as a qualifier rather than a smudge, the
+gap left by a short list reads as intentional, the empty frame reads as a
+state rather than a fault, and there was no ghosting.
+
+⚠ **The Gauge frame did not survive.** #38 settled it on PNG mocks and it had
+never been on the panel: the split rule was drawn to `y=46` while the 5H bar
+occupies `y=40–48`, so six pixels of rule ran **straight through the bar** —
+invisible at 3×, obvious on glass. Also the bars were too thin and sat too
+high (now **11 px**, moved down), and the 7D row ran `26%` into
+`resets 135h52m`. Fixed on branch `prototype/gauge-glass-fix`. **The lesson is
+about method, not geometry: a design signed off on mocks is not signed off.**
+
+⚠ **Body text bottoms out at 13 px, not 11 px.** `waiting for first snapshot`
+at 11 px **collides on the `st` and `sh` pairs** on real e-ink; at 13 px they
+separate. This is the mode-`"1"` `FT_LOAD_TARGET_MONO` rasterisation effect #54
+predicted, now with a reproducible failing string. Applied to both frames'
+second lines (`prototype/historic-view` `5a84efe`). **It is a rasterisation
+limit, not a size preference — any font other than DejaVu must be re-checked
+against that exact string before it is chosen.**
+
+Every frame drew at 4,000 bytes / `display()` 2.29 s / full cycle **4.35 s**,
+confirming #56's bench number from an entirely different code path. The frames
+were rendered on the Desktop and displayed as prepared 1-bit bitmaps, since the
+Pi still has no fonts — so **the 13 px floor wants re-confirming once text is
+rasterised on the Pi itself** (Pillow 11.1.0 there).
+
+Frontier — **the spec, and only the spec** (seven at charting; six resolved):
 ~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 ~~[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55)~~ (**closed**, see above),
 ~~[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56)~~ (**closed**, see above).
-~~[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)~~ (**closed**, see above)
-and [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
-(⚠ **HITL — needs the maintainer at the bench**; it unblocked when the mocks
-landed). Only [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58)
-is still blocked — by the bench check alone. **Everything that can be decided
-from the terminal on this map is decided**: the next move is the maintainer at
-the bench, then the spec.
+~~[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)~~
+and ~~[Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)~~
+(both **closed**, see above). [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58)
+is **unblocked and is the only thing left on this map** — every decision it
+needs is now taken. Writing it reaches the destination and closes the map;
+implementation is then its own map, opened against the finished spec.
+
+Branches it must draw on, all unmerged: `prototype/historic-view` (the design
+and its mocks), `prototype/gauge-glass-fix` (the corrected Gauge frame),
+`bench/render-blocking` (the event-loop measurements), `research/eink-fonts`
+(the font facts).
 Full bodies live on the tickets — read them there, not here.
 
 ⚠ **The font research also confirmed the stale-base warning below**: the
