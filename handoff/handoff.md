@@ -38,9 +38,11 @@ day, then closed. It says what the panel draws and how, in pixel geometry a
 human approved on real glass. `receive.py` still does not import the driver, so
 nothing reaches the panel yet.
 
-**Next: an implementation map, opened against that spec** — the way #41 was
-opened against #13. Read the spec first; it names its own required reading and
-says outright that THIS FILE is not authoritative.
+**The implementation map is charted**:
+[Map: Make the panel draw](https://github.com/peterderkoala/zeropi.display/issues/59),
+opened against that spec the way #41 was opened against #13. **Four tickets are
+takeable in parallel right now.** Read the spec first; it names its own
+required reading and says outright that THIS FILE is not authoritative.
 
 ⚠ **Weather, calendar and the One-liner were dropped from the project**
 (maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
@@ -117,6 +119,37 @@ and nobody has actually looked at the glass.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## Maps
+
+### Current: [Map: Make the panel draw (implement docs/spec-eink-rendering.md)](https://github.com/peterderkoala/zeropi.display/issues/59)
+
+Charted 2026-09-09, straight after #51 closed. **Execution mode** — the "plan,
+don't do" default is overridden, as on #41, because the spec's §14 gap check
+already closed every judgment call. Tickets are build-and-verify slices.
+
+**Destination**: the panel draws, hardware-verified with a human looking at it.
+Three things are inside that and not adjacent to it: `pi/render.py` and its
+wiring; the **Desktop throttle drop to 120 s**; and **provisioning**, so the
+milestone is reproducible on a fresh Pi rather than true only on this one.
+
+Frontier — **four takeable in parallel**:
+[frame builders](https://github.com/peterderkoala/zeropi.display/issues/60),
+[the worker + failure handling](https://github.com/peterderkoala/zeropi.display/issues/61),
+[the data layer](https://github.com/peterderkoala/zeropi.display/issues/62),
+[the throttle drop](https://github.com/peterderkoala/zeropi.display/issues/65).
+Then [wiring](https://github.com/peterderkoala/zeropi.display/issues/63) →
+[provisioning](https://github.com/peterderkoala/zeropi.display/issues/64) →
+[hardware verification](https://github.com/peterderkoala/zeropi.display/issues/66)
+(⚠ HITL, needs the maintainer at the bench).
+
+⚠ **[#61](https://github.com/peterderkoala/zeropi.display/issues/61) is the
+subtle one** — read spec §8 and `bench/render-blocking` before starting it.
+Everything else is porting a verified reference implementation; that one is
+where a wrong choice costs the BLE link.
+
+⚠ **The reference renderers already exist** on `prototype/historic-view` and
+`prototype/gauge-glass-fix`. Port them, do not redesign them — their geometry
+is the geometry a human approved on glass.
+
 
 ### [Map: What the e-ink panel draws, and how (spec)](https://github.com/peterderkoala/zeropi.display/issues/51) — **CLOSED 2026-09-09**
 
@@ -1216,12 +1249,13 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** to **chart the implementation map** for
-  e-ink rendering, against `docs/spec-eink-rendering.md`. That is the next
-  effort and there is no map for it. Precedent: #41, charted against #13's
-  finished spec, ran as an **execution** map because the spec had already
-  closed every judgment call — this spec was written to the same standard, so
-  expect the same shape.
+- **`mattpocock-skills:wayfinder`** with map #59 — **the live map, charted
+  2026-09-09, four tickets takeable in parallel right now** (#60, #61, #62,
+  #65; see Maps above). Claim one (`gh issue edit <n> --add-assignee @me`),
+  read the spec section it points at, build it. **Execution** map: produce
+  working code, not decisions.
+- **`mattpocock-skills:tdd`** per unit — spec §12 names the assertions, and
+  frame builders are unusually easy to test (render, assert on pixels).
 - **`mattpocock-skills:wayfinder`** with map #51 — **closed 2026-09-09.**
   Nothing to grab; all seven children resolved.
 - **The bench session (#57) is the one that needs a human.** It is unblocked
