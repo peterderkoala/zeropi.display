@@ -2,23 +2,29 @@
 
 ## Goal
 Build a small e-ink display (reusing existing pwnagotchi Pi Zero + Waveshare
-e-ink HAT hardware) that shows a daily summary: Claude usage. Longer-term data source for the one-liner/usage stat
-is local Claude Code session data (JSONL logs) rather than a separate paid
-API key. Local SQLite DB must save the usage to display long term graph and
-usage avg in the future.
+e-ink HAT hardware) that shows **live Claude Code usage**: a gauge of current
+consumption against the rolling limit windows, backed by a daily history
+graph. The data comes from local Claude Code session data (JSONL logs) rather
+than a paid API key, and a local SQLite DB on the Pi holds the history.
 
-**Current phase: prove out a working Bluetooth link between a desktop
-machine and the Pi. No e-ink rendering, no real data parsing, no case/UPS
-yet — just get data reliably from desktop → Pi over BLE.**
+⚠ **Weather, calendar and the AI-generated One-liner were dropped from the
+project on 2026-09-09** (maintainer's call). This document opened on them,
+and the sections below that still mention them are the **historical record of
+milestone 1**, kept as written — not a plan. The One-liner is also gone from
+the vocabulary in `CONTEXT.md` and from the wire: the usage pipeline's Payload
+never carried it.
+
+**Current phase: specifying what the e-ink panel draws and how.** The BLE link
+and the usage pipeline over it are both done and hardware-verified; the panel
+driver is proven to draw but nothing renders to it yet.
 
 See `CONTEXT.md` for the Desktop/Pi/Payload/Reading/Ack vocabulary used
 below, and `docs/adr/` for the reasoning behind the single-write and
 Pi-side-persistence decisions.
 
 ## Roles
-- **Desktop (BLE central):** owns the real data sources (weather API,
-  calendar, and eventually Claude Code's local `~/.claude/projects/*.jsonl`
-  logs). Builds a Payload and pushes it to the Pi.
+- **Desktop (BLE central):** owns the real data source — Claude Code's local
+  `~/.claude/projects/*.jsonl` logs. Builds a Payload and pushes it to the Pi.
 - **Pi Zero (BLE peripheral):** dumb receiver. Advertises a custom GATT
   service, accepts a Payload write, parses and persists it, and reports an
   Ack.

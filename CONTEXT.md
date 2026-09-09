@@ -2,16 +2,17 @@
 
 Pi Zero e-ink display project reusing pwnagotchi hardware to show live Claude
 Code usage: a gauge of current consumption against the rolling limit windows,
-backed by a daily history graph. Current phase: specifying the pipeline that
-reads usage on the Desktop and pushes it over Bluetooth (BLE) to the Pi.
+backed by a daily history graph. That is the whole of it — weather, calendar
+and the One-liner were dropped from the project on 2026-09-09. Current phase:
+specifying what the e-ink panel draws and how.
 
 ## Language
 
 ### The two ends
 
 **Desktop (BLE Central)**:
-The machine that owns the real data sources (weather, calendar, Claude Code
-usage) and initiates the BLE connection to push a Payload to the Pi. Need
+The machine that owns the real data source — Claude Code usage — and
+initiates the BLE connection to push a Payload to the Pi. Need
 not be the maintainer's dev machine — any Linux box running Claude Code can
 be provisioned as one. A Pi is coupled to **one Desktop at a time**, but that
 Desktop is replaceable.
@@ -154,7 +155,3 @@ whose model is unrecognised still counts its tokens, but is marked
 incomplete rather than being dropped or failing the push.
 _Avoid_: Priced, valid, accurate
 
-**One-liner**:
-The short AI-generated summary string carried in the Payload, eventually
-sourced from local Claude Code JSONL session logs instead of a paid API.
-_Avoid_: Summary, blurb

@@ -77,10 +77,15 @@ uv pip install -r desktop/requirements-dev.txt
 
 zeropi.display is a Pi Zero e-ink display project (see
 `pi-eink-ble-concept.md` for the full concept). It reuses existing pwnagotchi
-Pi Zero + Waveshare e-ink HAT hardware to show a daily summary: weather,
-calendar, and an AI-generated one-liner. The longer-term goal is to source
-the one-liner/usage stat from local Claude Code session data (JSONL logs in
-`~/.claude/projects/*.jsonl`) rather than a separate paid API key.
+Pi Zero + Waveshare e-ink HAT hardware to show **live Claude Code usage**: a
+gauge of current consumption against the rolling limit windows, backed by a
+daily history graph, read from local session data (JSONL logs in
+`~/.claude/projects/*.jsonl`) rather than a paid API key.
+
+⚠ **Weather, calendar and the AI-generated one-liner were dropped from the
+project on 2026-09-09** (maintainer's call, while charting the e-ink
+rendering map). Usage is the whole product. Older documents that still frame
+this as a daily summary of those three are historical.
 
 **Current phase**: the BLE link and the **real usage pipeline** over it are
 both done and hardware-verified; no case/UPS yet. **The e-ink panel driver is
@@ -98,11 +103,10 @@ Roles (see `CONTEXT.md` for the domain vocabulary):
   persists it as a Reading, and returns an Ack. It does not fetch or
   compute anything itself.
 
-Explicitly out of scope for the current prototype milestone: e-ink
-**rendering** (the driver beneath it is set up — see #39 — but drawing a
-Payload to the panel is not), real weather/calendar parsing and the
-One-liner (usage parsing is done — see map #41), power/UPS/enclosure
-hardware, any cloud/API-key fallback.
+Explicitly out of scope: weather, calendar and the One-liner (**dropped from
+the project**, see above), power/UPS/enclosure hardware, and any
+cloud/API-key fallback. E-ink **rendering** is now the active milestone —
+being specified, not yet built.
 
 ## Hardware / infrastructure notes
 
