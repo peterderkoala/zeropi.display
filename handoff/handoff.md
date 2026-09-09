@@ -2,6 +2,10 @@
 
 ## Where things stand
 
+> **If you are here to implement rendering — the current work — read
+> [For the next session](#for-the-next-session-implementing-map-59) below
+> first. The rest of this section is what is already true.**
+
 **The usage pipeline is DONE and hardware-verified (2026-09-09).** Map #41's
 destination is reached and the map is closed: `docs/spec-usage-pipeline.md` is
 implemented, unit-tested (**181 passing**) and proven end-to-end against the
@@ -25,12 +29,12 @@ Three things from that run you would otherwise rediscover the hard way:
   install dies at its first step with a bare `curl: (22) ... 403`, which reads
   like a broken script. Check `curl -i https://api.github.com/rate_limit` from
   the Pi before debugging anything else.
-- ⚠ **ADR-0010's "whatever the Gauge frame shows is under 300 s old" is
-  overstated.** The fallback to the Historic View is itself gated by the 300 s
-  redraw floor, so a frame drawn at 268 s of Gauge Age stayed on the panel until
-  it was ~570 s old (measured), worst case just under 600 s. `receive.py` is
-  correct — the constants produce it. Flagged on #13, deliberately not "fixed";
-  it belongs to whoever charts the rendering map.
+- ⚠ **ADR-0010's freshness claim was overstated, and is now fixed.** A frame
+  drawn at 268 s of Gauge Age stayed on the panel until it was ~570 s old,
+  because the fallback is itself floor-gated. **Resolved by #55 the same day**:
+  the ADR is amended with two honest bounds, and the throttle drops to 120 s.
+  Do not re-open it from this bullet — read ADR-0008 and ADR-0010, both amended
+  2026-09-09.
 
 **E-ink rendering is SPECIFIED, not built.** `docs/spec-eink-rendering.md`
 (`bf6be4b`) is binding — map #51's destination, charted and finished in one
@@ -117,6 +121,61 @@ and nobody has actually looked at the glass.
   0010 for the daily keep-alive), `0009` pi-is-given-durations-not-timestamps,
   `0010` an-expired-gauge-is-not-drawn.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
+
+## For the next session: implementing map #59
+
+**The job**: make the panel draw, per `docs/spec-eink-rendering.md`. The map is
+[#59](https://github.com/peterderkoala/zeropi.display/issues/59); four of its
+seven tickets are takeable in parallel right now.
+
+**Read in this order, and stop when you have what your ticket needs:**
+
+1. Your ticket body — it names the exact spec sections and quotes the numbers.
+2. `docs/spec-eink-rendering.md` — binding, and it names its own required
+   reading. **§11 supersedes three clauses of `spec-usage-pipeline.md`**; do
+   not read those as current.
+3. The reference implementation for your seam, on an unmerged branch (below).
+4. This file only for environment facts. **The spec says outright that this
+   file is not authoritative.**
+
+**The reference renderers already exist. Port them; do not redesign them** —
+their geometry is what a human approved on glass, pixel by pixel:
+
+| Branch | What it holds |
+|---|---|
+| `prototype/historic-view` | `desktop/historic_prototype.py` — the Historic View and empty frame, plus the four rejected candidates |
+| `prototype/gauge-glass-fix` | `desktop/gauge_settled.py` — the Gauge frame with #57's corrections |
+| `bench/render-blocking` | the event-loop measurements and the timing probe |
+| `research/eink-fonts` | the font facts, with rendered samples |
+
+**The five things most likely to bite, none of them in the spec's own voice:**
+
+1. ⚠ **Nothing may block the bluezero event loop for more than ~5 s.** That is
+   BlueZ's write timeout, not our 10 s Ack timeout, and a full panel cycle is
+   **4.35 s**. This is why the refresh runs on a worker thread. Overrunning
+   raises `GATT Protocol Error: Unlikely Error` — the same signature milestone
+   1 spent a session chasing — *after* the Pi has already persisted the
+   Reading, so the two ends then disagree silently.
+2. ⚠ **The Pi has no fonts.** `/usr/share/fonts` does not exist. Until
+   [#64](https://github.com/peterderkoala/zeropi.display/issues/64) lands,
+   anything drawing text on the Pi dies at `ImageFont.truetype()`.
+3. ⚠ **Build images directly in mode `"1"`.** Greyscale-then-convert takes a
+   different FreeType path and produces different letterforms, so what you
+   review is not what the panel shows.
+4. ⚠ **`epdconfig` claims GPIO on import**, and `receive.py` must stay
+   importable with no panel, no SPI and no bluezero — the suite depends on it.
+   The import belongs inside the worker.
+5. ⚠ **Every panel cycle must end in `epd.sleep()`**, with `init()` *inside*
+   the guarded region. A review already caught this exact mistake once
+   (`ca68517`). The context manager exists to make it structural.
+
+**Definition of done for the map**: the panel draws every frame, on the dev Pi,
+with a human looking at it — plus the throttle drop and provisioning, so it is
+reproducible on a fresh Pi rather than true only on this one. Ticket
+[#66](https://github.com/peterderkoala/zeropi.display/issues/66) carries the
+first thing to check at the bench: **re-confirm the 13 px text floor with text
+rasterised on the Pi itself**, since every frame approved so far was rasterised
+on the Desktop and sent as a bitmap.
 
 ## Maps
 
@@ -1258,16 +1317,14 @@ in `docs/research/`):
   frame builders are unusually easy to test (render, assert on pixels).
 - **`mattpocock-skills:wayfinder`** with map #51 — **closed 2026-09-09.**
   Nothing to grab; all seven children resolved.
-- **The bench session (#57) is the one that needs a human.** It is unblocked
-  now: mocks exist and the font options are known. Everything else on the map
-  can be driven without leaving the terminal.
+- **[#66](https://github.com/peterderkoala/zeropi.display/issues/66) is the one
+  that needs a human** — hardware verification at the bench, blocked until the
+  build tickets land. Everything else on map #59 can be driven from the
+  terminal. (#57, the spec map's bench session, is **closed**.)
 - **`mattpocock-skills:wayfinder`** with map #41 — **closed 2026-09-09.**
   Nothing to grab; all seven children resolved.
-- **`mattpocock-skills:tdd`** — the map's Notes recommend it for each unit,
-  since the spec (§11) is written test-first-friendly: a synthetic fixture
-  with 14 named cases and explicit per-unit assertions (§11.3).
-- Read `docs/spec-usage-pipeline.md` before touching any of #42/#43/#44/#45 —
-  it is the binding source, not this file, not map #13's closed decisions.
+- *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
+  against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
 - **`mattpocock-skills:wayfinder`** with map #13 — **closed, 2026-09-06.**
   Nothing to grab; superseded by #41.
 - **`mattpocock-skills:wayfinder`** with map #7 — **closed, 2026-09-06.**
