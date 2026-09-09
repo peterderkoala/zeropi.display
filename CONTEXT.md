@@ -144,10 +144,19 @@ reading.
 _Avoid_: Staleness, last updated, timestamp, received_at
 
 **Historic View**:
-What the panel shows when there is no live Gauge — the daily trend drawn from
-stored Readings. Not a fallback screen or an error state: it is the display's
-resting picture, and the Gauge is what temporarily replaces it.
-_Avoid_: Idle screen, default view, fallback
+What the panel shows when there is no live Gauge — the most recent **Active
+Days**, each with its cost, over the whole history the Pi holds. It is the
+display's resting picture, and the Gauge is what temporarily replaces it.
+_Avoid_: Fallback screen, idle screen, error state
+
+**Active Day**:
+A calendar date on which any Usage was recorded at all. The Historic View
+counts and lists Active Days rather than calendar days, because usage is
+bursty — 11 Active Days over 44 calendar days, measured — and a calendar
+window drawn over that is mostly gaps. Distinct from a date the Pi never
+received, which is outside **Coverage Start** and is not a fact about usage
+at all.
+_Avoid_: Working day, busy day
 
 **Cost Complete**:
 Whether every model in a Reading was found in the pricing table. A Reading
