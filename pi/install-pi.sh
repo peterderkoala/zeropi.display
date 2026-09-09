@@ -63,11 +63,14 @@ echo "==> Installing apt dependencies"
 # vendored driver's own setup.py declares a stale RPi.GPIO dependency that
 # pip would resolve into a package broken on current Raspberry Pi OS. The
 # driver imports spidev and gpiozero; gpiozero needs lgpio as its pin factory
-# on trixie; PIL is for callers that build a frame. See
-# pi/waveshare_epd/README.md.
+# on trixie; PIL is for callers that build a frame. fonts-dejavu-core is the
+# rendering milestone's own requirement (spec-eink-rendering.md §3): the Pi
+# has no fonts at all otherwise, so any frame drawing text fails at
+# ImageFont.truetype() with no font directory even present to fall back on.
 apt-get update -qq
 apt-get install -y python3-dbus python3-gi python3-venv \
-    python3-spidev python3-gpiozero python3-lgpio python3-pil
+    python3-spidev python3-gpiozero python3-lgpio python3-pil \
+    fonts-dejavu-core
 
 echo "==> Excluding the midi/sap/avrcp bluetoothd plugins"
 # The stock midi plugin segfaults bluetoothd on every incoming LE
@@ -128,9 +131,10 @@ else
     REBOOT_REQUIRED=1
 fi
 
-echo "==> Deploying receive.py to $INSTALL_DIR"
+echo "==> Deploying receive.py and render.py to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp "$SCRIPT_DIR/receive.py" "$INSTALL_DIR/receive.py"
+cp "$SCRIPT_DIR/render.py" "$INSTALL_DIR/render.py"
 
 echo "==> Deploying the e-ink driver and self-test to $INSTALL_DIR"
 # The vendored waveshare_epd package sits next to epd-selftest.py so a plain
@@ -232,7 +236,9 @@ else
 fi
 
 for artefact in "$INSTALL_DIR/waveshare_epd/epd2in13_V4.py" \
-                "$INSTALL_DIR/epd-selftest.py"; do
+                "$INSTALL_DIR/epd-selftest.py" \
+                "$INSTALL_DIR/render.py" \
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; do
     if [[ ! -f "$artefact" ]]; then
         echo "    FAIL: $artefact was not deployed" >&2
         FAIL=1

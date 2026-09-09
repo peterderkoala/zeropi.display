@@ -9,6 +9,15 @@ Run by hand on the Pi after provisioning:
 This is a bench tool, not part of the BLE path -- nothing in receive.py
 imports it. It draws one frame and goes back to sleep.
 
+Panel ownership (spec-eink-rendering.md §10): once `receive.py` runs under
+`zeropi-display.service`, it owns the panel, and this script claims the same
+GPIO/SPI on import (see pi/waveshare_epd/README.md). Running both at once is
+a collision, not just a race -- so this refuses to run while the service is
+active rather than leaving that to whoever happens to run it:
+
+    Refusing: zeropi-display.service is active and owns the panel.
+    Stop it first: sudo systemctl stop zeropi-display
+
 Every cycle is a full refresh and ends in epd.sleep(), per docs/adr/0007. The
 panel must not be left in a powered non-sleep state: the vendor says it "will
 remain in a high voltage state for a long time, which will damage the e-Paper
@@ -25,22 +34,39 @@ whole script "passes" in about zero seconds. Exit status alone proves nothing.
 import argparse
 import logging
 import socket
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
 from PIL import Image, ImageDraw, ImageFont
 
-from waveshare_epd import epd2in13_V4, epdconfig
-
-# The panel is 122x250 portrait; this HAT is read in landscape, and
-# getbuffer() rotates a correctly-sized landscape image for us.
-LANDSCAPE = (epd2in13_V4.EPD_HEIGHT, epd2in13_V4.EPD_WIDTH)
+# waveshare_epd is deliberately NOT imported at module scope: importing
+# epdconfig claims GPIO as a side effect (pi/waveshare_epd/README.md), so
+# nothing should touch it before main() has confirmed the service isn't
+# already holding the panel. See PANEL_SERVICE below.
+PANEL_SERVICE = "zeropi-display"
 
 # BCM 24, wired as gpiozero.Button(pull_up=False) by epdconfig.
 BUSY_PIN = 24
 
 logger = logging.getLogger("epd-selftest")
+
+
+def _service_is_active(name: str = PANEL_SERVICE) -> bool:
+    """True iff systemd reports `name` as active.
+
+    Asked of systemd directly, rather than tracked with a pidfile/lock this
+    repo would have to keep in sync itself: `zeropi-display.service` is the
+    one and only thing that can hold the panel, and systemd already knows
+    whether it's running.
+    """
+    try:
+        result = subprocess.run(["systemctl", "is-active", "--quiet", name])
+    except FileNotFoundError:
+        # No systemd here (e.g. a dev machine) -- nothing to collide with.
+        return False
+    return result.returncode == 0
 
 
 def _timed(label: str, fn):
@@ -82,16 +108,16 @@ def _font(size: int):
         return ImageFont.load_default(size=size)
 
 
-def build_frame():
+def build_frame(landscape_size):
     """A frame whose correctness is checkable by eye.
 
     The border proves no edge is clipped, the greyscale-ish bars prove both
     polarities reach the glass, and the timestamp proves this run drew it
     rather than a ghost of an earlier one.
     """
-    image = Image.new("1", LANDSCAPE, 255)
+    image = Image.new("1", landscape_size, 255)
     draw = ImageDraw.Draw(image)
-    width, height = LANDSCAPE
+    width, height = landscape_size
 
     draw.rectangle([(0, 0), (width - 1, height - 1)], outline=0)
 
@@ -134,6 +160,19 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+    if _service_is_active():
+        logger.error(
+            "Refusing: %s.service is active and owns the panel.", PANEL_SERVICE
+        )
+        logger.error("Stop it first: sudo systemctl stop %s", PANEL_SERVICE)
+        return 1
+
+    from waveshare_epd import epd2in13_V4, epdconfig
+
+    # The panel is 122x250 portrait; this HAT is read in landscape, and
+    # getbuffer() rotates a correctly-sized landscape image for us.
+    landscape_size = (epd2in13_V4.EPD_HEIGHT, epd2in13_V4.EPD_WIDTH)
+
     epd = epd2in13_V4.EPD()
     logger.info("panel is %dx%d portrait", epd.width, epd.height)
 
@@ -159,7 +198,7 @@ def main():
 
         _timed("Clear(white)", lambda: epd.Clear(0xFF))
         if not args.clear:
-            frame = epd.getbuffer(build_frame())
+            frame = epd.getbuffer(build_frame(landscape_size))
             # 122 px is not a multiple of 8, so PIL pads each row to 16 bytes:
             # 16 x 250 = 4000. A different number means the frame is not what
             # the panel expects.
@@ -173,6 +212,7 @@ def main():
         "cleared" if args.clear else "drew the test frame",
         time.monotonic() - started,
     )
+    return 0
 
 
 if __name__ == "__main__":
