@@ -149,11 +149,42 @@ It also **narrowed #53**: the trend is per-day totals across every project, so
 **no Project Label is needed on the panel** — #13's parked question is answered
 by the design, not the plumbing.
 
-Frontier — **four takeable** (seven at charting; research and design resolved):
+**Update, same day: [How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56)
+is closed** — and it **moved its own premise**. Decisions: the refresh runs on
+**one worker thread** with a one-slot hand-off; `drawn` is redefined as *the
+gate accepted this for drawing*, not "pixels moved"; the **link outlives the
+panel** (a dead display never stops receiving, persisting or Acking, and a
+watchdog abandons a stuck `ReadBusy` rather than restarting the process); and a
+**context manager owns the panel** so ADR-0007's `sleep()`-on-every-path is
+structural, with the GPIO-claiming `epdconfig` import inside the worker.
+
+⚠ **Three measured facts that supersede what this file and the tickets assumed**
+(bench on branch `bench/render-blocking`, `docs/research/render-blocking/`):
+
+- **A full panel cycle is 4.35 s, not 2.29 s** — `init` 0.05 + `display` 2.29 +
+  `sleep` 2.00, the last being the driver's own fixed `delay_ms(2000)`.
+- **The ceiling is BlueZ's ~5 s write timeout, not our 10 s Ack timeout.** A
+  receiver blocked 30 s did not trip the Desktop's timeout — the *write* raised
+  at 5.09 s. Inline rendering would have run at ~0.5 s of margin against a
+  limit we do not control.
+- ⚠ **An overrun fails as `GATT Protocol Error: Unlikely Error`** — verbatim the
+  signature `docs/e2e-verification.md` chased for a whole session before
+  finding the `bluetoothd` segfault. **If that error ever comes back after
+  rendering ships, suspect the panel before the daemon.** Worse, the Pi has
+  already persisted the Reading by then, so the Desktop resends forever while
+  the Pi holds it — both sides correct, data diverging.
+
+Measured, not reasoned: a worker-thread receiver ran the same six-row Batch in
+**0.86 s** against inline's **5.18 s**, serving rows 2-6 *while the worker was
+mid-refresh*, because every wait in the driver is a `time.sleep` and releases
+the GIL.
+
+Frontier — **three takeable** (seven at charting; research, design and the
+event-loop question resolved):
 ~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 [Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55) (grilling),
-[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56) (grilling).
+~~[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56)~~ (**closed**, see above).
 [Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)
 and [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
 (⚠ **HITL — needs the maintainer at the bench**; it unblocked when the mocks
@@ -166,11 +197,10 @@ subagent's worktree came up on an unrelated "Initial commit", not `dev` — it
 branched from `origin/dev` explicitly instead. That is now three for three.
 **Always confirm a fresh worktree's base before handing it real work.**
 
-⚠ **#56 is the one with a hidden bite**: `receive.py` calls `render()`
-synchronously inside the bluezero write handler, and a real full refresh takes
-**2.29 s** against a 10 s per-row Ack timeout on a BlueZ ATT path that is
-already fragile (spec §10 traps 2 and 4). Whoever takes it should read those
-traps before proposing an answer.
+⚠ **#56 had a hidden bite and it bit** — see the update above. The short
+version for anyone writing Pi-side code: **nothing may block the bluezero
+event loop for more than about five seconds**, and a full panel refresh is
+4.35 s.
 
 
 **#41 is CLOSED (2026-09-09)** — destination reached, all seven children
