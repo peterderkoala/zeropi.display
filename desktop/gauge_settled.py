@@ -8,6 +8,9 @@ values, so the decisions can be looked at before they go into #20's spec.
 
 #38's decisions, visible here:
   - layout C confirmed, split headline, both numbers at full size
+  - (2026-09-09, #57, on real glass) the split rule stops at y=36 instead of
+    y=46: at 46 it ran straight through the 5H bar. Both bars moved down and
+    thickened 8px -> 11px on the maintainer's reading of the panel.
   - the CTX row is GONE (context dropped from the display, kept on the wire)
   - the freed row stays white -- deliberately, not filled
   - the footer is GONE (freshness is guaranteed <300s by the expiry rule,
@@ -58,7 +61,7 @@ def render_gauge(path, five_pct, five_left_s, seven_pct, seven_left_s):
     # Headline row: 5H percentage | RESETS IN countdown, split by a rule.
     d.text((3, 1), "5H", font=font(10, True), fill=0)
     d.text((3, 8), f"{five_pct}%", font=font(28, True), fill=0)
-    d.line([(126, 0), (126, 46)], fill=0)
+    d.line([(126, 0), (126, 36)], fill=0)
     cd = fmt_countdown(five_left_s)
     if cd == "RESETS NOW":
         # No "RESETS IN" label: it is not resetting *in* anything any more.
@@ -67,13 +70,13 @@ def render_gauge(path, five_pct, five_left_s, seven_pct, seven_left_s):
     else:
         d.text((132, 1), "RESETS IN", font=font(10, True), fill=0)
         d.text((132, 8), cd, font=font(24, True), fill=0)
-    bar(d, 3, 40, 244, 8, five_pct)
+    bar(d, 3, 42, 244, 11, five_pct)
 
     # 7D row.
-    d.text((3, 56), "7D", font=font(11, True), fill=0)
-    d.text((25, 54), f"{seven_pct}%", font=font(13, True), fill=0)
-    d.text((58, 57), f"resets {fmt_countdown(seven_left_s)}", font=font(10), fill=0)
-    bar(d, 3, 72, 244, 8, seven_pct)
+    d.text((3, 60), "7D", font=font(11, True), fill=0)
+    d.text((25, 58), f"{seven_pct}%", font=font(13, True), fill=0)
+    d.text((66, 61), f"resets {fmt_countdown(seven_left_s)}", font=font(10), fill=0)
+    bar(d, 3, 76, 244, 11, seven_pct)
 
     # The freed third row and the footer row stay white. Deliberate (#38 Q8/Q9).
     return img
@@ -87,7 +90,7 @@ def render_no_data(path):
     img, d = frame()
     d.text((3, 1), "5H", font=font(10, True), fill=0)
     d.text((3, 10), "NO USAGE DATA", font=font(24, True), fill=0)
-    d.text((3, 44), "waiting for first snapshot", font=font(11), fill=0)
+    d.text((3, 44), "waiting for first snapshot", font=font(13), fill=0)
     return img
 
 
