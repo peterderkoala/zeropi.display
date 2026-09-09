@@ -165,8 +165,10 @@ def empty_frame(out, name="EMPTY-no-readings"):
     img, d = frame()
     t = "NO HISTORY YET"
     d.text(((W - d.textlength(t, font=font(20, True))) / 2, 34), t, font=font(20, True), fill=0)
+    # 13px, not 11px: on real glass (#57) 11px body text collides on pairs
+    # like "st" and "sh". 13px is the floor for body text on this panel.
     t2 = "nothing pushed to this Pi"
-    d.text(((W - d.textlength(t2, font=font(11))) / 2, 62), t2, font=font(11), fill=0)
+    d.text(((W - d.textlength(t2, font=font(13))) / 2, 62), t2, font=font(13), fill=0)
     save(img, out, name)
 
 
