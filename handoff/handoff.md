@@ -207,16 +207,41 @@ wire were both considered and rejected.
 ⚠ **The constant itself is NOT changed in `desktop/service.py`** — planning
 map. The one-line edit and the spec §7.5 wording belong to the implementation.
 
-Frontier — **two takeable** (seven at charting; four resolved):
+**Update, same day: [Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)
+is closed.** **The Pi queries its own `readings` table**, on demand at every
+redraw, no cache, and **the wire is untouched**. Timed on the Pi against a
+synthetic year of Readings (2,190 rows): **0.25 ms** for the five rows,
+**4.66 ms** for the average — free against a 300 s floor, so caching would buy
+a rounding error and cost an invalidation bug.
+
+The contract: 5 most recent Active Days by `SUM(cost_usd)`; the average taken
+over *every* Active Day the Pi holds (so the footer reads as one sentence,
+*since 04 Sep, average $40*); `coverage_start` from `meta`, **formatted but
+never computed** (ADR-0009 still holds); `~` when `MIN(cost_complete) = 0`; an
+Active Day is a date with **any** row, not `cost > 0`.
+
+Two things this retires, so nobody re-implements them: **§9.3's
+"the Desktop sends explicit zero rows" clause is moot** (Active Days never draw
+gaps), and **a partial Batch understating a day is accepted and documented**
+rather than signalled — it self-heals on the next Batch, and reusing `~` for it
+would conflate two faults that point in different directions.
+
+**#13's parked "does the Pi derive a Project Label" question is now closed in
+both halves** — the design does not show projects, and the data path does not
+need them.
+
+Frontier — **one takeable** (seven at charting; five resolved):
 ~~[Design the Historic View](https://github.com/peterderkoala/zeropi.display/issues/52)~~ (**closed**, see above),
 ~~[Which font the panel draws with](https://github.com/peterderkoala/zeropi.display/issues/54)~~ (**resolved and closed at charting** by a research subagent — findings in `docs/research/eink-fonts.md` on the unmerged branch `research/eink-fonts`; no decision taken, the spec ticket picks),
 ~~[Re-settle ADR-0010's 300 s freshness bound](https://github.com/peterderkoala/zeropi.display/issues/55)~~ (**closed**, see above),
 ~~[How a 2.29 s refresh coexists with the BLE event loop](https://github.com/peterderkoala/zeropi.display/issues/56)~~ (**closed**, see above).
-[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)
+~~[Where the Historic View's data comes from](https://github.com/peterderkoala/zeropi.display/issues/53)~~ (**closed**, see above)
 and [Look at the design on real glass](https://github.com/peterderkoala/zeropi.display/issues/57)
 (⚠ **HITL — needs the maintainer at the bench**; it unblocked when the mocks
 landed). Only [Write docs/spec-eink-rendering.md](https://github.com/peterderkoala/zeropi.display/issues/58)
-is still blocked, by the other four.
+is still blocked — by the bench check alone. **Everything that can be decided
+from the terminal on this map is decided**: the next move is the maintainer at
+the bench, then the spec.
 Full bodies live on the tickets — read them there, not here.
 
 ⚠ **The font research also confirmed the stale-base warning below**: the
