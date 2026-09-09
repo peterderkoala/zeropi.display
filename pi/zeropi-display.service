@@ -6,6 +6,13 @@ After=bluetooth.service
 [Service]
 Type=simple
 User=pi
+# receive.py logs with print(); under systemd its stdout is a journal socket,
+# not a tty, so Python block-buffers it and nothing reaches the journal until
+# 4 KB has accumulated -- which for this workload is hours, and is lost
+# entirely if the process is SIGTERMed first. That hides the whole
+# operational log, including the render() line that is the display seam
+# (spec 8.6). Found while verifying #48 on real hardware.
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/opt/zeropi-display
 ExecStart=/opt/zeropi-display/venv/bin/python /opt/zeropi-display/receive.py
 Restart=always
