@@ -42,7 +42,9 @@ _Avoid_: Machine id, host id, client id
 
 **Payload**:
 The JSON object the Desktop writes to the Pi's write characteristic in a
-single BLE write. Comes in two shapes — a Daily Payload or a Gauge Payload.
+single BLE write. Comes in four shapes — a Daily Payload, a Gauge Payload, a
+Settings Payload or a Command Payload. Every shape names its own, and the Pi
+branches on that name rather than on which fields are populated.
 _Avoid_: Message, packet, row
 
 **Daily Payload**:
@@ -55,6 +57,32 @@ The Payload shape carrying the live gauge: consumption against the rolling
 limit windows, and the active session's context size. Display-only — the Pi
 never persists it.
 _Avoid_: Live payload, status payload
+
+**Settings Payload**:
+The Payload shape carrying the Pi's Settings. **Declarative** — it names the
+complete set, not a change to it, so the Pi's Settings after applying one are
+exactly what it was sent. That is what makes a resend harmless.
+_Avoid_: Config payload, update payload
+
+**Command Payload**:
+The Payload shape carrying one Command.
+_Avoid_: Action payload, RPC, request
+
+**Command**:
+One verb from a short, closed list, telling the Pi to do something once. A
+Command is **imperative** where Settings are declarative, and every Command
+must be **naturally idempotent** — an Ack can be lost, so a Command will be
+retried, and nothing may depend on it arriving exactly once.
+_Avoid_: Method, call, instruction, request
+
+> Natural idempotency is a **membership rule**, not a property to check
+> afterwards: a verb that cannot be made idempotent does not join the list.
+> That rule, more than the list's shortness, is what keeps a vocabulary from
+> becoming an RPC surface.
+
+> A Command may **never override a verified invariant** — it queues behind one.
+> Enforcement that a Tier moved out of reach of a settings form must not be
+> reachable through a verb instead.
 
 **Batch**:
 The set of Daily Payloads sent in one push, each written and acknowledged
@@ -190,6 +218,13 @@ _Avoid_: Pi config, remote config, device settings
 > load-bearing: Configuration is what the Desktop holds, Settings are what the
 > Pi is given. A value can be Configuration without being a Setting; nothing is
 > a Setting without first being Configuration.
+
+> The Pi still compiles in a **default** for every Setting, for the life before
+> it has ever been told one. A code default is not Configuration — the same
+> line drawn for a verified invariant — so this does not weaken "the Pi holds no
+> Configuration of its own". The Pi does persist the Settings it is given, so a
+> reboot cannot silently revert one; a hand-off clears them back to the
+> defaults, because they were the previous Desktop's policy.
 
 **Tier**:
 Which of three classes a tunable value belongs to: a deployment fact, freely
