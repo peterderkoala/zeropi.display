@@ -232,9 +232,16 @@ is tested with no panel, no BLE and no `~/.claude`.
   load-bearing one is **`pi.address`, an 18th Configuration key amending #72's
   17** — `find_pi()` takes the first advertiser, so without it a Desktop cannot
   know *which* Pi it is coupled to.
-- **Five known defects, three now fixed** (spec §11 plus the map's closing
+- **Five known defects, four now fixed** (spec §11 plus the map's closing
   comment): `DEFAULT_PROJECTS_ROOT` defined twice with nothing keeping the two
-  equal — still open; ✅ a named constant for the notify budget (`MAX_ACK_BYTES`,
+  equal — **still open, and now folded into [#86](https://github.com/peterderkoala/zeropi.display/issues/86)
+  as explicit scope**. ⚠ #81 turned it from latent debt into a *live*
+  divergence: `push.py:239`'s `build_gauge_wire_payload` calls
+  `gauge.build_gauge_payload()` with no arguments, so a configured
+  `paths.projects_root` reaches every Daily path and **never reaches the
+  Gauge's context read**, which falls back to `gauge.DEFAULT_PROJECTS_ROOT`.
+  One key, two roots. #87 will not see it unless that run deliberately sets a
+  non-default root. Fix and its trap are written out on #86; ✅ a named constant for the notify budget (`MAX_ACK_BYTES`,
   #83); ✅ the Pi echoing unbounded input into an Ack's `reason` (the exact path
   #78 used to overflow it — #83's `_truncate_echo`, applied at every echo
   point); `RedrawGate._idle_elapsed` reading its one Setting as a module
