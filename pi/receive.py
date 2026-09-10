@@ -18,6 +18,7 @@ tests/test_receive_importable.py.
 import json
 import sqlite3
 import time
+from typing import Callable, Optional
 
 # Aliased: this module's own render(view) function -- the well-known seam
 # RedrawGate calls -- would otherwise shadow the module of the same name.
@@ -28,7 +29,11 @@ WRITE_CHARACTERISTIC_UUID = "014ca0e2-c76c-4443-a755-e5a1ad25368d"
 NOTIFY_CHARACTERISTIC_UUID = "08c89458-52f1-47eb-ab58-f7f7995d8efb"
 
 # The store's configurable path (spec §4.5) is the deliberate exception in
-# this codebase; the Pi's DB_PATH stays a hardcoded constant (spec §8.1).
+# this codebase; the Pi's DB_PATH stays a hardcoded constant, owned by
+# pi/install-pi.sh (spec §4.4) -- unlike GAUGE_EXPIRY_S/REDRAW_FLOOR_S
+# (Tier 3, spec §4.3) and IDLE_KEEPALIVE_S (a Setting as of spec §6, applied
+# live -- see RedrawGate below), which are not "every constant in this file"
+# any more.
 DB_PATH = "/opt/zeropi-display/data.db"
 
 SCHEMA_VERSION = 1
@@ -44,8 +49,15 @@ REDRAW_FLOOR_S = 300
 # (docs/spec-eink-rendering.md §9).
 GAUGE_EXPIRY_S = 300
 
-# Idle keep-alive full refresh (spec §8.5, ADR-0007/0010).
+# Idle keep-alive full refresh (spec §8.5, ADR-0007/0010): the code
+# default, run before the Pi has ever been told a Setting (spec §6.3). Not
+# Configuration -- the same line drawn for a Tier 3 constant.
 IDLE_KEEPALIVE_S = 24 * 60 * 60
+
+# Settings persist in `meta` under this prefix (spec §6.2) -- load-bearing,
+# because `setting.*` keys now share a table with `desktop_id` and
+# `coverage_start`.
+SETTING_KEY_PREFIX = "setting."
 
 DAILY_REQUIRED_FIELDS = (
     "date",
@@ -112,14 +124,20 @@ def init_db(db_path: str = DB_PATH) -> None:
 
 
 def _wipe_readings(conn: sqlite3.Connection) -> None:
-    """Drop and recreate `readings`, and delete the stored Coverage Start.
+    """Drop and recreate `readings`, delete the stored Coverage Start, and
+    clear every Setting back to its code default (spec §6.3).
 
     Used by the Desktop Id wipe (spec §8.3). Does not touch
     `meta['desktop_id']` — the caller decides what to do with that.
+
+    Settings are the *previous* Desktop's policy (spec §6.3): leaving them
+    would have a re-coupled Pi run a stranger's keepalive until the new
+    Desktop happened to push its own, with nothing prompting it to.
     """
     conn.execute("DROP TABLE IF EXISTS readings")
     conn.execute(_CREATE_READINGS_SQL)
     conn.execute("DELETE FROM meta WHERE key = 'coverage_start'")
+    conn.execute("DELETE FROM meta WHERE key LIKE ?", (SETTING_KEY_PREFIX + "%",))
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +156,64 @@ def _set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
         " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (key, value),
     )
+
+
+# ---------------------------------------------------------------------------
+# Settings (spec §6) -- the Pi's configuration seam. Real work, not a rename:
+# before this the Pi had no seam at all, and `IDLE_KEEPALIVE_S` was read as a
+# module global from inside a method (RedrawGate, below).
+# ---------------------------------------------------------------------------
+
+# The only Setting today (spec §4.2's `pi.idle_keepalive_s`). Adding a
+# second Setting means adding a row here, not inventing a new mechanism.
+_SETTING_COERCERS: dict[str, Callable[[object], object]] = {
+    "idle_keepalive_s": int,
+}
+
+
+class UnknownSettingError(ValueError):
+    """Raised by `apply_settings` for a key not in `_SETTING_COERCERS`.
+    Ticket 3's `settings`-kind dispatch turns this into an Ack `reason`
+    (spec §5.1); this module raises it before anything is written."""
+
+
+class SettingValueError(ValueError):
+    """Raised by `apply_settings` when a known Setting's value fails to
+    coerce (e.g. `idle_keepalive_s: "abc"`) — before anything is written,
+    same as `UnknownSettingError`."""
+
+
+def get_setting(conn: sqlite3.Connection, name: str, default):
+    """The current value of Setting `name` — from `meta`, coerced, or
+    `default` if it has never been set (spec §6.3's code default)."""
+    raw = _get_meta(conn, SETTING_KEY_PREFIX + name)
+    if raw is None:
+        return default
+    return _SETTING_COERCERS[name](raw)
+
+
+def apply_settings(conn: sqlite3.Connection, settings: dict) -> None:
+    """Validates and persists every key in `settings` (spec §6.2).
+
+    Rejects on the first unrecognised key or uncoercible value, before
+    anything is written — the same all-or-nothing discipline as the
+    Desktop's Configuration store (desktop/config.py's
+    `write_config_value`): every value is coerced up front, into a
+    separate dict, so a later key's bad value can never leave an earlier
+    key's write sitting in the transaction. Does not commit; the caller
+    owns the transaction (spec §6.1's live-apply and §6.2's persistence are
+    the same write).
+    """
+    coerced = {}
+    for name, value in settings.items():
+        if name not in _SETTING_COERCERS:
+            raise UnknownSettingError(f"{name!r} is not a known Setting")
+        try:
+            coerced[name] = _SETTING_COERCERS[name](value)
+        except (TypeError, ValueError) as exc:
+            raise SettingValueError(f"{name}={value!r} is not a valid value: {exc}") from exc
+    for name, value in coerced.items():
+        _set_meta(conn, SETTING_KEY_PREFIX + name, str(value))
 
 
 def check_desktop_id(conn: sqlite3.Connection, desktop_id: str) -> bool:
@@ -404,9 +480,15 @@ class RedrawGate:
     never actually drawn.
     """
 
-    def __init__(self):
+    def __init__(self, idle_keepalive_s: Optional[Callable[[], float]] = None):
         self.last_drawn_at = None  # monotonic seconds, None = never drawn
         self.historic_pending = False
+        # A looked-up value (spec §6.1), not a value captured once at
+        # construction -- called fresh on every check, so a Setting written
+        # mid-run is picked up on the very next redraw check with nothing
+        # cached to go stale. Defaults to the code default (spec §6.3),
+        # which is what every existing bare `RedrawGate()` call gets.
+        self._idle_keepalive_s = idle_keepalive_s or (lambda: IDLE_KEEPALIVE_S)
 
     def mark_historic_pending(self) -> None:
         self.historic_pending = True
@@ -415,7 +497,7 @@ class RedrawGate:
         return self.last_drawn_at is None or (now - self.last_drawn_at) >= REDRAW_FLOOR_S
 
     def _idle_elapsed(self, now: float) -> bool:
-        return self.last_drawn_at is not None and (now - self.last_drawn_at) >= IDLE_KEEPALIVE_S
+        return self.last_drawn_at is not None and (now - self.last_drawn_at) >= self._idle_keepalive_s()
 
     def _draw(self, view: dict, now: float) -> None:
         render(view)
@@ -555,10 +637,22 @@ def _draw_startup_frame() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _live_idle_keepalive_s() -> float:
+    """The looked-up value `RedrawGate._idle_elapsed` reads in production
+    (spec §6.1) -- opened fresh on every call, against `ReceiveState.db_path`
+    at call time, rather than cached: a Setting written mid-run must be
+    picked up on the very next redraw check with nothing to go stale."""
+    conn = sqlite3.connect(ReceiveState.db_path)
+    try:
+        return get_setting(conn, "idle_keepalive_s", IDLE_KEEPALIVE_S)
+    finally:
+        conn.close()
+
+
 class ReceiveState:
     ack_characteristic = None
     gauge = GaugeState()
-    redraw_gate = RedrawGate()
+    redraw_gate = RedrawGate(idle_keepalive_s=_live_idle_keepalive_s)
     db_path = DB_PATH
     # Tracks whether the Gauge was live-and-unexpired as of the last tick,
     # so an expiry transition (with no new Payload arriving) can force a
