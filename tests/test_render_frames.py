@@ -183,3 +183,35 @@ def test_no_usage_data_frame_has_ink_at_both_lines():
     img = render.no_usage_data_frame()
     assert _has_ink(img, 0, 10, PANEL_W, 34)   # "NO USAGE DATA"
     assert _has_ink(img, 0, 44, PANEL_W, 57)   # "waiting for first snapshot"
+
+
+# ---------------------------------------------------------------------------
+# The framebuffer (spec §2, §12): exactly 4000 bytes.
+#
+# Verified on real hardware in #66, where every frame below reached the glass.
+# The driver's `getbuffer()` cannot be imported here -- `epdconfig` claims GPIO
+# as a side effect (pi/waveshare_epd/README.md) and the suite must run with no
+# panel and no SPI -- so this replicates its exact path instead: a 250x122
+# landscape image hits `epd2in13_V4.getbuffer`'s `imwidth == self.height`
+# branch, which rotates to the panel's native 122x250 portrait and packs rows
+# to whole bytes. 122 is not a multiple of 8, so PIL pads each row to 16 bytes:
+# 16 x 250 = 4000. A different number means the frame is not what the panel
+# expects.
+# ---------------------------------------------------------------------------
+
+
+def _panel_framebuffer_len(img: Image.Image) -> int:
+    return len(bytearray(img.rotate(90, expand=True).convert("1").tobytes("raw")))
+
+
+def test_every_frame_packs_to_exactly_4000_bytes():
+    frames = {
+        "historic": render.historic_frame(
+            [_row(f"2026-09-0{i}", float(i)) for i in range(1, 6)], "2026-09-01", 3.0
+        ),
+        "empty": render.empty_frame(),
+        "gauge": render.gauge_frame(32, 9000, 18, 400000),
+        "no_usage_data": render.no_usage_data_frame(),
+    }
+    for name, img in frames.items():
+        assert _panel_framebuffer_len(img) == 4000, name
