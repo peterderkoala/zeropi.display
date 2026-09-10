@@ -1,0 +1,10 @@
+{
+  "sessionId": "sess-dead",
+  "cwd": "/home/tester/code/gauge-fixture",
+  "pid": 40004,
+  "kind": "interactive",
+  "status": "idle",
+  "startedAt": "2026-09-05T07:50:00.000Z",
+  "updatedAt": "2026-09-05T08:30:00.000Z",
+  "statusUpdatedAt": "2026-09-05T08:30:00.000Z"
+}

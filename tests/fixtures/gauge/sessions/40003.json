@@ -1,0 +1,10 @@
+{
+  "sessionId": "sess-headless",
+  "cwd": "/home/tester/code/gauge-fixture",
+  "pid": 40003,
+  "kind": "headless",
+  "status": "idle",
+  "startedAt": "2026-09-05T07:45:00.000Z",
+  "updatedAt": "2026-09-05T08:59:00.000Z",
+  "statusUpdatedAt": "2026-09-05T08:59:00.000Z"
+}
