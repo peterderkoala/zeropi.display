@@ -28,6 +28,10 @@ import json
 import sys
 
 OK, BAD, UNKNOWN, NONE = "ok", "bad", "unknown", "none"
+# The third severity, settled by the maintainer on this prototype: a fact
+# worth seeing that is NOT a fault and never drives the headline verdict.
+# A Pi that rebooted four minutes ago and is drawing fine is not "broken".
+NOTE = "note"
 
 # --------------------------------------------------------------------------
 # Fake state. One dict per scenario: what the Desktop knows + what the Pi said.
@@ -132,8 +136,12 @@ def verdict(sc: dict) -> tuple[str, str, list[tuple[str, str, str, str]]]:
                  str(pi["readings"]) + ("" if same else
                      f"  ({d['sent_readings'] - pi['readings']} missing)")))
 
+    # Coverage is only its own fault when Readings agree. A short coverage
+    # alongside missing Readings is the SAME fact (a lost Batch), so it
+    # demotes to a note rather than headlining a second time.
     cov = pi["coverage_start"] == d["min_pushed_date"]
-    rows.append(("Coverage", OK if cov else BAD, d["min_pushed_date"],
+    cov_mark = OK if cov else (NOTE if not same else BAD)
+    rows.append(("Coverage", cov_mark, d["min_pushed_date"],
                  pi["coverage_start"] + ("" if cov else "  (short)")))
 
     bound = d["idle_keepalive_s"] + d["redraw_floor_s"]
@@ -150,8 +158,10 @@ def verdict(sc: dict) -> tuple[str, str, list[tuple[str, str, str, str]]]:
         detail = f'{pi["frame"]} frame, drew {dur(pi["since_redraw_s"])} ago'
     rows.append(("Panel", OK if alive else BAD, "—", detail))
 
+    # A restart is a fact, not a fault: #74 lists it as a comparison, which
+    # is not the same as calling it broken.
     fresh = pi["uptime_s"] < d["last_push_elapsed_s"]
-    rows.append(("Restarted", BAD if fresh else OK,
+    rows.append(("Restarted", NOTE if fresh else OK,
                  f'last push {dur(d["last_push_elapsed_s"])} ago',
                  f'up {dur(pi["uptime_s"])}' + ("  (restarted since)" if fresh else "")))
 
@@ -159,9 +169,12 @@ def verdict(sc: dict) -> tuple[str, str, list[tuple[str, str, str, str]]]:
     rows.append(("Image", OK if img else BAD, f'schema {d["schema_expected"]}',
                  f'schema {pi["schema_version"]}'))
 
+    # Only a BAD row can change the headline. Notes are shown, never counted.
     bad = [r for r in rows if r[1] == BAD]
+    notes = [r for r in rows if r[1] == NOTE]
     if not bad:
-        return OK, "Working.", rows
+        tail = f" ({len(notes)} note{'s' if len(notes) > 1 else ''})" if notes else ""
+        return OK, f"Working.{tail}", rows
 
     # Name the story, do not count the checks. "2 checks failed" is a worse
     # answer than "the Pi is missing 47 Readings" — and Readings+Coverage
@@ -183,7 +196,7 @@ def verdict(sc: dict) -> tuple[str, str, list[tuple[str, str, str, str]]]:
     return BAD, f"Not working — {why}.{tail}", rows
 
 
-MARK = {OK: "✓", BAD: "✗", UNKNOWN: "?", NONE: "–"}
+MARK = {OK: "✓", BAD: "✗", UNKNOWN: "?", NONE: "–", NOTE: "·"}
 
 
 def unreachable_why(sc: dict) -> list[str]:
@@ -272,9 +285,13 @@ def status_c(sc: dict) -> str:
 
     pi = sc["pi"]
     if state == OK:
-        return (f'\n  ✓ Working. Pi up {dur(pi["uptime_s"])}, {pi["frame"]} frame drawn '
-                f'{dur(pi["since_redraw_s"])} ago,\n'
-                f'    {pi["readings"]} Readings agreed from {pi["coverage_start"]}.\n')
+        out = (f'\n  ✓ Working. Pi up {dur(pi["uptime_s"])}, {pi["frame"]} frame drawn '
+               f'{dur(pi["since_redraw_s"])} ago,\n'
+               f'    {pi["readings"]} Readings agreed from {pi["coverage_start"]}.\n')
+        for n, m, _l, d_ in rows:
+            if m == NOTE:
+                out += f'    · {n.lower()}: {d_}\n'
+        return out
 
     L = ["", f"  {MARK[BAD]} {headline}", ""]
     for name, mark, _left, detail in rows:
@@ -296,7 +313,9 @@ def status_json(sc: dict) -> str:
         "reachable": sc["reach"] == OK,
         "desktop": DESKTOP,
         "pi": sc["pi"],
-        "checks": [{"name": n.lower(), "ok": m == OK, "detail": d} for n, m, _l, d in rows],
+        "checks": [{"name": n.lower(), "severity": m,
+                    "ok": None if m == NOTE else m == OK,
+                    "detail": d} for n, m, _l, d in rows],
     }, indent=2)
 
 
@@ -474,9 +493,11 @@ def main() -> None:
     p.add_argument("--scenario", default="ok", choices=list(SCENARIOS))
     p.add_argument("--variant", default="A", choices=["A", "B", "C"])
     p.add_argument("--json", action="store_true")
+    p.add_argument("--brief", action="store_true",
+                   help="variant C: one line when fine, detail only when not")
     a = p.parse_args()
 
-    render = {"A": status_a, "B": status_b, "C": status_c}[a.variant]
+    render = {"A": status_a, "B": status_b, "C": status_c}["C" if a.brief else a.variant]
 
     if a.command == "status":
         print(status_json(SCENARIOS[a.scenario]) if a.json else render(SCENARIOS[a.scenario]))
