@@ -162,13 +162,14 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
 **Takeable now** (open, unblocked, unassigned):
 
-- [The Pi's settings and command
-  vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75) —
-  grilling. Unblocked by #72, whose rulings are annotated onto the ticket body:
-  the Settings set is **exactly one key**, so the interesting decisions are all
-  lifecycle and verbs, not wire. Note especially that #72 makes the "redraw now
-  vs `REDRAW_FLOOR_S`" tension **purely a verb question** — the floor is Tier 3,
-  so it cannot be dissolved by making it editable.
+- [What an action means when the Pi is
+  unreachable](https://github.com/peterderkoala/zeropi.display/issues/79) —
+  grilling. **Graduated from the fog by #75**, now that the vocabulary it hangs
+  on is settled. Note the shape of the likely answer: Settings need no queue
+  (declarative, already in Configuration), `redraw` is time-bound so rejecting
+  is right, and `wipe` is the one destructive verb — so "no deferred state
+  exists" is a legitimate resolution, and building a queue to have one would be
+  the mistake.
 - [Confirm the notify budget on hardware
   (btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — task,
   **at the bench**. Blocks the status surface.
@@ -177,9 +178,11 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
 fired as a subagent at charting time; graduated #78), [Where configuration
 lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71),
-and [Which constants are settings, and in which
-tier](https://github.com/peterderkoala/zeropi.display/issues/72) — all
-2026-09-10. The rest are blocked: #74 on #78, #76 on #74/#75, and #77 (write the
+[Which constants are settings, and in which
+tier](https://github.com/peterderkoala/zeropi.display/issues/72), and [The Pi's
+settings and command
+vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75) — all
+2026-09-10. The rest are blocked: #74 on #78, #76 on #74/#79, and #77 (write the
 spec) on all the others.
 
 **What #71 settled**, in one line each — the full reasoning is its resolution
@@ -233,7 +236,38 @@ constants outside the Tier system:
   exist**. Recorded as looked-at, so nobody re-derives it.
 - **No key is retired**, so the first `user_version` needs no deletion step.
 
-⚠ **Two defects #72 found, for the implementation map:**
+**What #75 settled** — the full wire shapes are in its resolution comment:
+
+- **Two new Payload kinds, `settings` and `command`.** Not a second
+  characteristic: that would give the Pi the second input channel Settled #3
+  ruled out an HTTP service for. `parse_payload` already branches on `kind`, so
+  this extends a discriminator rather than adding a channel.
+- **Settings are declarative — the Payload names the complete set**, not a
+  patch, which is what makes a resend free. **Commands are imperative**, and
+  **natural idempotency is a membership rule**: a verb that cannot be made
+  idempotent does not join the list. That rule, not the list's shortness, is
+  what stops a vocabulary becoming an RPC surface.
+- **No Command may override a verified invariant.** `redraw` **queues behind**
+  `REDRAW_FLOOR_S` — the mechanism already exists as
+  `try_draw_historic_now()`. ADR-0008's floor is a hardware wear limit; a verb
+  that overrode it would relocate enforcement to whoever types the command,
+  where a loop is invisible and cumulative.
+- **Two verbs: `redraw` and `wipe`.** `selftest` rejected (GPIO collision, and
+  it answers nothing with nobody at the glass); `re-pair` rejected (already
+  automatic). **`wipe` kept as repair** — this does *not* contradict ADR-0006,
+  which rejected a manual wipe as a *replacement* for the automatic one;
+  `upsert_reading` never deletes, so a Reading the archive no longer holds is
+  otherwise unremovable except by re-coupling.
+- **The Pi persists Settings in `meta` under a `setting.` prefix**, so a reboot
+  cannot silently revert one; a hand-off wipe **clears them to the compiled
+  default**, because they were the previous Desktop's policy. Both new kinds run
+  the Desktop Id wipe check unchanged.
+- `resend status` was **deliberately not decided** — it belongs to #74, which
+  may add exactly one verb inside these rules.
+- Coined **Settings Payload**, **Command Payload** and **Command** in
+  `CONTEXT.md` (`af5f9e9`); **Payload** no longer says "two shapes".
+
+⚠ **Three defects found for the implementation map** (two by #72, one by #75):
 
 1. **`DEFAULT_PROJECTS_ROOT` is defined twice** — `usage.py:43` as
    `Path("~/.claude/projects").expanduser()`, `gauge.py:25` as `Path.home() /
@@ -244,16 +278,29 @@ constants outside the Tier system:
    it as `min(512, ATT_MTU-3)` and #78 confirms it at the bench, but unlike
    `MAX_PAYLOAD_BYTES` nothing expresses it — and this is the direction that
    truncates **silently, twice**. Add one, symmetric with `MAX_PAYLOAD_BYTES`.
+3. **`RedrawGate._idle_elapsed` (`receive.py:418`) reads `IDLE_KEEPALIVE_S` as a
+   module constant.** That is the single place the one Setting binds. It must
+   become a looked-up value, or **"Settings apply live" is false** — the Pi
+   would accept and persist a Setting that changes nothing until a restart, and
+   `CONTEXT.md` promises the opposite precisely because the Pi cannot be
+   restarted without dropping the connection that delivered it.
 
-⚠ **The Pi has no configuration seam at all, and #75 has to build one.** The
-Desktop is already injectable everywhere — every policy value is a default
-argument the tests already override. `receive.py` is the opposite: it reads
-`GAUGE_EXPIRY_S`, `REDRAW_FLOOR_S` and `IDLE_KEEPALIVE_S` as **module globals
-from inside methods** (`:366`, `:415`, `:418`) and binds `DB_PATH` to class
-attributes at module scope (`:562`, `:704`) under a comment saying it "stays a
-hardcoded constant (spec §8.1)". So **spec §8.1 has to be revisited**, not
-worked around — and Pi Settings must apply **live**, because a Settings Payload
-cannot restart the service without dropping the connection that delivered it.
+⚠ **The Pi has no configuration seam at all, and the implementation map has to
+build one — but a much smaller one than this once looked.** The Desktop is
+already injectable everywhere: every policy value is a default argument the
+tests override. `receive.py` is the opposite, reading `GAUGE_EXPIRY_S`,
+`REDRAW_FLOOR_S` and `IDLE_KEEPALIVE_S` as **module globals from inside
+methods** (`:366`, `:415`, `:418`) and binding `DB_PATH` to class attributes at
+module scope (`:562`, `:704`).
+
+**#72 and #75 shrank this.** `GAUGE_EXPIRY_S` and `REDRAW_FLOOR_S` are **Tier
+3** and never become Settings, so they need no seam at all — they stay module
+globals, correctly. `DB_PATH` is an install-time fact owned by `install-pi.sh`
+and was ruled out of Settings, so **spec §8.1 stands as written** and does not
+need revisiting after all. That leaves **`:418` alone** (defect 3 above) as the
+one place a seam is actually required, and Pi Settings must apply **live**
+there, because a Settings Payload cannot restart the service without dropping
+the connection that delivered it.
 
 ⚠ **Five decisions were settled while charting #70 and must not be
 re-litigated** — they are written out in the map's Notes. In short: one
