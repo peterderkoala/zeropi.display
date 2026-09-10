@@ -163,8 +163,11 @@ product — real Claude Code usage, on real glass — works end to end.
 - **Two spec-prose omissions raised on #66** (§4's `sh` pair, §5.4's `5H`
   label). Cosmetic; whether `docs/spec-eink-rendering.md` gains the lines is
   the maintainer's call.
-- **The single-write budget has less headroom than ADR-0001 assumed** — see
-  the ticket opened from #32.
+- [#67](https://github.com/peterderkoala/zeropi.display/issues/67) — **the
+  single-write budget has less headroom than ADR-0001 assumed.** Largest real
+  Daily Payload is 390 bytes against a ~512-byte ceiling, and `project` is the
+  one field that can grow without bound. Nothing checks the size on either
+  end, and it would fail *per-row*, forever, for one deep project path.
 
 ⚠ **#32 is closed, and its premise was wrong** — worth knowing, because the
 belief it encoded was in the spec for months. `push.py` called bleak's private
