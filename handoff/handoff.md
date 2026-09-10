@@ -158,16 +158,26 @@ frame from drawing.
 closed the rendering milestone on 2026-09-10; the panel draws and the whole
 product — real Claude Code usage, on real glass — works end to end.
 
-**Open items, all small:**
+**Open items:** only the two spec-prose omissions raised on #66 (§4's `sh`
+pair, §5.4's `5H` label). Cosmetic; whether `docs/spec-eink-rendering.md` gains
+the lines is the maintainer's call.
 
-- **Two spec-prose omissions raised on #66** (§4's `sh` pair, §5.4's `5H`
-  label). Cosmetic; whether `docs/spec-eink-rendering.md` gains the lines is
-  the maintainer's call.
-- [#67](https://github.com/peterderkoala/zeropi.display/issues/67) — **the
-  single-write budget has less headroom than ADR-0001 assumed.** Largest real
-  Daily Payload is 390 bytes against a ~512-byte ceiling, and `project` is the
-  one field that can grow without bound. Nothing checks the size on either
-  end, and it would fail *per-row*, forever, for one deep project path.
+⚠ **The single-write budget is 512 bytes, not 514** (#67, closed 2026-09-10) —
+and this is worth knowing because both the spec and ADR-0003 had it wrong.
+514 was derived from the MTU (517 − 3); **ATT's maximum attribute value length
+binds first**. Bisected on hardware: 512 Acked, 513 raises
+`INVALID_ATTRIBUTE_VALUE_LENGTH`. `push.py` now enforces it itself
+(`MAX_PAYLOAD_BYTES`), so an over-budget Payload is refused against the row
+that caused it instead of surfacing as a transport error and then being
+retried by every Batch forever.
+
+⚠ **Payload sizes have grown ~50% without anyone noticing.** ADR-0003 recorded
+a Reading as 197–236 bytes (worst case 262); measured against real data today
+it is **347–390**. The variable field is `project`, which may run to ~159
+characters worst-case before one Reading stops fitting; the longest in the
+maintainer's own logs is 63. Splitting by Reading has no smaller unit to fall
+back on, so if that is ever reached the answer is shortening the key on the
+wire — which reopens ADR-0003's primary key, not its chunking decision.
 
 ⚠ **#32 is closed, and its premise was wrong** — worth knowing, because the
 belief it encoded was in the spec for months. `push.py` called bleak's private

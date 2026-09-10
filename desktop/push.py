@@ -45,6 +45,25 @@ NOTIFY_CHARACTERISTIC_UUID = "08c89458-52f1-47eb-ab58-f7f7995d8efb"
 SCAN_TIMEOUT_SECONDS = 10.0
 ACK_TIMEOUT_SECONDS = 10.0
 
+# The hard ceiling on one Payload, in bytes (#67). This is ATT's maximum
+# attribute value length, NOT the MTU -- measured against the dev Pi by
+# bisection: 512 bytes is Acked normally, 513 raises
+# `INVALID_ATTRIBUTE_VALUE_LENGTH`. A negotiated 517-byte MTU would suggest
+# 514 (517 - 3), and spec §6 said so for months; the attribute limit binds
+# first, so 514 was wrong by two bytes.
+MAX_PAYLOAD_BYTES = 512
+
+
+class PayloadTooLarge(ValueError):
+    """One Payload exceeds `MAX_PAYLOAD_BYTES` (#67).
+
+    Raised before the write reaches the radio, so it is reported against the
+    row that caused it rather than as a GATT-layer error. Both callers treat
+    a raised `send_one` as a failed row (`_send_batch_once`) or a dropped
+    Gauge push (`run_gauge_with_connection`), so this needs no special
+    handling to be surfaced -- only to be readable when it is.
+    """
+
 # A `send_one` callable: writes one Payload, waits for and returns its Ack
 # dict. `None` return means "no Ack" (e.g. a timeout) — callers must treat
 # that as a failed row, never as success.
@@ -265,9 +284,18 @@ class BleConnection:
         self._ack_received = asyncio.Event()
         self._ack = {}
         body = json.dumps(payload).encode("utf-8")
-        # One write per Payload, never chunked (ADR-0001). The ceiling is
-        # ATT's 512-byte attribute limit, NOT the MTU -- the largest Daily
-        # Payload measured on real data is 390 bytes (#32).
+        # One write per Reading, never chunked (ADR-0003). Checked here
+        # rather than left to the radio: over the limit, BlueZ raises
+        # `INVALID_ATTRIBUTE_VALUE_LENGTH`, which is accurate but points at
+        # the transport for what is really a too-long `project` key. The
+        # row would also be retried by every subsequent Batch forever,
+        # since a Reading is only marked pushed on a successful Ack.
+        if len(body) > MAX_PAYLOAD_BYTES:
+            raise PayloadTooLarge(
+                f"Payload is {len(body)} bytes, over the {MAX_PAYLOAD_BYTES}-byte "
+                f"single-write limit (#67). This is almost certainly a long "
+                f"project key: {payload.get('project', '<none>')!r}"
+            )
         await self._client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, body, response=True)
         try:
             await asyncio.wait_for(self._ack_received.wait(), timeout=ACK_TIMEOUT_SECONDS)

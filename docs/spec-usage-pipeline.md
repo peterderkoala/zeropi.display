@@ -482,14 +482,24 @@ expired (§8.5). Skip the push; the next change pushes a better value.
 ## 6. The wire format
 
 MTU 517 is negotiated reliably — by the kernel, with nothing asked of it
-(#32) — giving a **514-byte single-write budget**. Both shapes fit with
-verbose named keys; no terse or positional encoding.
+(#32). Both shapes fit with verbose named keys; no terse or positional
+encoding.
 
-⚠ **The binding ceiling is ATT's 512-byte attribute limit, not the MTU**, and
-the headroom is smaller than "comfortably" suggests: the largest Daily Payload
-measured against real data is **390 bytes**, about 120 short of the budget. The
-variable part is `project`, where one worktree path already accounts for 63
-characters, so a deep enough project path can reach the limit.
+⚠ **The single-write budget is 512 bytes, not 514** (#67). This document said
+514 for months, reasoning from the MTU (517 − 3 bytes of ATT header). **ATT's
+maximum attribute value length binds first.** Measured by bisection against
+the dev Pi: a **512**-byte Payload is Acked normally, **513** raises
+`INVALID_ATTRIBUTE_VALUE_LENGTH`. `push.py` enforces this itself
+(`MAX_PAYLOAD_BYTES`) so an over-budget Payload is refused against the row
+that caused it, rather than surfacing as a transport error.
+
+⚠ **The headroom is thinner than "comfortably" suggests, and it has been
+shrinking unobserved.** The largest Daily Payload measured against real data
+is **390 bytes** — ADR-0003 recorded 197–236 with a 262-byte worst case, so
+real Payloads have grown by roughly half since. The variable field is
+`project`: at today's numeric widths it may run to **178 characters** before
+the limit binds, or **159** with worst-case token counts and a longer model
+name. The longest project key in the maintainer's own logs is **63**.
 
 ### 6.1 Daily Payload
 

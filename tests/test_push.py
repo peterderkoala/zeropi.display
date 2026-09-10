@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 
 import pytest
 
@@ -639,3 +640,87 @@ def test_async_main_resend_all_clears_marks_before_batch(tmp_path, monkeypatch):
         conn = usage.open_store(store_path)
         assert len(usage.pending_readings(conn)) == 1
     asyncio.run(_test_async_main_resend_all_clears_marks_before_batch_impl())
+
+
+# ---------------------------------------------------------------------------
+# #67 The single-write budget. `send_one` is the one place every Payload of
+# either kind passes through, so the guard lives there and is testable with a
+# fake client -- no radio, per this file's opening note.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingClient:
+    """The narrowest stand-in for a BleakClient that `send_one` needs: it
+    records writes and never Acks, so a test that gets as far as writing
+    fails on the Ack timeout rather than passing silently.
+    """
+
+    def __init__(self):
+        self.writes = []
+
+    async def write_gatt_char(self, uuid, body, response):
+        self.writes.append(body)
+
+
+def _payload_of_exact_len(n: int) -> dict:
+    payload = {"kind": "daily", "project": "-p", "pad": ""}
+    overhead = len(json.dumps(payload).encode())
+    payload["pad"] = "x" * (n - overhead)
+    assert len(json.dumps(payload).encode()) == n
+    return payload
+
+
+def test_payload_at_the_limit_is_written():
+    async def _impl():
+        client = _RecordingClient()
+        conn = push.BleConnection(client)
+        payload = _payload_of_exact_len(push.MAX_PAYLOAD_BYTES)
+        # No Ack ever arrives, so this returns None on timeout -- what matters
+        # is that the write happened rather than being refused.
+        conn._ack_received = asyncio.Event()
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(conn.send_one(payload), timeout=0.05)
+        assert len(client.writes) == 1
+        assert len(client.writes[0]) == push.MAX_PAYLOAD_BYTES
+
+    asyncio.run(_impl())
+
+
+def test_payload_one_byte_over_the_limit_is_refused_before_the_radio():
+    async def _impl():
+        client = _RecordingClient()
+        conn = push.BleConnection(client)
+        payload = _payload_of_exact_len(push.MAX_PAYLOAD_BYTES + 1)
+        with pytest.raises(push.PayloadTooLarge) as excinfo:
+            await conn.send_one(payload)
+        # Nothing reached the radio at all.
+        assert client.writes == []
+        # The message must name the real culprit, not the transport.
+        assert "513" in str(excinfo.value)
+        assert "-p" in str(excinfo.value)
+
+    asyncio.run(_impl())
+
+
+def test_an_oversized_row_fails_only_its_own_row(tmp_path):
+    """A too-long project must not abort the Batch -- `_send_batch_once`
+    already treats a raised `send_one` as one failed row, and this pins that
+    the guard rides that path rather than needing its own handling.
+    """
+
+    async def _impl():
+        conn = _make_store(tmp_path, [("2026-09-05", "-home-a", "claude-opus-5")])
+
+        async def send_one(payload):
+            if payload["project"] == "-home-a":
+                raise push.PayloadTooLarge("Payload is 600 bytes, over the 512-byte limit")
+            return {"status": "ok"}
+
+        result = await push.run_batch_with_connection(conn, "desktop-id", send_one)
+        assert result.sent == 0
+        assert result.failed == 1
+        assert not result.ok
+        # The Reading stays pending, so the next Batch retries it (ADR-0003).
+        assert len(usage.pending_readings(conn)) == 1
+
+    asyncio.run(_impl())
