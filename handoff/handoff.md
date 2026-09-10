@@ -170,12 +170,6 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
   is right, and `wipe` is the one destructive verb — so "no deferred state
   exists" is a legitimate resolution, and building a queue to have one would be
   the mistake.
-- [What the Pi reports about
-  itself](https://github.com/peterderkoala/zeropi.display/issues/74) — grilling.
-  **Unblocked by #78**, which measured the budget it was waiting on: 512 bytes,
-  ~150 B of headroom over today's worst-case Ack. Both #72's and #75's rulings
-  are annotated onto the ticket body, and so is #78's.
-
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
 fired as a subagent at charting time; graduated #78), [Where configuration
@@ -183,11 +177,14 @@ lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71),
 [Which constants are settings, and in which
 tier](https://github.com/peterderkoala/zeropi.display/issues/72), [The Pi's
 settings and command
-vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75), and
+vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75),
 [Confirm the notify budget on hardware
-(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — all
-2026-09-10. The rest are blocked: #76 on #74/#79, and #77 (write the spec) on
-all the others.
+(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78), and [What
+the Pi reports about
+itself](https://github.com/peterderkoala/zeropi.display/issues/74) — all
+2026-09-10. The rest are blocked: #76 on #79, and #77 (write the spec) on #76
+and #79. **Six of the map's eight tickets are done; only the CLI prototype and
+the spec itself remain behind the offline question.**
 
 **What #71 settled**, in one line each — the full reasoning is its resolution
 comment, and the gist is on the map:
@@ -305,7 +302,44 @@ write or panel draw, so it does not collide with the panel the way
 `bench/notify-budget-probe.py` (same branch) re-runs the whole measurement in
 about a minute.
 
-⚠ **Three defects found for the implementation map** (two by #72, one by #75):
+**What #74 settled** — the status surface; full detail in its resolution:
+
+- **Status is a requested `status` Command, not a widened Ack.** ⚠ This
+  **amends the map's Settled #3**, which sketched a widened Ack — #75 had
+  explicitly deferred the choice to #74, so it is the deferred decision, not a
+  re-litigation. **The ordinary Daily and Gauge Acks are unchanged.** Reason: a
+  Batch is ~12 writes and #78 measured ~150 B of worst-case Ack headroom, so
+  paying status bytes on every write to learn one answer is waste.
+- **Seven fields**: `frame`, `since_redraw_s`, **`panel`**, `readings`,
+  `coverage_start`, `uptime_s`, `schema_version`. 234 B typical, 253 B worst
+  case, against 512.
+- **Every field is a duration or a count, never a timestamp** — ADR-0009 in
+  reverse. The Pi is given durations because it has no wall clock, and for the
+  same reason can only report them.
+- 💡 **`panel` is the field that earns the ticket.** A stuck or failed panel is
+  invisible today: BLE keeps serving, Acks keep saying `ok`, Readings keep
+  persisting, and only the glass is frozen. `PanelWorker.unavailable`
+  (`render.py:407`) and the watchdog already know, and discard it into the Pi's
+  own log. The existing `drawn` flag cannot cover this — its docstring is
+  explicit that it means "the floor accepted this for drawing", not "pixels
+  moved".
+- **The rule for what may be asked: report what can disagree, derive what
+  cannot.** `pushed_at` already tells the Desktop what it sent, so a Pi-reported
+  "last push time" could only confirm; `readings` and `coverage_start` earn their
+  bytes precisely *because* they can diverge, which is what a lost Batch or a
+  wipe desync looks like. **A field that can never disagree is decoration.**
+- **The Pi reports facts; the Desktop renders the verdict** — only it can
+  compare. Six comparisons, tabulated in the resolution, and #76 owns showing
+  one answer with six comparisons behind it.
+- **No lifetime refresh counter.** That is a panel-life question map #59 left
+  for calendar time; adding it here would settle it by accident. The fog stays.
+- ⚠ **`CONTEXT.md` defined Gauge Age wrongly** — as time since arrival, omitting
+  the snapshot's own age that `receive.py:359` adds on top. That *is* the #66
+  trap, sitting in the binding glossary. Corrected, and **Panel Health** coined
+  (`f84ef76`).
+
+⚠ **Four defects found for the implementation map** (two by #72, one each by #75
+and #74):
 
 1. **`DEFAULT_PROJECTS_ROOT` is defined twice** — `usage.py:43` as
    `Path("~/.claude/projects").expanduser()`, `gauge.py:25` as `Path.home() /
@@ -324,6 +358,10 @@ about a minute.
    would accept and persist a Setting that changes nothing until a restart, and
    `CONTEXT.md` promises the opposite precisely because the Pi cannot be
    restarted without dropping the connection that delivered it.
+4. **`PanelWorker.unavailable` and the watchdog have no route off the Pi.**
+   Both are computed (`render.py:388`, `:407`) and discarded into the log. #74's
+   `panel` field is the route; until it exists, a dead panel is undetectable
+   from the Desktop.
 
 ⚠ **The Pi has no configuration seam at all, and the implementation map has to
 build one — but a much smaller one than this once looked.** The Desktop is
