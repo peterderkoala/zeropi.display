@@ -59,6 +59,26 @@ IDLE_KEEPALIVE_S = 24 * 60 * 60
 # `coverage_start`.
 SETTING_KEY_PREFIX = "setting."
 
+# The three Command verbs (spec §5.2/§5.3). Each one is in this vocabulary
+# only because it can be made naturally idempotent -- there is no dedup
+# table anywhere in this design, so a verb that cannot tolerate arriving
+# twice does not get added.
+COMMAND_VERBS = ("redraw", "wipe", "status")
+
+# The negotiated ATT MTU on this link (measured, spec §5.5) -- BlueZ
+# notifies with Handle Multiple Value Notification (0x23), which carries a
+# per-value length field, so the overhead is `- 5`, not the `- 3` #73
+# derived. Written as the min(), not the bare 512 literal: both terms land
+# on 512 here, but only the expression keeps the answer right if the MTU
+# ever differs (spec §5.5's correction). Do not simplify this away.
+ATT_MTU = 517
+MAX_ACK_BYTES = min(512, ATT_MTU - 5)
+
+# A value echoed into an Ack's `reason` (a rejected `kind`, `verb`, or
+# Setting name/value) is truncated to this many characters at the point it
+# enters the Ack -- the exact path #78 used to overflow one (spec §5.5).
+ECHO_TRUNCATE_LIMIT = 64
+
 DAILY_REQUIRED_FIELDS = (
     "date",
     "project",
@@ -123,21 +143,30 @@ def init_db(db_path: str = DB_PATH) -> None:
         conn.close()
 
 
-def _wipe_readings(conn: sqlite3.Connection) -> None:
+def _wipe_readings(conn: sqlite3.Connection, clear_settings: bool = True) -> None:
     """Drop and recreate `readings`, delete the stored Coverage Start, and
-    clear every Setting back to its code default (spec §6.3).
+    — by default — clear every Setting back to its code default
+    (spec §6.3).
 
-    Used by the Desktop Id wipe (spec §8.3). Does not touch
-    `meta['desktop_id']` — the caller decides what to do with that.
-
-    Settings are the *previous* Desktop's policy (spec §6.3): leaving them
+    Used by the Desktop Id wipe (spec §8.3), where `clear_settings` stays
+    True: Settings are the *previous* Desktop's policy, and leaving them
     would have a re-coupled Pi run a stranger's keepalive until the new
     Desktop happened to push its own, with nothing prompting it to.
+
+    Also used by the `wipe` Command verb (spec §5.3), where the caller
+    passes `clear_settings=False` — that verb is documented as "drop and
+    recreate `readings`, delete `coverage_start`" only; it is repair for
+    the *same* Desktop's data, not a hand-off, so the Settings that
+    Desktop already configured must survive it.
+
+    Does not touch `meta['desktop_id']` — the caller decides what to do
+    with that.
     """
     conn.execute("DROP TABLE IF EXISTS readings")
     conn.execute(_CREATE_READINGS_SQL)
     conn.execute("DELETE FROM meta WHERE key = 'coverage_start'")
-    conn.execute("DELETE FROM meta WHERE key LIKE ?", (SETTING_KEY_PREFIX + "%",))
+    if clear_settings:
+        conn.execute("DELETE FROM meta WHERE key LIKE ?", (SETTING_KEY_PREFIX + "%",))
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +331,20 @@ class PayloadError(ValueError):
         self.kind = kind
 
 
+def _truncate_echo(value, limit: int = ECHO_TRUNCATE_LIMIT) -> str:
+    """Render `value` for embedding in an Ack `reason`, truncated to
+    `limit` characters. Every value that reaches an Ack from unbounded
+    input (a rejected `kind`/`verb`, a Setting name or value) must pass
+    through here at the point it enters the string (spec §5.5) -- never
+    embedded raw, which is exactly how #78 amplified a small Payload into
+    an oversized Ack.
+    """
+    text = value if isinstance(value, str) else repr(value)
+    if len(text) > limit:
+        text = text[:limit] + "…"
+    return text
+
+
 def _check_type(value, expected_types) -> bool:
     if expected_types is bool:
         return isinstance(value, bool)
@@ -348,8 +391,8 @@ def parse_payload(raw_value) -> dict:
         raise PayloadError(f"expected a JSON object, got {type(payload).__name__}")
 
     kind = payload.get("kind")
-    if kind not in ("daily", "gauge"):
-        raise PayloadError(f"unknown kind: {kind!r}")
+    if kind not in ("daily", "gauge", "settings", "command"):
+        raise PayloadError(f"unknown kind: {_truncate_echo(kind)!r}")
 
     if "desktop_id" not in payload or not isinstance(payload["desktop_id"], str):
         raise PayloadError("missing field(s): desktop_id", kind=kind)
@@ -363,7 +406,7 @@ def parse_payload(raw_value) -> dict:
         ]
         if bad_type:
             raise PayloadError(f"wrong type for field(s): {', '.join(bad_type)}", kind=kind)
-    else:  # gauge
+    elif kind == "gauge":
         missing = [f for f in GAUGE_REQUIRED_FIELDS if f not in payload]
         if missing:
             raise PayloadError(f"missing field(s): {', '.join(missing)}", kind=kind)
@@ -376,6 +419,18 @@ def parse_payload(raw_value) -> dict:
                     f"missing field(s): {window_key}.pct or {window_key}.resets_in_s",
                     kind=kind,
                 )
+    elif kind == "settings":
+        # The complete Settings set, not a patch (spec §5.1) -- content
+        # validated by apply_settings() at dispatch time, not here; this
+        # only checks the wire shape.
+        if "settings" not in payload or not isinstance(payload["settings"], dict):
+            raise PayloadError("missing field(s): settings", kind=kind)
+    else:  # command
+        verb = payload.get("verb")
+        if "verb" not in payload or not isinstance(verb, str):
+            raise PayloadError("missing field(s): verb", kind=kind)
+        if verb not in COMMAND_VERBS:
+            raise PayloadError(f"unrecognised verb: {_truncate_echo(verb)!r}", kind=kind)
 
     return payload
 
@@ -405,6 +460,55 @@ def build_ack(status: str, kind=None, date=None, project=None, model=None,
     if reason is not None:
         ack["reason"] = reason
     return ack
+
+
+def build_settings_ack(status: str, wiped: bool = False, reason: str = None) -> dict:
+    """The Settings Ack (spec §5.1) — deliberately minimal: confirming what
+    the Pi now holds is the `status` verb's job, not this one's. No
+    `drawn` field, on success or on error."""
+    ack = {"status": status, "kind": "settings", "wiped": wiped}
+    if reason is not None:
+        ack["reason"] = reason
+    return ack
+
+
+def build_command_ack(status: str, verb: str = None, drawn: bool = None, wiped: bool = None,
+                       floor_remaining_s: int = None, reason: str = None, **status_fields) -> dict:
+    """The Command Ack (spec §5.2-§5.4) — the shape differs per verb, so
+    every field but `status`/`kind` is optional and included only when the
+    caller passes it: `redraw` gets `drawn`/`floor_remaining_s`/`wiped`,
+    `wipe` gets only `wiped`, `status` gets `drawn`/`wiped` plus the status
+    reply fields passed as `**status_fields`.
+    """
+    ack = {"status": status, "kind": "command"}
+    if verb is not None:
+        ack["verb"] = verb
+    if drawn is not None:
+        ack["drawn"] = drawn
+    if floor_remaining_s is not None:
+        ack["floor_remaining_s"] = floor_remaining_s
+    if wiped is not None:
+        ack["wiped"] = wiped
+    for key, value in status_fields.items():
+        ack[key] = value
+    if reason is not None:
+        ack["reason"] = reason
+    return ack
+
+
+def _enforce_ack_budget(ack: dict) -> dict:
+    """Measure `ack` as it will actually be sent and replace it with a
+    minimal, well-formed error Ack if it would exceed `MAX_ACK_BYTES`
+    (spec §5.5). BlueZ truncates an over-budget notification SILENTLY --
+    both `bluetoothd`'s gatt-database.c and the ATT server's gatt-server.c
+    clip it and report success -- so something must catch this before the
+    notify, and this is the one place every Ack passes through
+    (`ReceiveState.send_ack`) regardless of kind.
+    """
+    encoded = json.dumps(ack).encode("utf-8")
+    if len(encoded) <= MAX_ACK_BYTES:
+        return ack
+    return {"status": "error", "reason": "ack exceeded MAX_ACK_BYTES, replaced"}
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +600,14 @@ class RedrawGate:
     def _floor_elapsed(self, now: float) -> bool:
         return self.last_drawn_at is None or (now - self.last_drawn_at) >= REDRAW_FLOOR_S
 
+    def floor_remaining_s(self, now: float = None) -> int:
+        """How long until the floor next allows a redraw (spec §5.3's
+        `redraw` command Ack) — only meaningful, and only ever called,
+        when a redraw was just coalesced (`last_drawn_at` is therefore
+        never None here)."""
+        now = time.monotonic() if now is None else now
+        return max(0, round(REDRAW_FLOOR_S - (now - self.last_drawn_at)))
+
     def _idle_elapsed(self, now: float) -> bool:
         return self.last_drawn_at is not None and (now - self.last_drawn_at) >= self._idle_keepalive_s()
 
@@ -553,17 +665,21 @@ class RedrawGate:
 
 
 def _build_frame(view: dict):
-    """Turn a RedrawGate view into a concrete frame (spec §5). The Historic
-    View's data comes straight from the readings table via render.py's data
-    layer -- computed on demand at redraw, no cache (spec §6).
+    """Turn a RedrawGate view into a concrete (kind, image) pair (spec §5).
+    `kind` is one of "historic"/"empty"/"gauge" -- what the management
+    surface's status verb reports as `frame` (spec §5.4), before the
+    caller's own "startup" override (see `_draw_startup_frame`). The
+    Historic View's data comes straight from the readings table via
+    render.py's data layer -- computed on demand at redraw, no cache
+    (spec §6).
     """
     if view.get("historic"):
         conn = sqlite3.connect(ReceiveState.db_path)
         try:
             rows = render_module.historic_rows(conn)
             if not rows:
-                return render_module.empty_frame()
-            return render_module.historic_frame(
+                return "empty", render_module.empty_frame()
+            return "historic", render_module.historic_frame(
                 rows, render_module.coverage_start(conn), render_module.historic_average(conn)
             )
         finally:
@@ -575,8 +691,8 @@ def _build_frame(view: dict):
     # it on each field separately) -- checking only five_hour would draw a
     # literal "None%" for seven_day if they ever diverge.
     if five_hour["pct"] is None or seven_day["pct"] is None:
-        return render_module.no_usage_data_frame()
-    return render_module.gauge_frame(
+        return "gauge", render_module.no_usage_data_frame()
+    return "gauge", render_module.gauge_frame(
         five_hour["pct"], five_hour["resets_in_s"], seven_day["pct"], seven_day["resets_in_s"]
     )
 
@@ -607,10 +723,11 @@ def render(view: dict) -> None:
     if ReceiveState._panel_worker is None:
         return
     try:
-        image = _build_frame(view)
+        kind, image = _build_frame(view)
     except Exception as exc:
         print(f"Frame build failed, panel unaffected: {exc}")
         return
+    ReceiveState.last_frame_kind = kind
     ReceiveState._panel_worker.submit(image)
     # The one line every verification run has grepped for since §8.6's stub
     # (docs/usage-pipeline-verification.md) -- keep emitting it here now
@@ -629,6 +746,12 @@ def _draw_startup_frame() -> None:
     one-line change here, not a rewrite of main() or the redraw floor.
     """
     ReceiveState.redraw_gate.try_draw_historic_now({"historic": True})
+    # Overrides whatever _build_frame/render() just set `last_frame_kind`
+    # to ("historic", or "empty" on a wiped/fresh Pi) -- the startup draw
+    # always succeeds (last_drawn_at was None), so this override is always
+    # correct: "startup" is a call-site fact, not something derivable from
+    # the frame's content (spec §5.4's `frame` field).
+    ReceiveState.last_frame_kind = "startup"
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +785,41 @@ class ReceiveState:
     # A render_module.PanelWorker, set once by main(); stays None under test
     # and before main() has run, and render() is then a safe no-op.
     _panel_worker = None
+    # What render() last actually submitted -- "startup"/"historic"/"empty"/
+    # "gauge" (spec §5.4's `frame` field). None only before the startup
+    # draw has ever run, which in production never happens (main() draws
+    # it before publish()).
+    last_frame_kind = None
+    # Process uptime's zero point (spec §5.4's `uptime_s`) -- deliberately
+    # NOT since boot, since "did receive.py restart" is the question that
+    # matters. Evaluated at class-body execution (import time), which is
+    # close enough to process start for this purpose.
+    process_started_at = time.monotonic()
+
+    @classmethod
+    def uptime_s(cls, now: float = None) -> int:
+        now = time.monotonic() if now is None else now
+        return round(now - cls.process_started_at)
+
+    @classmethod
+    def status_fields(cls, conn: sqlite3.Connection, now: float = None) -> dict:
+        """The `status` verb's reply fields (spec §5.4) -- every one a
+        duration or a count, never a timestamp, since the Pi has no wall
+        clock (ADR-0009)."""
+        now = time.monotonic() if now is None else now
+        readings = conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+        last_drawn_at = cls.redraw_gate.last_drawn_at
+        since_redraw_s = None if last_drawn_at is None else round(now - last_drawn_at)
+        panel = cls._panel_worker.status if cls._panel_worker is not None else "never"
+        return {
+            "frame": cls.last_frame_kind,
+            "since_redraw_s": since_redraw_s,
+            "panel": panel,
+            "readings": readings,
+            "coverage_start": _get_meta(conn, "coverage_start"),
+            "uptime_s": cls.uptime_s(now),
+            "schema_version": SCHEMA_VERSION,
+        }
 
     @classmethod
     def on_connect(cls, ble_device) -> None:
@@ -677,6 +835,11 @@ class ReceiveState:
 
     @classmethod
     def send_ack(cls, ack: dict) -> None:
+        # Every Ack, of every kind, passes through here before notifying
+        # (spec §5.5) -- the one place that can catch a future field
+        # pushing an Ack over MAX_ACK_BYTES, since BlueZ truncates
+        # silently rather than rejecting an over-budget notification.
+        ack = _enforce_ack_budget(ack)
         if cls.ack_characteristic is None:
             return
         characteristic = cls.ack_characteristic
@@ -729,7 +892,14 @@ class ReceiveState:
             payload = parse_payload(value)
         except PayloadError as exc:
             print(f"Rejected malformed payload: {exc.reason}")
-            cls.send_ack(build_ack("error", kind=exc.kind, reason=exc.reason))
+            # The Settings Ack stays minimal even on error (spec §5.1: no
+            # `drawn` field). An unrecognised Command verb is rejected the
+            # same way an unrecognised kind already is (spec §5.2), so it
+            # falls through to the shared, generic Ack below.
+            if exc.kind == "settings":
+                cls.send_ack(build_settings_ack("error", reason=exc.reason))
+            else:
+                cls.send_ack(build_ack("error", kind=exc.kind, reason=exc.reason))
             return
 
         kind = payload["kind"]
@@ -764,27 +934,79 @@ class ReceiveState:
                         wiped=wiped,
                     )
                 )
-            else:  # gauge
+            elif kind == "gauge":
                 conn.commit()
                 cls.gauge.update(payload)
                 drawn = cls.redraw_gate.try_draw_gauge(cls.gauge.view())
                 cls.send_ack(build_ack("ok", kind="gauge", drawn=drawn, wiped=wiped))
+            elif kind == "settings":
+                # Commit the wipe/identity write on its own, before
+                # attempting to apply the Settings: a hand-off must wipe
+                # exactly as data would (spec §5) even if this Payload's
+                # Settings turn out to be invalid.
+                conn.commit()
+                try:
+                    apply_settings(conn, payload["settings"])
+                except (UnknownSettingError, SettingValueError) as exc:
+                    conn.rollback()
+                    cls.send_ack(
+                        build_settings_ack("error", wiped=wiped, reason=_truncate_echo(str(exc)))
+                    )
+                    return
+                conn.commit()
+                cls.send_ack(build_settings_ack("ok", wiped=wiped))
+            else:  # command
+                # Same reasoning as settings: the wipe/identity write is
+                # committed on its own, ahead of the verb (spec §5's "runs
+                # unchanged" rule for both new kinds).
+                conn.commit()
+                verb = payload["verb"]
+                if verb == "redraw":
+                    now = time.monotonic()
+                    live_gauge_showing = cls.gauge.is_live() and not cls.gauge.is_expired()
+                    if live_gauge_showing:
+                        drawn = cls.redraw_gate.try_draw_gauge(cls.gauge.view(now), now=now)
+                    else:
+                        drawn = cls.redraw_gate.try_draw_historic_now({"historic": True}, now=now)
+                    ack_kwargs = {"drawn": drawn, "wiped": wiped}
+                    if not drawn:
+                        ack_kwargs["floor_remaining_s"] = cls.redraw_gate.floor_remaining_s(now)
+                    cls.send_ack(build_command_ack("ok", verb="redraw", **ack_kwargs))
+                elif verb == "wipe":
+                    # Repair, not a hand-off (spec §5.3): this Desktop's
+                    # own Settings must survive its own wipe command.
+                    _wipe_readings(conn, clear_settings=False)
+                    conn.commit()
+                    cls.send_ack(build_command_ack("ok", verb="wipe", wiped=True))
+                else:  # status
+                    fields = cls.status_fields(conn)
+                    cls.send_ack(
+                        build_command_ack("ok", verb="status", drawn=False, wiped=wiped, **fields)
+                    )
         except sqlite3.Error as exc:
             conn.rollback()
             print(f"Failed to persist reading: {exc}")
-            # Correlation fields are echoed whenever they parsed (spec
-            # §6.3), even on an error Ack — a Daily Payload always has
-            # date/project/model by the time it could reach a DB error.
-            cls.send_ack(
-                build_ack(
-                    "error",
-                    kind=kind,
-                    date=payload.get("date") if kind == "daily" else None,
-                    project=payload.get("project") if kind == "daily" else None,
-                    model=payload.get("model") if kind == "daily" else None,
-                    reason=f"db write failed: {exc}",
+            reason = f"db write failed: {exc}"
+            if kind == "settings":
+                # Stays minimal on this path too (spec §5.1: no `drawn`
+                # field) -- the same shape as every other settings error.
+                cls.send_ack(build_settings_ack("error", reason=reason))
+            elif kind == "command":
+                cls.send_ack(build_command_ack("error", verb=payload.get("verb"), reason=reason))
+            else:
+                # Correlation fields are echoed whenever they parsed (spec
+                # §6.3), even on an error Ack — a Daily Payload always has
+                # date/project/model by the time it could reach a DB error.
+                cls.send_ack(
+                    build_ack(
+                        "error",
+                        kind=kind,
+                        date=payload.get("date") if kind == "daily" else None,
+                        project=payload.get("project") if kind == "daily" else None,
+                        model=payload.get("model") if kind == "daily" else None,
+                        reason=reason,
+                    )
                 )
-            )
         finally:
             conn.close()
 

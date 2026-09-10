@@ -294,6 +294,10 @@ class _WorkerState:
         self.pending = None
         self.job_started_at: Optional[float] = None
         self.unavailable = False
+        # True from the first take_job() onward -- distinguishes "never
+        # attempted a draw" from "ok" for status() below, both of which
+        # otherwise look identical (unavailable=False, job_started_at=None).
+        self._attempted = False
 
     def submit(self, image) -> None:
         """A frame arriving mid-refresh replaces the pending slot -- newest
@@ -306,6 +310,7 @@ class _WorkerState:
             return None
         image, self.pending = self.pending, None
         self.job_started_at = now
+        self._attempted = True
         return image
 
     def on_success(self) -> None:
@@ -333,6 +338,22 @@ class _WorkerState:
             return False
         self.unavailable = True
         return True
+
+    def status(self) -> str:
+        """Panel Health (management-surface spec §5.4): "never" (nothing
+        attempted yet), "stuck" (the watchdog fired and the job is still
+        in flight -- `on_failure()` always clears `job_started_at`, so a
+        stuck episode is the one way `unavailable` and a live
+        `job_started_at` coincide), "unavailable" (a render raised and
+        returned), or "ok".
+        """
+        if not self._attempted:
+            return "never"
+        if self.unavailable and self.job_started_at is not None:
+            return "stuck"
+        if self.unavailable:
+            return "unavailable"
+        return "ok"
 
 
 class PanelWorker:
@@ -407,3 +428,8 @@ class PanelWorker:
     def unavailable(self) -> bool:
         with self._lock:
             return self._state.unavailable
+
+    @property
+    def status(self) -> str:
+        with self._lock:
+            return self._state.status()

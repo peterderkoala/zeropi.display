@@ -183,6 +183,53 @@ def test_worker_state_watchdog_never_fires_with_no_job_in_flight():
 
 
 # ---------------------------------------------------------------------------
+# _WorkerState.status() -- Panel Health (management-surface spec §5.4)
+# ---------------------------------------------------------------------------
+
+
+def test_worker_state_status_is_never_before_any_job():
+    state = render._WorkerState()
+    assert state.status() == "never"
+
+
+def test_worker_state_status_is_ok_after_a_successful_job():
+    state = render._WorkerState()
+    state.submit("frame-a")
+    state.take_job(now=0.0)
+    state.on_success()
+    assert state.status() == "ok"
+
+
+def test_worker_state_status_is_unavailable_after_a_failure():
+    state = render._WorkerState()
+    state.submit("frame-a")
+    state.take_job(now=0.0)
+    state.on_failure()
+    assert state.status() == "unavailable"
+
+
+def test_worker_state_status_is_ok_again_after_recovery():
+    state = render._WorkerState()
+    state.submit("frame-a")
+    state.take_job(now=0.0)
+    state.on_failure()
+
+    state.submit("frame-b")
+    state.take_job(now=1.0)
+    state.on_success()
+    assert state.status() == "ok"
+
+
+def test_worker_state_status_is_stuck_once_the_watchdog_fires():
+    state = render._WorkerState(watchdog_timeout_s=30.0)
+    state.submit("frame-a")
+    state.take_job(now=0.0)
+    assert state.status() == "ok"  # still in flight, not yet stuck
+    state.watchdog_fired(now=30.0)
+    assert state.status() == "stuck"
+
+
+# ---------------------------------------------------------------------------
 # PanelWorker -- one real thread, thin integration tests
 # ---------------------------------------------------------------------------
 
@@ -221,6 +268,14 @@ def test_panel_worker_mid_refresh_submission_replaces_pending_not_queued():
     assert calls == ["first", "third"]
 
 
+def test_panel_worker_status_never_then_ok():
+    calls = []
+    worker = render.PanelWorker(draw_fn=calls.append)
+    assert worker.status == "never"
+    worker.submit("frame")
+    assert _wait_for(lambda: worker.status == "ok")
+
+
 def test_panel_worker_render_exception_does_not_crash_and_recovers():
     def failing_draw(image):
         raise RuntimeError("panel exploded")
@@ -228,6 +283,7 @@ def test_panel_worker_render_exception_does_not_crash_and_recovers():
     worker = render.PanelWorker(draw_fn=failing_draw)
     worker.submit("frame")
     assert _wait_for(lambda: worker.unavailable is True)
+    assert worker.status == "unavailable"
 
     # The link outlives the panel (spec §8): a later good frame recovers.
     good_calls = []
