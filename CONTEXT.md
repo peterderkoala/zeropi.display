@@ -202,3 +202,12 @@ _Avoid_: Level, category, class, severity
 > *findings*, not preferences. A management surface that let a form change them
 > could silently invalidate the run that established them.
 
+> A verified invariant is **not stored as Configuration at all** — it stays a
+> constant in the code and is read from there to be displayed. A stored row is
+> writable by anyone holding the store, which is the one thing this Tier exists
+> to prevent. Only the first two Tiers ever appear in Configuration.
+
+> Tier applies to *tunable values*. Schema versions, identity constants and
+> parsing markers have no Tier, because there is no sense in which they could be
+> tuned.
+
