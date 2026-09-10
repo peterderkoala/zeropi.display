@@ -188,8 +188,9 @@ def test_no_usage_data_frame_has_ink_at_both_lines():
 # ---------------------------------------------------------------------------
 # The framebuffer (spec §2, §12): exactly 4000 bytes.
 #
-# Verified on real hardware in #66, where every frame below reached the glass.
-# The driver's `getbuffer()` cannot be imported here -- `epdconfig` claims GPIO
+# Three of the four frames below reached real glass in #66 (`no_usage_data` did
+# not -- it needs a null used_percentage, which real data will not produce on
+# demand). The driver's `getbuffer()` cannot be imported here -- `epdconfig` claims GPIO
 # as a side effect (pi/waveshare_epd/README.md) and the suite must run with no
 # panel and no SPI -- so this replicates its exact path instead: a 250x122
 # landscape image hits `epd2in13_V4.getbuffer`'s `imwidth == self.height`

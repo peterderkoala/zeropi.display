@@ -56,14 +56,15 @@ actually draws. ⚠ **`receive.py` now owns the panel**, so running the self-tes
 against a live service is a collision — stop `zeropi-display` first
 (spec §10); the self-test checks for this itself.
 
-**Rendering is wired into the BLE path and verified on real glass**
-(map #59, closed by #66): `pi/render.py` builds the frames,
-`receive.py` hands them to a worker thread, and the panel draws the Historic
-View at rest, the Gauge frame while a live Gauge is showing, and the empty
-frame on a wiped Pi. See `docs/eink-rendering-verification.md` for the run —
-including the 13 px floor re-confirmed with text rasterised on the Pi itself,
-and why that floor is **not monotone** (`st` collides at 11 px *and* at 14 px,
-separating only at 13).
+**Rendering is wired into the BLE path and verified on real glass** (map #59,
+#66): `pi/render.py` builds the frames, `receive.py` hands them to a worker
+thread, and the panel draws the Historic View at rest, the Gauge frame while a
+live Gauge is showing, the expiry fallback, the startup draw after a restart
+and the empty frame on a wiped Pi. ⚠ **One frame has never reached glass** —
+`NO USAGE DATA` (spec §5.4) needs a null `used_percentage`, which real data
+will not produce on demand. See `docs/eink-rendering-verification.md` for the
+run, including the 13 px floor re-confirmed with text rasterised on the Pi
+itself.
 
 The Pi's fonts are `fonts-dejavu-core`, installed by `install-pi.sh` (#64).
 
@@ -100,7 +101,7 @@ rendering map). Usage is the whole product. Older documents that still frame
 this as a daily summary of those three are historical.
 
 **Current phase**: e-ink **rendering is built and hardware-verified**
-(map #59, closed by #66). `docs/spec-eink-rendering.md` is binding (map #51's
+(map #59, verified by #66). `docs/spec-eink-rendering.md` is binding (map #51's
 destination): it says what the panel draws and how, down to pixel geometry
 verified on real glass, and ⚠ **its §11 supersedes three clauses of
 `spec-usage-pipeline.md`** — read it before treating the older spec as current.

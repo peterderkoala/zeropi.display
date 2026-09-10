@@ -6,11 +6,12 @@ child of [map #59](https://github.com/peterderkoala/zeropi.display/issues/59).
 Every observation below is either a line from the Pi's own journal or the
 maintainer looking at the panel. Nothing here is a unit test or a fixture.
 
-**Result: the panel draws, and all six scenarios passed on first attempt.**
-No defect was found in `render.py` or `receive.py`. The run produced two
-follow-ups — a missing test that spec §12 had named (added here, `4000`
-bytes) and one omission in the spec's own prose (§5.4's `5H` label) — and
-settled §14's one deliberately-open question, the 13 px floor.
+**Result: the panel draws. All six scenarios passed on first attempt**, with
+clean contrast and no ghosting after the run, and **no defect was found in
+`render.py` or `receive.py`.** The run settled §14's one deliberately-open
+question — the 13 px floor — and produced three follow-ups: a test spec §12 had
+named and the suite did not have (added here, §8), and two omissions in the
+spec's own prose (§4's `sh` pair, §0; and §5.4's `5H` label, §9).
 
 ## Environment
 
@@ -49,8 +50,18 @@ Pillow 11.1.0
 14px  st: 1 run COLLIDES [###########]   sh: 2 runs SEPARATED [######.#######]
 ```
 
-**The spec's claim reproduces exactly on the Pi**: `st` collides at 11 px and
-separates at 13 px. §4's floor stands as written; no amendment needed.
+**The half of the claim that decides the floor reproduces on the Pi**: `st`
+collides at 11 px and separates at 13 px. §4's floor stands as written.
+
+⚠ **The other half did not, and the difference is the instrument.** §4 says
+11 px "collides on the `st` **and** `sh` pairs"; here `sh` measures as
+SEPARATED at every size tested, by a single blank column at 11 px. That is not
+a contradiction of #57 so much as a different measurement: §4's claim is about
+**real glass**, this one is about **the raster**, and a 1 px gap at 11 px is
+exactly the kind that closes to the eye once e-ink has spread the ink. The
+conclusion is unchanged either way, because `st` — which genuinely touches — is
+what sets the floor. Worth recording so nobody later reads the table as
+evidence that `sh` is safe at 11 px.
 
 ⚠ **The floor is not monotone, and that is worth knowing.** `st` collides again
 at 14 px. Separation is a property of how FreeType's `FT_LOAD_TARGET_MONO` path
@@ -129,9 +140,12 @@ no dimming, hatching, banner or inversion, exactly as ADR-0010 requires.
 landed at 08:45:51, so a 300 s bound on the push would not expire until
 08:50:51 — yet the fallback fired at 08:50:35. That is correct:
 `gauge_age_s = snapshot_age_s + (now - arrival_mark)` bounds **the snapshot's**
-age, not the push's. The snapshot was taken at ~08:44:57 and nothing rewrote it
-(the snapshot only advances while an interactive TUI is open), so by 08:50:35 it
-was 338 s old and the Pi rightly refused to draw it. **A re-push of an unchanged
+age, not the push's. The 08:45:09 draw logged `gauge_age_s: 6.0`, putting the
+snapshot at **~08:45:03**; nothing rewrote it (the snapshot only advances while
+an interactive TUI is open), so at the 08:50:35 minute tick it was **332 s** old
+and the Pi rightly refused to draw it. The second push does not change that
+arithmetic — it carried the same snapshot, so its larger `snapshot_age_s` and
+later `arrival_mark` cancel to the same 332 s. **A re-push of an unchanged
 snapshot does not buy freshness**, and it should not — that is the whole point
 of ADR-0010.
 
@@ -182,7 +196,28 @@ on its four Active Days with `coverage_start` and `desktop_id` intact
 
 **Maintainer's read: `NO HISTORY YET` as specified.**
 
-## 7. What the run changed
+## 7. Ghosting and contrast after a run of refreshes
+
+#66 asks for the reads only a human can give: "contrast, ghosting after a run
+of refreshes, and legibility at arm's length". §1's read was after **14 h of
+idle**, which is the opposite of a run of refreshes, so it does not answer this.
+
+By the end of §6 the panel had taken **6 full refreshes in about 15 minutes**,
+alternating frames that share almost no ink — Historic → Gauge → Historic →
+Gauge → Historic → empty → Historic. That is the pattern most likely to leave
+residue: ADR-0007 makes every one of them a full refresh, and the large black
+bars of the Gauge frame sit where the Historic View is mostly white.
+
+**Maintainer's read, with the panel resting on the Historic View: clean — no
+ghosting, no residue of the Gauge or empty frames, contrast as good as the
+first draw, legible at arm's length.**
+
+⚠ **This says nothing about the long run.** Six refreshes in a quarter of an
+hour is a burst, not a life; the refresh budget over the panel's lifetime and
+any slow contrast drift are still open from map #59 and still want calendar
+time.
+
+## 8. What the run changed
 
 **A missing test, which spec §12 had named.** §12 asks for "the framebuffer is
 exactly 4000 bytes … a one-line test"; the suite did not have one. It is now
@@ -202,7 +237,7 @@ not the panel's framebuffer either — it is a different measurement of the same
 image. Anyone checking §2's figure against the landscape image directly will
 get 3904 and think something is broken.
 
-## 8. One gap in the spec's prose, not in the code
+## 9. One gap in the spec's prose, not in the code
 
 **§5.4 omits the `5H` label that the fault frame draws.** It specifies
 `NO USAGE DATA` at `(3, 10)` and `waiting for first snapshot` at `(3, 44)`, and
@@ -228,9 +263,10 @@ whether §5.4 gains the line is the maintainer's call.
 - **The 24 h idle keep-alive.** Wants a day of uptime, not a bench session.
 - **The refresh budget over the panel's life, and long-run ghosting and
   contrast drift.** Still open from map #59, and still needing calendar time
-  rather than a decision. This run put **6 refreshes** on the panel in 15
-  minutes, but that count is dominated by three deliberate service restarts and
-  says nothing about a normal day.
+  rather than a decision. §7 read the panel clean after a **burst** of 6
+  refreshes in 15 minutes, which is not the same claim — and that count is
+  dominated by three deliberate service restarts, so it says nothing about a
+  normal day either.
 
 ## Reproducing this
 

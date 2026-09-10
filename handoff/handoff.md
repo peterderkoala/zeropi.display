@@ -2,16 +2,43 @@
 
 ## Where things stand
 
-> **If you are here to implement rendering — the current work — read
-> [For the next session](#for-the-next-session-implementing-map-59) below
-> first. The rest of this section is what is already true.**
+> **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
+> panel draws, verified on real glass. There is no live map. See
+> [For the next session](#for-the-next-session) below for what is actually
+> left.
+
+**E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
+destination is reached: `docs/spec-eink-rendering.md` is implemented,
+unit-tested (**243 passing**) and proven on the dev Pi's real glass with the
+maintainer looking at it. All six of #66's scenarios passed on first attempt
+and **no defect was found in `render.py` or `receive.py`**. Full run:
+`docs/eink-rendering-verification.md`.
+
+Three things from that run you would otherwise rediscover the hard way:
+
+- ⚠ **The 13 px text floor is real but NOT monotone.** Re-confirmed with text
+  rasterised on the Pi itself (Pillow 11.1.0), which is what spec §14 left
+  open: `st` collides at 11 px and separates at 13. It then **collides again at
+  14 px**. Separation is how a glyph pair lands on the pixel grid, not a
+  function of size, so *"bigger is safer" is false here* — changing any text
+  size on this panel means re-checking the pair, not reasoning about it.
+- ⚠ **`gauge_age_s` bounds the SNAPSHOT's age, not the push's.** A re-push of
+  an unchanged snapshot buys no freshness, so the panel can fall back to the
+  Historic View while a Gauge Payload that arrived seconds ago sits in memory.
+  That is ADR-0010 working, not a bug — and it is the clearest argument for
+  #65's throttle drop. It looks like an off-by-300s error in the journal; it
+  is not.
+- ⚠ **`receive.py` now owns the panel.** Running `pi/epd-selftest.py` against a
+  live `zeropi-display` is a GPIO collision. The self-test refuses to run when
+  the service is active, but stop the service first rather than relying on it.
 
 **The usage pipeline is DONE and hardware-verified (2026-09-09).** Map #41's
 destination is reached and the map is closed: `docs/spec-usage-pipeline.md` is
-implemented, unit-tested (**181 passing**) and proven end-to-end against the
-dev Pi and the maintainer's real Claude Code logs. Real Daily and Gauge
-Payloads cross the link; the Pi persists, gates and stub-redraws per spec; the
-resident `systemd --user` service does it unattended. Full run:
+implemented, unit-tested (**181 passing at the time**) and proven end-to-end
+against the dev Pi and the maintainer's real Claude Code logs. Real Daily and
+Gauge Payloads cross the link; the Pi persists and gates per spec — and, since
+#63, **actually redraws** rather than stubbing it; the resident
+`systemd --user` service does it unattended. Full run:
 `docs/usage-pipeline-verification.md` — read it before touching either end.
 
 Three things from that run you would otherwise rediscover the hard way:
@@ -36,17 +63,19 @@ Three things from that run you would otherwise rediscover the hard way:
   Do not re-open it from this bullet — read ADR-0008 and ADR-0010, both amended
   2026-09-09.
 
-**E-ink rendering is SPECIFIED, not built.** `docs/spec-eink-rendering.md`
-(`bf6be4b`) is binding — map #51's destination, charted and finished in one
-day, then closed. It says what the panel draws and how, in pixel geometry a
-human approved on real glass. `receive.py` still does not import the driver, so
-nothing reaches the panel yet.
+`docs/spec-eink-rendering.md` (`bf6be4b`) remains **binding** — map #51's
+destination, and now implemented. It says what the panel draws and how, in
+pixel geometry a human approved on real glass. ⚠ **Its §11 supersedes three
+clauses of `spec-usage-pipeline.md`**; do not read those as current. It also
+says outright that THIS FILE is not authoritative.
 
-**The implementation map is charted**:
-[Map: Make the panel draw](https://github.com/peterderkoala/zeropi.display/issues/59),
-opened against that spec the way #41 was opened against #13. **Four tickets are
-takeable in parallel right now.** Read the spec first; it names its own
-required reading and says outright that THIS FILE is not authoritative.
+⚠ **Two omissions in the spec's own prose** were found while verifying it, both
+cosmetic, both raised on #66 rather than reconciled quietly. §5.4 does not
+mention the `5H` label the fault frame draws (the code is right — the reference
+approved on glass in #57 draws it too). §4 says 11 px collides on the `st`
+*and* `sh` pairs; on the Pi's raster `sh` separates at every size, because §4's
+claim is about glass and the measurement is about pixels. Neither changes the
+floor.
 
 ⚠ **Weather, calendar and the One-liner were dropped from the project**
 (maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
@@ -55,11 +84,10 @@ usage display and nothing else. `CONTEXT.md` no longer defines **One-liner**;
 document's milestone-1 sections kept as the historical record they are. Do not
 reintroduce them from an old document.
 
-⚠ **The Pi has no fonts at all** — `/usr/share/fonts` does not exist, `find`
-returns 0 files. PIL 11.1.0 is installed and working, but #38's settled mock
-renderer loads DejaVu by absolute path and therefore **cannot run on the Pi**.
-Nothing noticed because nothing has ever drawn text there. It is the rendering
-map's own ticket.
+**The Pi's fonts are `fonts-dejavu-core`**, installed by `install-pi.sh` since
+#64, at `/usr/share/fonts/truetype/dejavu/`. (Before that the Pi had no fonts
+at all and anything drawing text died at `ImageFont.truetype()` — that is
+fixed, and text has now been rasterised on the Pi and read on the glass.)
 
 **Milestone 1 (BLE prototype) works on real hardware.** The Desktop pushes a
 Payload over BLE, the Pi parses it, persists a Reading to SQLite, and returns
@@ -77,8 +105,9 @@ versioned tarball and delegates to it. As of #34,
 hardware-verified through the documented one-liner** — see
 `docs/curl-delivery-verification.md`. #39's e-ink panel provisioning has
 since been **merged into `dev`**, so `install-pi.sh` now does more than #35
-exercised: that verification ran before the merge, and **the panel steps
-still need their own hardware pass** (#40).
+exercised: that verification ran before the merge. **The panel steps have
+since had their hardware pass** — #64 provisioned them and #66 verified the
+result on the glass.
 
 **The e-ink panel draws on real hardware.** The Waveshare V4 driver is
 vendored at a pinned upstream commit in `pi/waveshare_epd/`,
@@ -86,9 +115,9 @@ vendored at a pinned upstream commit in `pi/waveshare_epd/`,
 from apt + deployment), and `pi/epd-selftest.py` is the by-hand bench check.
 Verified 2026-09-06 on the dev Pi: **full refresh 2.29 s** (ADR-0007 assumed
 ~3 s), framebuffer exactly 4000 bytes, `epd-selftest.py` 6.7 s end to end.
-Write-up: `docs/eink-driver-verification.md`. This is the first work past the
-BLE-only scope line, and it stops deliberately short of rendering —
-`receive.py` does not import the driver.
+Write-up: `docs/eink-driver-verification.md`. That run stopped deliberately
+short of rendering; **#63 has since wired the driver into `receive.py`** and
+#66 verified the whole thing on glass.
 
 A review after that run caught two defects, fixed in `ca68517`: `epd.init()`
 sat outside the `try`, so the `finally` that sleeps the panel did not cover
@@ -98,13 +127,14 @@ have aborted provisioning before `receive.py` was deployed. **If you write
 any further panel code, the `sleep()`-on-every-path property is the one to
 re-check** — it is easy to get wrong and expensive to get wrong.
 
-Read that doc's last section before building on this. **The driver is
-verified; the provisioning of the driver is not.** A parallel session was
-mid-teardown on the dev Pi, so the run went through a scratch directory with
-SPI enabled at runtime (`dtparam spi=on`, which does not survive a reboot)
-rather than through `install-pi.sh`. Its panel steps have never executed. The
-`PWR_PIN`-on-BCM-18 caveat in `pi/waveshare_epd/README.md` also still stands,
-and nobody has actually looked at the glass.
+⚠ **That doc's last section is now out of date and should be read as history.**
+It says the driver's *provisioning* was unverified (the run went through a
+scratch directory with `dtparam spi=on`, which does not survive a reboot) and
+that nobody had looked at the glass. Both were fixed later: #64 provisions the
+panel stack and the font through `install-pi.sh`, and #66 put a human in front
+of the panel. The `PWR_PIN`-on-BCM-18 caveat in `pi/waveshare_epd/README.md`
+does still stand — it is out of scope by the maintainer's call, and blocks no
+frame from drawing.
 
 - Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
   shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
@@ -122,24 +152,42 @@ and nobody has actually looked at the glass.
   `0010` an-expired-gauge-is-not-drawn.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
-## For the next session: implementing map #59
+## For the next session
 
-**The job**: make the panel draw, per `docs/spec-eink-rendering.md`. The map is
-[#59](https://github.com/peterderkoala/zeropi.display/issues/59); four of its
-seven tickets are takeable in parallel right now.
+**There is no live map, and no ticket is blocked on a decision.** Map #59
+closed the rendering milestone on 2026-09-10; the panel draws and the whole
+product — real Claude Code usage, on real glass — works end to end.
 
-**Read in this order, and stop when you have what your ticket needs:**
+**Open issues, both small:**
 
-1. Your ticket body — it names the exact spec sections and quotes the numbers.
-2. `docs/spec-eink-rendering.md` — binding, and it names its own required
-   reading. **§11 supersedes three clauses of `spec-usage-pipeline.md`**; do
-   not read those as current.
-3. The reference implementation for your seam, on an unmerged branch (below).
-4. This file only for environment facts. **The spec says outright that this
-   file is not authoritative.**
+- [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
+  `push.py` calls `client._backend._acquire_mtu()`, a private BlueZ-specific
+  `bleak` API, so the Desktop end is Linux-only. **Decision-shaped, not
+  urgent**: either a public API can negotiate the MTU now, or ADR-0001 reopens
+  and the Payload needs chunking off-Linux, or Linux-only is recorded as a
+  constraint. No non-Linux Desktop exists yet.
+- **Two spec-prose omissions raised on #66** (§4's `sh` pair, §5.4's `5H`
+  label). Cosmetic; whether `docs/spec-eink-rendering.md` gains the lines is
+  the maintainer's call.
 
-**The reference renderers already exist. Port them; do not redesign them** —
-their geometry is what a human approved on glass, pixel by pixel:
+**Two things wanting calendar time, not a session** — inherited from #59 and
+#51, and they finally became *countable* now that a panel actually runs:
+
+- **The refresh budget over the panel's life.** ADR-0007 makes every update a
+  full refresh and nobody has ever counted what a real day produces. #66's run
+  put 6 refreshes on the glass in 15 minutes, but three of those were
+  deliberate service restarts, so it says nothing about a normal day.
+- **Long-run panel behaviour**: ghosting, contrast drift, and whether the 24 h
+  keep-alive does what ADR-0010 hoped. The panel read **clean** after #66's
+  burst of 6 refreshes, which is a different and much weaker claim.
+
+⚠ **One frame has never reached glass**: `NO USAGE DATA` (spec §5.4) needs a
+null `used_percentage`, which real data will not produce on demand. Its harder
+half — the 13 px `waiting for first snapshot` — was verified twice over in #66.
+
+**The reference renderers are still on unmerged branches**, and remain the
+record of what a human approved pixel by pixel. Do not redesign a frame against
+them; that is a new effort against #51, not a liberty taken while building.
 
 | Branch | What it holds |
 |---|---|
@@ -148,7 +196,8 @@ their geometry is what a human approved on glass, pixel by pixel:
 | `bench/render-blocking` | the event-loop measurements and the timing probe |
 | `research/eink-fonts` | the font facts, with rendered samples |
 
-**The five things most likely to bite, none of them in the spec's own voice:**
+**The five things most likely to bite anyone touching the panel code**, none of
+them in the spec's own voice:
 
 1. ⚠ **Nothing may block the bluezero event loop for more than ~5 s.** That is
    BlueZ's write timeout, not our 10 s Ack timeout, and a full panel cycle is
@@ -156,59 +205,23 @@ their geometry is what a human approved on glass, pixel by pixel:
    raises `GATT Protocol Error: Unlikely Error` — the same signature milestone
    1 spent a session chasing — *after* the Pi has already persisted the
    Reading, so the two ends then disagree silently.
-2. ⚠ **The Pi has no fonts.** `/usr/share/fonts` does not exist. Until
-   [#64](https://github.com/peterderkoala/zeropi.display/issues/64) lands,
-   anything drawing text on the Pi dies at `ImageFont.truetype()`.
+2. ⚠ **The 13 px floor is not monotone.** See Where things stand above.
 3. ⚠ **Build images directly in mode `"1"`.** Greyscale-then-convert takes a
    different FreeType path and produces different letterforms, so what you
    review is not what the panel shows.
 4. ⚠ **`epdconfig` claims GPIO on import**, and `receive.py` must stay
    importable with no panel, no SPI and no bluezero — the suite depends on it.
-   The import belongs inside the worker.
+   The import lives inside the worker. This is also why the 4000-byte
+   framebuffer test replicates `getbuffer`'s packing rather than calling it.
 5. ⚠ **Every panel cycle must end in `epd.sleep()`**, with `init()` *inside*
-   the guarded region. A review already caught this exact mistake once
-   (`ca68517`). The context manager exists to make it structural.
-
-**Definition of done for the map**: the panel draws every frame, on the dev Pi,
-with a human looking at it — plus the throttle drop and provisioning, so it is
-reproducible on a fresh Pi rather than true only on this one. Ticket
-[#66](https://github.com/peterderkoala/zeropi.display/issues/66) carries the
-first thing to check at the bench: **re-confirm the 13 px text floor with text
-rasterised on the Pi itself**, since every frame approved so far was rasterised
-on the Desktop and sent as a bitmap.
+   the guarded region. A review caught this exact mistake once (`ca68517`); the
+   context manager in `render.py` exists to make it structural.
 
 ## Maps
 
-### Current: [Map: Make the panel draw (implement docs/spec-eink-rendering.md)](https://github.com/peterderkoala/zeropi.display/issues/59)
-
-Charted 2026-09-09, straight after #51 closed. **Execution mode** — the "plan,
-don't do" default is overridden, as on #41, because the spec's §14 gap check
-already closed every judgment call. Tickets are build-and-verify slices.
-
-**Destination**: the panel draws, hardware-verified with a human looking at it.
-Three things are inside that and not adjacent to it: `pi/render.py` and its
-wiring; the **Desktop throttle drop to 120 s**; and **provisioning**, so the
-milestone is reproducible on a fresh Pi rather than true only on this one.
-
-Frontier — **four takeable in parallel**:
-[frame builders](https://github.com/peterderkoala/zeropi.display/issues/60),
-[the worker + failure handling](https://github.com/peterderkoala/zeropi.display/issues/61),
-[the data layer](https://github.com/peterderkoala/zeropi.display/issues/62),
-[the throttle drop](https://github.com/peterderkoala/zeropi.display/issues/65).
-Then [wiring](https://github.com/peterderkoala/zeropi.display/issues/63) →
-[provisioning](https://github.com/peterderkoala/zeropi.display/issues/64) →
-[hardware verification](https://github.com/peterderkoala/zeropi.display/issues/66)
-(⚠ HITL, needs the maintainer at the bench).
-
-⚠ **[#61](https://github.com/peterderkoala/zeropi.display/issues/61) is the
-subtle one** — read spec §8 and `bench/render-blocking` before starting it.
-Everything else is porting a verified reference implementation; that one is
-where a wrong choice costs the BLE link.
-
-⚠ **The reference renderers already exist** on `prototype/historic-view` and
-`prototype/gauge-glass-fix`. Port them, do not redesign them — their geometry
-is the geometry a human approved on glass.
-
+**No live map.** #59 was the last one; its destination is reached and it is
+archived below. The next map gets charted when there is a next milestone —
+see [For the next session](#for-the-next-session) for what is actually open.
 
 ### Closed maps — archived
 
@@ -220,6 +233,7 @@ reasoning is not recoverable from the code.
 
 | Map | Reached | Log |
 |---|---|---|
+| [#59 Make the panel draw](https://github.com/peterderkoala/zeropi.display/issues/59) | the panel draws, hardware-verified | this file, until archived |
 | [#51 What the e-ink panel draws, and how](https://github.com/peterderkoala/zeropi.display/issues/51) | `docs/spec-eink-rendering.md` | [`archive/map-51.md`](archive/map-51.md) |
 | [#41 Implement the usage pipeline](https://github.com/peterderkoala/zeropi.display/issues/41) | pipeline hardware-verified | [`archive/map-41.md`](archive/map-41.md) |
 | [#13 Usage read, pushed, stored](https://github.com/peterderkoala/zeropi.display/issues/13) | `docs/spec-usage-pipeline.md` | [`archive/map-13.md`](archive/map-13.md) |
@@ -592,26 +606,28 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** with map #59 — **the live map, charted
-  2026-09-09, four tickets takeable in parallel right now** (#60, #61, #62,
-  #65; see Maps above). Claim one (`gh issue edit <n> --add-assignee @me`),
-  read the spec section it points at, build it. **Execution** map: produce
-  working code, not decisions.
-- **`mattpocock-skills:tdd`** per unit — spec §12 names the assertions, and
-  frame builders are unusually easy to test (render, assert on pixels).
-- **[#66](https://github.com/peterderkoala/zeropi.display/issues/66) is the one
-  that needs a human** — hardware verification at the bench, blocked until the
-  build tickets land. Everything else on map #59 can be driven from the
-  terminal. (#57, the spec map's bench session, is **closed**.)
+- **`mattpocock-skills:wayfinder`** only when there is a next milestone to
+  chart. **There is no live map**: #59 closed on 2026-09-10 and #32 is a single
+  decision-shaped question, not a map's worth of work.
+- **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
+  names the assertions, and frame builders are unusually easy to test (render,
+  assert on pixels). The suite is **243 passing** and must stay green with no
+  panel, no SPI, no bluezero and no `~/.claude`.
+- **Bench work now needs the service stopped.** `receive.py` owns the panel, so
+  `epd-selftest.py` against a live `zeropi-display` is a GPIO collision. #66's
+  run is the template for a hardware session: back up the Pi's `data.db`, drive
+  each scenario from `push.py`, read the journal for the `render:` line, and
+  put a human in front of the glass for what a log cannot show.
 - **Every closed map's log is in `handoff/archive/`** — #1, #7, #13, #41, #51.
   Nothing there is takeable; read one when you want the reasoning behind a
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` is not the tool for map #59.** It is an
-  execution map: the spec closed the decisions, so a question there means you
-  have found a **gap in the spec** — say so on the ticket and flag it to #51,
-  rather than grilling your way to a private answer.
+- **`mattpocock-skills:grilling` suits #32 and little else right now** — it is
+  a genuine open question with three candidate answers. It was *not* the tool
+  for map #59, and the reason generalises: on an execution map a question means
+  you have found a **gap in the spec**, so say so on the ticket rather than
+  grilling your way to a private answer. #66 found two and did exactly that.
 - **`mattpocock-skills:domain-modeling`** only if a ticket coins a term the
   glossary lacks. `CONTEXT.md` is current as of **Active Day** (#52); the
   One-liner was deleted from it when the feature was dropped.
