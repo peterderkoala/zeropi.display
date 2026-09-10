@@ -404,7 +404,7 @@ def test_run_gauge_push_wiped_ack_clears_marks_and_runs_one_batch_pass(tmp_path,
         monkeypatch.setattr(push, "desktop_id", lambda: "desktop-id")
         monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did: {"kind": "gauge", "desktop_id": did})
 
-        async def fake_with_ble_connection(coro_fn):
+        async def fake_with_ble_connection(coro_fn, **kwargs):
             async def send_one(payload):
                 return {"status": "ok", "kind": "gauge", "drawn": True, "wiped": True}
             return await coro_fn(send_one)
@@ -447,7 +447,7 @@ def test_run_gauge_push_non_wiped_ack_does_not_touch_store(tmp_path, monkeypatch
         monkeypatch.setattr(push, "desktop_id", lambda: "desktop-id")
         monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did: {"kind": "gauge", "desktop_id": did})
 
-        async def fake_with_ble_connection(coro_fn):
+        async def fake_with_ble_connection(coro_fn, **kwargs):
             async def send_one(payload):
                 return {"status": "ok", "kind": "gauge", "drawn": True, "wiped": False}
             return await coro_fn(send_one)
@@ -724,3 +724,28 @@ def test_an_oversized_row_fails_only_its_own_row(tmp_path):
         assert len(usage.pending_readings(conn)) == 1
 
     asyncio.run(_impl())
+
+
+def test_main_re_asserts_configuration_settings_and_waits_for_the_lock(tmp_path, monkeypatch):
+    """`push.py` is a CLI: it re-asserts the configured Settings set (§7.2)
+    and waits out a busy link rather than dropping the job (§7.1)."""
+    monkeypatch.setenv("ZEROPI_CONFIG", str(tmp_path / "config.db"))
+    monkeypatch.setenv("ZEROPI_USAGE_STORE", str(tmp_path / "usage.db"))
+    seen: list[dict] = []
+
+    async def fake_run_batch_pass(*a, **kw):
+        seen.append(kw)
+        return push.BatchResult()
+
+    async def fake_run_gauge_push(*a, **kw):
+        seen.append(kw)
+        return True
+
+    monkeypatch.setattr(push, "run_batch_pass", fake_run_batch_pass)
+    monkeypatch.setattr(push, "run_gauge_push", fake_run_gauge_push)
+
+    assert push.main([]) == 0
+    assert len(seen) == 2
+    for kwargs in seen:
+        assert kwargs["settings"] == {"idle_keepalive_s": 86400}
+        assert kwargs["lock_wait_s"] == push.CLI_LOCK_WAIT_S == 15.0

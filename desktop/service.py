@@ -285,6 +285,11 @@ async def run_forever(
                 result = await run_batch_pass_fn(store_path)
                 if result.ok:
                     scheduler.note_success(now_wall)
+            except push.BleLinkBusy as exc:
+                # An expected steady state, not a fault: a human's CLI holds
+                # the link (§7.1). No traceback, no success recorded — the
+                # Batch is simply retried (pipeline §7.3).
+                logger.info("Batch pass deferred: %s", exc)
             except Exception:  # noqa: BLE001 - a bad Batch must not kill the loop
                 logger.exception("Batch pass failed")
 
@@ -294,6 +299,10 @@ async def run_forever(
         if gate.observe(state, now_mono, batch_in_progress=batch_in_progress):
             try:
                 await run_gauge_push_fn(store_path)
+            except push.BleLinkBusy as exc:
+                # Dropped, not retried (pipeline §7.4) — and dropped quietly,
+                # because a busy link is this Desktop being used, not a fault.
+                logger.info("Gauge push dropped: %s", exc)
             except Exception:  # noqa: BLE001 - a bad Gauge push must not kill the loop
                 logger.exception("Gauge push failed")
 
@@ -325,10 +334,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
     # `run_forever` calls `run_batch_pass_fn`/`run_gauge_push_fn` with just
     # `store_path` (its contract, relied on by tests that pass single-arg
-    # fakes) — `paths.projects_root` is bound in here via partial application
-    # rather than by widening that call.
-    run_batch_pass_fn = functools.partial(push.run_batch_pass, projects_root=cfg.paths_projects_root)
-    run_gauge_push_fn = functools.partial(push.run_gauge_push, projects_root=cfg.paths_projects_root)
+    # fakes) — `paths.projects_root`, the Settings set to re-assert
+    # (management-surface §7.2) and the service's *immediate* BLE-lock
+    # failure (§7.1) are all bound in here via partial application rather
+    # than by widening that call.
+    common = {
+        "projects_root": cfg.paths_projects_root,
+        "settings": push.settings_from_config(cfg),
+        # ⚠ Asymmetric on purpose: the service never waits for the lock. Both
+        # its jobs are droppable (pipeline §7.3 retries the Batch, §7.4 drops
+        # the Gauge), and a resident loop blocking on a link a human is using
+        # is how the two ends deadlock each other's cadence.
+        "lock_wait_s": push.SERVICE_LOCK_WAIT_S,
+    }
+    run_batch_pass_fn = functools.partial(push.run_batch_pass, **common)
+    run_gauge_push_fn = functools.partial(push.run_gauge_push, **common)
     try:
         asyncio.run(
             run_forever(
