@@ -94,8 +94,14 @@ _Avoid_: Push (that is the verb), sweep, upload
 **Ack**:
 The JSON status object the Pi returns on its notify characteristic after a
 write, reporting whether parsing *and* persistence of the Payload succeeded,
-which Reading it refers to, and whether the Pi has wiped its Readings.
+which Reading it refers to, and whether the Pi has wiped its Readings. When the
+write was a Command, it also carries that Command's result.
 _Avoid_: Response, reply
+
+> An Ack reports **durations and counts, never timestamps** — the mirror of
+> [ADR-0009](./docs/adr/0009-pi-is-given-durations-not-timestamps.md). The Pi is
+> given durations because it has no wall clock, and for the same reason it can
+> only report them.
 
 ### Held on the Pi
 
@@ -113,6 +119,17 @@ The earliest date the currently coupled Desktop has pushed. It exists so that
 a date the Pi simply never received reads as *outside coverage* rather than
 as zero usage.
 _Avoid_: Since, epoch, first date
+
+**Panel Health**:
+Whether the Pi can actually drive the panel — the render worker alive, and its
+last refresh completed rather than raising or hanging. Distinct from whether a
+frame was *submitted*, which is all the redraw floor's own reporting can say.
+_Avoid_: Panel status, display state, drawn, screen health
+
+> The distinction is the whole point: a stuck or failed panel leaves BLE
+> serving, Acks succeeding and Readings persisting, with only the glass frozen.
+> Until [#74](https://github.com/peterderkoala/zeropi.display/issues/74) the Pi
+> computed this and then discarded it into its own log.
 
 ### The usage data
 
@@ -166,11 +183,21 @@ at zero rather than going negative.
 _Avoid_: resets_at, deadline, expiry, TTL
 
 **Gauge Age**:
-How long ago the Pi received the Gauge it is showing, in monotonic seconds
-since that Payload arrived. The Pi's only measure of freshness, and the reason
-it needs no wall clock. At 300 s the Gauge is **expired** and no longer a live
-reading.
-_Avoid_: Staleness, last updated, timestamp, received_at
+How old the **underlying snapshot** behind the Gauge is: the age it already had
+when the Desktop sent it, plus the monotonic seconds since that Payload
+arrived. The Pi's only measure of freshness, and the reason it needs no wall
+clock. At 300 s the Gauge is **expired** and no longer a live reading.
+_Avoid_: Staleness, last updated, timestamp, received_at, time since arrival
+
+> ⚠ **It is not "how long ago the Pi received it"** — that is only the second
+> half. A Gauge can arrive already half-expired, so the panel can fall back to
+> the Historic View while a Payload that landed seconds ago sits in memory. This
+> was found on glass in
+> [#66](https://github.com/peterderkoala/zeropi.display/issues/66), and this
+> entry defined it wrongly until
+> [#74](https://github.com/peterderkoala/zeropi.display/issues/74). Any new
+> freshness field must say **which** age it means, or it reads as an
+> off-by-300s bug.
 
 **Historic View**:
 What the panel shows when there is no live Gauge — the most recent **Active
