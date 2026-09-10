@@ -4,7 +4,8 @@ Pi Zero e-ink display project reusing pwnagotchi hardware to show live Claude
 Code usage: a gauge of current consumption against the rolling limit windows,
 backed by a daily history graph. That is the whole of it — weather, calendar
 and the One-liner were dropped from the project on 2026-09-09. Current phase:
-specifying what the e-ink panel draws and how.
+specifying one management surface for both ends (map #70) — the panel itself is
+built and hardware-verified.
 
 ## Language
 
@@ -163,4 +164,41 @@ Whether every model in a Reading was found in the pricing table. A Reading
 whose model is unrecognised still counts its tokens, but is marked
 incomplete rather than being dropped or failing the push.
 _Avoid_: Priced, valid, accurate
+
+### Managing the ends
+
+**Configuration**:
+The Desktop's own tunable values, held in a dedicated SQLite store separate
+from the archive of record. Read once at process startup and never re-read, so
+a process runs one known Configuration for its whole life. Written only by the
+management surface — never by the resident service.
+_Avoid_: Config file, preferences, options, config table
+
+> Deliberately not a section in the Desktop store. That store is the archive of
+> record (ADR-0005) with its own version gate and its own backup story;
+> Configuration would become unreadable exactly when the archive is broken, and
+> restoring old history would silently restore old Configuration with it.
+
+**Settings**:
+The subset of Configuration that is projected onto the Pi. The Pi holds no
+Configuration of its own — it is told, which is what keeps it a dumb receiver —
+and Settings apply **live** there, because the Pi cannot be restarted without
+dropping the connection that delivered them.
+_Avoid_: Pi config, remote config, device settings
+
+> **Configuration** and **Settings** are not synonyms and the distinction is
+> load-bearing: Configuration is what the Desktop holds, Settings are what the
+> Pi is given. A value can be Configuration without being a Setting; nothing is
+> a Setting without first being Configuration.
+
+**Tier**:
+Which of three classes a tunable value belongs to: a deployment fact, freely
+editable; a policy value, editable within a validated range; or a **verified
+invariant** — a value fixed by a hardware verification run and its ADR, which
+is displayed read-only rather than hidden, and is not a Setting at all.
+_Avoid_: Level, category, class, severity
+
+> The third Tier exists because several of this project's constants are
+> *findings*, not preferences. A management surface that let a form change them
+> could silently invalidate the run that established them.
 
