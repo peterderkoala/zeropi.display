@@ -84,6 +84,12 @@ _Avoid_: Method, call, instruction, request
 > Enforcement that a Tier moved out of reach of a settings form must not be
 > reachable through a verb instead.
 
+> A Command is **delivered or it is not** — it is never held for later. Against
+> an **Unreachable** Pi it is refused at the moment it is typed, so the retrier
+> is always the **human**: nothing on the Desktop re-sends a Command on its own.
+> That is what keeps "a Command will be retried" (above) from quietly meaning
+> "the Desktop will fire it again at a time nobody chose".
+
 **Batch**:
 The set of Daily Payloads sent in one push, each written and acknowledged
 separately over a single BLE connection. Every Payload in a Batch knows its
@@ -252,6 +258,29 @@ _Avoid_: Pi config, remote config, device settings
 > Configuration of its own". The Pi does persist the Settings it is given, so a
 > reboot cannot silently revert one; a hand-off clears them back to the
 > defaults, because they were the previous Desktop's policy.
+
+> **Settings converge; Commands do not.** Because a Settings Payload is
+> declarative, the Desktop never has to hold a pending change: the current
+> Configuration *is* the pending state, and re-sending it converges the Pi from
+> whatever it held. So there is no queue of undelivered Settings, and none is
+> needed. A **Command** has no such property — it is delivered or it is not,
+> and it is never held (see **Unreachable**).
+
+**Unreachable**:
+The Pi is not addressable by the Desktop right now. An expected steady state,
+**not an error**: the Desktop initiates every connection and the Pi is a
+peripheral that must be in range and advertising. Two cases, worth telling
+apart because they call for different things from a human — **absent** (powered
+off, out of range, mid-`bluetoothd` restart), and **busy** (another process on
+this Desktop holds the link, so the Pi is there but not free).
+_Avoid_: Offline, down, disconnected, unavailable
+
+> Nothing addressed to an Unreachable Pi is deferred
+> ([ADR-0011](./docs/adr/0011-management-actions-are-never-deferred.md)).
+> Settings need no deferral (they converge, above), and a Command against an
+> Unreachable Pi is **refused at the moment it is typed** rather than held —
+> most sharply for a destructive one, because the reason the Pi is Unreachable
+> may be the reason not to act on it.
 
 **Tier**:
 Which of three classes a tunable value belongs to: a deployment fact, freely
