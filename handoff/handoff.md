@@ -6,26 +6,38 @@
 > panel draws, verified on real glass. **Map #70 is DONE too, closed the same
 > day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
 > #77 from all eight of its decision tickets. **Map #80 implements it, and
-> ticket 1 of 7 is done**: #81 (`ef129e3`, 2026-09-10) built
-> `desktop/config.py` — the Configuration store, the 18-key Tier 1/2 schema,
-> and resolution moved to `push.py`/`service.py`'s entry points. Still
-> missing: the Pi's configuration seam (#82), the wire's Settings/Command
-> Payloads (#83), the Desktop's BLE lock (#84), the Verdict (#85),
-> `desktop/cli.py` (#86), and the hardware verification (#87) — no
-> `settings`/`command` Payload crosses the wire yet, and nothing on the Pi
-> reads a Setting. See [For the next session](#for-the-next-session) below.
+> tickets 1-2 of 7 are done**: #81 (`ef129e3`) built `desktop/config.py` —
+> the Configuration store and the 18-key Tier 1/2 schema, resolved once at
+> `push.py`/`service.py`'s entry points. #82 (`0eb9393`, both 2026-09-10)
+> built the Pi's configuration seam — `apply_settings`/`get_setting` persist
+> `setting.*` rows in `meta`, the ADR-0006 wipe clears them, and
+> `RedrawGate._idle_elapsed` now reads a live-looked-up getter instead of a
+> module constant, so a Setting applies without a restart. **Still no
+> `settings`/`command` Payload crosses the wire** — #83 (the wire) is next.
+> Also missing: the Desktop's BLE lock (#84), the Verdict (#85),
+> `desktop/cli.py` (#86), and the hardware verification (#87). See
+> [For the next session](#for-the-next-session) below.
 >
-> ⚠ **`/code-review` caught a real gap in #81's first pass**: `paths.store`
-> and `paths.projects_root` are threaded into `push.py`'s own CLI entry, but
-> the resident `service.py` loop's `run_batch_pass_fn`/`run_gauge_push_fn`
-> only ever receive `store_path` (their contract — existing tests pass
-> single-arg fakes), so a configured `paths.projects_root` silently didn't
-> reach the service. Fixed by binding it via `functools.partial` rather than
-> widening that call. **If a later ticket adds another Configuration value
-> that only `run_batch_pass`/`run_gauge_push` consume, thread it the same
-> way** — through `functools.partial` at `service.py`'s `main()`, not by
-> adding a positional/required parameter to the `RunBatchPassFn`/
-> `RunGaugePushFn` call inside `run_forever`.
+> ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
+> passes** — worth noting as a pattern, not just their specific fixes:
+> - **#81**: `paths.store`/`paths.projects_root` reached `push.py`'s own CLI
+>   entry, but the resident `service.py` loop's
+>   `run_batch_pass_fn`/`run_gauge_push_fn` only ever receive `store_path`
+>   (their contract — existing tests pass single-arg fakes), so a configured
+>   `paths.projects_root` silently didn't reach the service. Fixed via
+>   `functools.partial` rather than widening that call. **If a later ticket
+>   adds another Configuration value that only those two functions consume,
+>   thread it the same way** — partial application at `service.py`'s
+>   `main()`, never a new positional/required parameter on the
+>   `RunBatchPassFn`/`RunGaugePushFn` call inside `run_forever`.
+> - **#82**: `apply_settings` coerced a value inside the same loop that
+>   wrote to `meta`, so a bad value on a later key could leave an earlier
+>   key's write sitting in the uncommitted transaction, and raised a bare
+>   `ValueError` instead of a typed one. Fixed by coercing every value into
+>   a separate dict before any write (mirrors #81's own
+>   `write_config_value` discipline — this project's fail-closed convention
+>   is now established on both ends, replicate it rather than re-deriving
+>   it for #83's wire-level validation).
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -183,12 +195,11 @@ frame from drawing.
 implements it**, execution-mode (no grilling by default — §13 already closed
 the judgment calls), tickets in dependency order:
 
-1. ✅ **#81 Configuration store + Tier schema** — done, `ef129e3`, this
-   session.
-2. **#82 The Pi's configuration seam** — next. No dependency on #81 (the Pi
-   holds no Configuration of its own); can be picked up directly.
-3. #83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`) —
-   depends on #82.
+1. ✅ **#81 Configuration store + Tier schema** — done, `ef129e3`.
+2. ✅ **#82 The Pi's configuration seam** — done, `0eb9393`.
+3. **#83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`)**
+   — next, depends on #82 (done). Calls into `apply_settings`/`get_setting`
+   built there; see spec §5.
 4. #84 The Desktop's BLE lock + Settings re-assertion — depends on #81, #83.
 5. #85 The Verdict (pure function) — depends on #83, #81.
 6. #86 `desktop/cli.py` — depends on #81–#85.
