@@ -5,16 +5,32 @@ a child of map [#70](https://github.com/peterderkoala/zeropi.display/issues/70).
 Documentation and source research only — **no hardware was touched**, per the
 ticket (`receive.py` owns the panel's GPIO).
 
+> ✅ **Confirmed on hardware 2026-09-10 by
+> [#78](https://github.com/peterderkoala/zeropi.display/issues/78). The bottom
+> line — 512 bytes, truncated silently — holds exactly.** One correction to the
+> *reasoning*: BlueZ notifies with opcode **`0x23`**, whose per-value overhead
+> is **5 bytes, not 3**. See [§6](#6-bench-confirmation-78) for the measurement
+> and why the error stayed invisible.
+
 ---
 
 ## The answer in one line
 
-**512 bytes, derived — not measured.** The Pi's notification payload is bounded
-by `min(512, ATT_MTU − 3)`. Both ends are BlueZ with the default
-`ExchangeMTU = 517`, so `ATT_MTU − 3 = 514` and the 512-byte cap binds. The
-only *measured* fact today is that the budget is **at least 197 − 3 = 194
-bytes** (#32). The stretch between 194 and 512 rests on a derivation, and
-⚠ **both caps truncate silently.**
+**512 bytes — now measured, not derived** ([§6](#6-bench-confirmation-78)). The
+Pi's notification payload is bounded by `min(512, ATT_MTU − overhead)`, where
+the overhead is **5 bytes** for the `Handle Multiple Value Notification`
+(`0x23`) opcode BlueZ actually uses here, and 3 for the classic `0x1b`. Both
+ends are BlueZ with the default `ExchangeMTU = 517`, and 517 was confirmed on
+the wire, so `ATT_MTU − 5 = 512` and the 512-byte `gatt-database.c` cap agree
+to the byte. ⚠ **Both caps truncate silently**, confirmed at the boundary: a
+512-byte Ack arrives whole, a 513-byte Ack arrives as 512 with no error at
+either end.
+
+⚠ **The original `ATT_MTU − 3` was wrong by two bytes and it did not show**,
+because at MTU 517 both terms of the `min()` land on 512. At any smaller MTU it
+would bite — at 247, `− 3` gives 244 where the truth is 242. That is the third
+time this project has been caught by a two-byte MTU derivation (#32, #67); the
+`min(512, …)` form is what kept the answer right anyway.
 
 **ADR-0001's 512 is numerically the same in this direction and structurally
 not symmetric.** Same number, different mechanism, weaker guarantee. See
@@ -356,11 +372,16 @@ It packs several handle-value tuples into one PDU, still bounded by
 | `bluezero` and `bleak` add no cap or check of their own | Both sources read directly | **Certain** |
 | Default ATT_MTU is 23 (≈20 usable) with no exchange | Core Spec Vol 3 Part G §5.2.1 | **Certain** |
 | The budget is **at least 194 bytes** on this hardware | #32, measured: a 194-byte Ack arrived whole | **Measured** |
-| The negotiated ATT_MTU on this link is **517**, so the budget is **512** | Derived from BlueZ defaults + both machines' `main.conf` + four source paths | **High, but derived** |
+| The negotiated ATT_MTU on this link is **517**, so the budget is **512** | ~~Derived from BlueZ defaults + both machines' `main.conf` + four source paths~~ → **confirmed on the wire, [§6](#6-bench-confirmation-78)** | **Measured** |
+| Notification overhead is `ATT_MTU − 3` | ⚠ **Refuted for this link** — BlueZ uses opcode `0x23`, overhead 5. [§6](#6-bench-confirmation-78) | **Corrected** |
 
 ⚠ **The last row is the one to distrust**, and this project has earned that
 caution twice (§2). It is also the row the design depends on: if the real MTU
 is, say, 247, the budget is 244 and a widened Ack silently loses its tail.
+
+> **Resolved by [#78](https://github.com/peterderkoala/zeropi.display/issues/78).**
+> The distrust was warranted and it paid out — not on the MTU, which was
+> exactly 517 as derived, but on the overhead term beside it.
 
 **The measurement that closes it** — one connection, no panel interaction, no
 GPIO:
@@ -381,6 +402,106 @@ GPIO:
 
 ⚠ **`receive.py` owns the panel** — stop `zeropi-display` before running
 anything Pi-side, per spec §10.
+
+---
+
+## 6. Bench confirmation (#78)
+
+Run 2026-09-10 against the dev Pi (`B8:27:EB:7C:97:0F`) from the Desktop
+(`70:A8:D3:3B:EC:8B`), with `zeropi-display` **left running**.
+
+### Method — no Pi-side code change was needed
+
+§5 proposed emitting an oversized Ack via a `kind: "probe"` Payload, which
+would have meant touching the Pi. It turned out to be unnecessary:
+`parse_payload` echoes the rejected `kind` straight back into the Ack's reason
+(`f"unknown kind: {kind!r}"`), so a long `kind` inside a ≤512-byte Payload
+produces an arbitrarily long Ack **in the other direction**. Rejection happens
+before any DB write or panel draw, so this drives the live service while
+touching neither `readings` nor the GPIO — `data.db` was `md5sum`-identical
+before and after.
+
+The lever is worth remembering: **any field the Pi echoes into an error Ack is
+an amplifier**, and it is the cheapest way to test this direction.
+
+### Result 1 — the MTU exchange is real, and it is 517
+
+`btmon` on the Pi, during the connection:
+
+```
+ATT: Exchange MTU Request (0x02) len 2
+  Client RX MTU: 517
+ATT: Exchange MTU Response (0x03) len 2
+  Server RX MTU: 517
+```
+
+So 517 is **negotiated**, not merely a config default nothing exercises — which
+was the specific doubt §1.5 raised. `bleak`'s `client.mtu_size` agreed: 517.
+
+### Result 2 — the budget is exactly 512, bisected
+
+| Ack the Pi built | Payload sent | Bytes that arrived | Result |
+|---|---|---|---|
+| 200 | 131 | 200 | parses |
+| 505 | 436 | 505 | parses |
+| 510 | 441 | 510 | parses |
+| 511 | 442 | 511 | parses |
+| **512** | 443 | **512** | **parses** |
+| **513** | 444 | **512** | **`JSONDecodeError`** |
+| 514 | 445 | 512 | `JSONDecodeError` |
+| 520 | 451 | 512 | `JSONDecodeError` |
+| 540 | 471 | 512 | `JSONDecodeError` |
+| 560 | 491 | 512 | `JSONDecodeError` |
+
+The boundary is exact and there is no error at either end — `bluetoothd`
+returned success, `bluezero` raised nothing, and the Pi's journal logged a
+normal rejection. **Silent truncation confirmed.**
+
+### Result 3 — the opcode is `0x23`, and the overhead is 5, not 3
+
+The finding this ticket existed to catch. BlueZ does **not** use the classic
+`Handle Value Notification` (`0x1b`) assumed throughout §1. It uses:
+
+```
+ATT: Handle Multiple Value Notification (0x23) len 516
+  Length: 0x0200                                  ← 512, the value length
+  Handle: 0x0029 Type: Vendor specific (08c89458-…)
+```
+
+`0x23` carries a **per-value length field**, so its layout is
+`opcode(1) + handle(2) + length(2) + value`, giving `ATT_MTU − 5`, not
+`ATT_MTU − 3`. At the ceiling the whole PDU is `1 + 516 = 517` — exactly the
+negotiated MTU, which is the clean confirmation that this is what bound.
+
+⚠ **On this link the correction changes nothing, and that is the danger.**
+`ATT_MTU − 5 = 512` and `gatt-database.c`'s clamp is also 512, so both terms of
+the `min()` land on the same number and the two-byte error is invisible. At any
+smaller MTU it separates: at 247 the old formula says 244, the truth is 242.
+
+**The two bounds cannot be distinguished on this link** — both evaluate to 512,
+and no larger MTU is reachable (517 is the maximum). Recording that honestly
+rather than picking one: the *number* is measured, the *mechanism* behind it is
+still one of two.
+
+### Result 4 — the Desktop blames the JSON, as predicted
+
+Fed the truncated bytes to `push.py`'s own `_handle_ack`:
+
+```
+{"status": "error",
+ "reason": "malformed ack from Pi: Expecting ',' delimiter: line 1 column 513 (char 512)"}
+```
+
+§1.3's prediction holds exactly. Note the one diagnostic thread available: the
+column number **is** the budget. A guardrail that recognises `char 512` could
+turn this into a length error, but nothing does that today.
+
+### What this means for the design
+
+Budget **512 bytes, measured**. Against the known Ack sizes — 194 B measured
+maximum, ~360 B worst case — [#74](https://github.com/peterderkoala/zeropi.display/issues/74)
+has roughly **150 bytes of real headroom** for a widened Ack. That is enough to
+design against, and it is now a number someone has seen.
 
 ---
 

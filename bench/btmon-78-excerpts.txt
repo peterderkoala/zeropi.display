@@ -1,0 +1,68 @@
+# btmon excerpts, #78 bench run 2026-09-10 (dev Pi B8:27:EB:7C:97:0F)
+# Full trace was 1979 lines; kept the ATT records the finding rests on.
+
+## The MTU exchange
+      ATT: Exchange MTU Request (0x02) len 2
+        Client RX MTU: 517
+> HCI Event: LE Meta Event (0x3e) plen 12                   #6 [hci0] 37.681019
+--
+      ATT: Exchange MTU Request (0x02) len 2
+        Client RX MTU: 517
+bluetoothd[7964]: < ACL Data TX: Handl.. flags 0x00 dlen 7  #8 [hci0] 37.681983
+      ATT: Exchange MTU Response (0x03) len 2
+        Server RX MTU: 517
+> ACL Data RX: Handle 64 flags 0x02 dlen 7                  #9 [hci0] 37.860917
+      ATT: Exchange MTU Response (0x03) len 2
+        Server RX MTU: 517
+> HCI Event: Number of Completed Packets (0x13) plen 5     #10 [hci0] 37.861085
+
+## The notifications (opcode 0x23, note Length caps at 0x0200 = 512)
+      ATT: Handle Multiple Value Notification (0x23) len 204
+        Length: 0x00c8
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[200]: 7b22737461747573223a20226572726f72222c2022647261776e223a2066616c73652c20227769706564223a2066616c736
+--
+      ATT: Handle Multiple Value Notification (0x23) len 509
+        Length: 0x01f9
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[249]: 7b22737461747573223a20226572726f72222c2022647261776e223a2066616c73652c20227769706564223a2066616c736
+--
+      ATT: Handle Multiple Value Notification (0x23) len 514
+        Length: 0x01fe
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[254]: 7b22737461747573223a20226572726f72222c2022647261776e223a2066616c73652c20227769706564223a2066616c736
+--
+      ATT: Handle Multiple Value Notification (0x23) len 515
+        Length: 0x01ff
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[255]: 7b22737461747573223a20226572726f72222c2022647261776e223a2066616c73652c20227769706564223a2066616c736
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
+--
+      ATT: Handle Multiple Value Notification (0x23) len 516
+        Length: 0x0200
+        Handle: 0x0029 Type: Vendor specific (08c89458-52f1-47eb-ab58-f7f7995d8efb)
+          Data[0]: 
