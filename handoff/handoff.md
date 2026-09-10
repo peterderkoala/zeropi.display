@@ -12,10 +12,12 @@
 > built the Pi's configuration seam — `apply_settings`/`get_setting` persist
 > `setting.*` rows in `meta`, the ADR-0006 wipe clears them, and
 > `RedrawGate._idle_elapsed` now reads a live-looked-up getter instead of a
-> module constant, so a Setting applies without a restart. **Still no
-> `settings`/`command` Payload crosses the wire** — #83 (the wire) is next.
-> Also missing: the Desktop's BLE lock (#84), the Verdict (#85),
-> `desktop/cli.py` (#86), and the hardware verification (#87). See
+> module constant, so a Setting applies without a restart. **#83 (the wire,
+> `568ef47`, 2026-09-10) is also done**: `settings`/`command` Payloads now
+> cross the wire, all three verbs (`redraw`/`wipe`/`status`) dispatch, and
+> `MAX_ACK_BYTES` is enforced on every Ack before notifying. Still missing:
+> the Desktop's BLE lock (#84), the Verdict (#85), `desktop/cli.py` (#86),
+> and the hardware verification (#87). See
 > [For the next session](#for-the-next-session) below.
 >
 > ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
@@ -38,6 +40,16 @@
 >   `write_config_value` discipline — this project's fail-closed convention
 >   is now established on both ends, replicate it rather than re-deriving
 >   it for #83's wire-level validation).
+> - **#83**: the `wipe` Command verb reused `_wipe_readings` wholesale, which
+>   also clears every Setting back to its code default — correct for the
+>   Desktop Id hand-off wipe (ADR-0006), wrong for this verb's same-Desktop
+>   *repair* (spec §5.3 only documents "drop and recreate `readings`, delete
+>   `coverage_start`"). Fixed with a `clear_settings` flag, defaulting True
+>   for the hand-off path. Also: the shared `sqlite3.Error` handler in
+>   `on_write` built the generic (daily/gauge-shaped) Ack for every kind,
+>   which broke `settings`' documented no-`drawn` shape and dropped
+>   `command`'s `verb` on a DB failure — both new kinds needed their own
+>   branch there too, not just on the success path.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -197,10 +209,14 @@ the judgment calls), tickets in dependency order:
 
 1. ✅ **#81 Configuration store + Tier schema** — done, `ef129e3`.
 2. ✅ **#82 The Pi's configuration seam** — done, `0eb9393`.
-3. **#83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`)**
-   — next, depends on #82 (done). Calls into `apply_settings`/`get_setting`
-   built there; see spec §5.
-4. #84 The Desktop's BLE lock + Settings re-assertion — depends on #81, #83.
+3. ✅ **#83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`)**
+   — done, `568ef47`. `settings`/`command` are new `kind` values on the
+   existing write characteristic; `redraw`/`wipe`/`status` all dispatch;
+   `MAX_ACK_BYTES = min(512, ATT_MTU - 5)` is enforced on every Ack in
+   `ReceiveState.send_ack` before notifying. 360 tests passing (was 319).
+   No BLE/hardware verification of this yet — that is still #87's job.
+4. **#84 The Desktop's BLE lock + Settings re-assertion** — next, depends on
+   #81, #83 (both done).
 5. #85 The Verdict (pure function) — depends on #83, #81.
 6. #86 `desktop/cli.py` — depends on #81–#85.
 7. #87 End-to-end hardware verification — depends on #86.
@@ -216,13 +232,15 @@ is tested with no panel, no BLE and no `~/.claude`.
   load-bearing one is **`pi.address`, an 18th Configuration key amending #72's
   17** — `find_pi()` takes the first advertiser, so without it a Desktop cannot
   know *which* Pi it is coupled to.
-- **Five known defects, none fixed** (spec §11 plus the map's closing comment):
-  `DEFAULT_PROJECTS_ROOT` defined twice with nothing keeping the two equal; no
-  named constant for the notify budget; the Pi echoing unbounded input into an
-  Ack's `reason` (the exact path #78 used to overflow it);
-  `RedrawGate._idle_elapsed` reading its one Setting as a module global, which
-  makes "Settings apply live" false until it is fixed; and
-  `PanelWorker.unavailable` plus the watchdog having no route off the Pi.
+- **Five known defects, three now fixed** (spec §11 plus the map's closing
+  comment): `DEFAULT_PROJECTS_ROOT` defined twice with nothing keeping the two
+  equal — still open; ✅ a named constant for the notify budget (`MAX_ACK_BYTES`,
+  #83); ✅ the Pi echoing unbounded input into an Ack's `reason` (the exact path
+  #78 used to overflow it — #83's `_truncate_echo`, applied at every echo
+  point); `RedrawGate._idle_elapsed` reading its one Setting as a module
+  global — fixed by #82, not #83; and ✅ `PanelWorker.unavailable` plus the
+  watchdog now have a route off the Pi (#83's `status` verb reports Panel
+  Health as `never`/`ok`/`unavailable`/`stuck`).
 - ⚠ **The Pi has no configuration seam at all** (spec §6). The Desktop's is
   nearly free — every policy value is already an injected default argument — so
   the effort is lopsided in a way that is easy to underestimate.
