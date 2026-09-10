@@ -4,11 +4,11 @@
 
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
 > panel draws, verified on real glass. **Map #70 is live and nearly through** —
-> a management surface for both ends, charted 2026-09-10. **Seven of its eight
-> tickets closed the same day**; what remains is the CLI prototype and the spec
-> itself. The offline question is settled: **no queue exists**
-> ([ADR-0011](../docs/adr/0011-management-actions-are-never-deferred.md)). See
-> [For the next session](#for-the-next-session) below for what is takeable.
+> a management surface for both ends, charted 2026-09-10. **All eight of its
+> decision tickets closed the same day**; the only thing left is **#77, writing
+> the spec itself** — which is the map's destination. Every question it needs is
+> answered, and the CLI design was settled against a running prototype, not on
+> paper. See [For the next session](#for-the-next-session) below.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -166,17 +166,32 @@ frame from drawing.
 the Desktop that manages both ends (status, configuration, control), exercised
 by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
-**Takeable now** — exactly one, and **the last ticket sits behind it**:
+**Takeable now — the last ticket on the map, and it is the destination:**
 
-- [What the CLI looks
-  like](https://github.com/peterderkoala/zeropi.display/issues/76) — a
-  **prototype** ticket, so HITL: build something cheap and concrete to argue
-  with, not a paper design. It unblocked when #79 closed on 2026-09-10, and
-  #77 (write the spec) is the only thing left behind it. ⚠ Its fog entry is
-  **"How the CLI is invoked"** — a console-script entry point implies packaging,
-  which this repo has deliberately avoided (`pytest.ini` sets `pythonpath`
-  precisely to dodge it); the alternative is another bare `python desktop/*.py`.
-  That is the prototype's question to settle, not to assume.
+- [Write
+  `docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/issues/77)
+  — grilling. Every decision it needs is closed; this is writing them up, not
+  re-deciding them. Read the map's **Decisions so far** first: it gists all eight
+  and links each ticket for the detail. ⚠ **Two things the spec must not lose**,
+  both flagged on closing tickets: `status` prints **all six comparisons
+  always** (say the evidence list is fixed, or an implementer will reasonably
+  "tidy" it into failures-only and reintroduce `--brief` as the only mode), and
+  **`Unreachable` is one glossary term with two headlines** — *absent* and
+  *busy* read as different sentences to a human. #74's resolution also suggests
+  considering whether its ruling 1 (status **requested**, not carried on a
+  widened Ack) deserves an ADR of its own.
+
+**The CLI prototype is a primary source for that spec.** It runs, with fake
+data and no dependencies, on
+[`prototype/cli`](https://github.com/peterderkoala/zeropi.display/tree/prototype/cli)
+(`desktop/prototype-cli.py`) — **throwaway, never merge it to `dev`**:
+
+```bash
+git checkout prototype/cli
+python3 desktop/prototype-cli.py            # the whole tour, 3 variants x 5 scenarios
+python3 desktop/prototype-cli.py config     # all three Tiers + both refusal shapes
+python3 desktop/prototype-cli.py verbs      # #75's verbs, pair, and the 2 failure surfaces
+```
 
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
@@ -191,10 +206,30 @@ vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75),
 the Pi reports about
 itself](https://github.com/peterderkoala/zeropi.display/issues/74), and [What an
 action means when the Pi is
-unreachable](https://github.com/peterderkoala/zeropi.display/issues/79) — all
-2026-09-10. Only #77 (write the spec) is still blocked, on #76. **Seven of the
-map's eight tickets are done; only the CLI prototype and the spec itself
-remain.**
+unreachable](https://github.com/peterderkoala/zeropi.display/issues/79), and
+[What the CLI looks
+like](https://github.com/peterderkoala/zeropi.display/issues/76) — all
+2026-09-10. **All eight decision tickets are done; only #77, the spec itself,
+remains.**
+
+**What #76 settled** — the CLI design, against a *running* prototype:
+
+- **`status` is a headline verdict plus all six comparisons, always shown**;
+  the one-line form survives as `--brief`. A two-column Desktop-vs-Pi ledger was
+  rejected — only two of six comparisons have a real Desktop-side value.
+- **Four verdict states, not two**: `working` / `not working` / **`can't tell`**
+  / `not paired`. Collapsing Unreachable into a failure is the "must not look
+  like broken" trap the ticket named.
+- **A third severity (a note, `·`), shown but never headlining.** Forced by the
+  prototype rendering a Pi that rebooted four minutes ago and was drawing
+  perfectly as `✗ Not working`. ⚠ This is the finding that justifies the ticket
+  having been a prototype rather than a grilling — it was invisible on paper.
+- **Name the story, do not count the checks.** `2 checks failed` was the first
+  render of a lost Batch, which is *one* fact; a precedence order plus a
+  Readings/Coverage coupling replaced it.
+- **Invocation is `python desktop/cli.py`, not a `zeropi` console script** — no
+  packaging. That closed the map's last fog entry.
+- **`--json` exists now**, carrying `severity` beside a **nullable** `ok`.
 
 **What #79 settled** — **no queue exists, and "queued" is not a state the
 surface holds** ([ADR-0011](../docs/adr/0011-management-actions-are-never-deferred.md)):
@@ -565,9 +600,9 @@ them in the spec's own voice:
 **Live map: [#70 — One management surface for both ends
 (spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
 2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
-fog** as the frontier advanced, making eight. **Seven are closed** — only #76
-(the CLI prototype, takeable now) and #77 (write the spec, behind #76) remain.
-It is a
+fog** as the frontier advanced, making eight. **All eight are closed** — only
+#77 (write the spec) remains, and it is the map's destination rather than
+another decision. It is a
 **planning** map: tickets resolve decisions; nothing on it builds the management
 surface, the one exception being #76, which prototypes a CLI so the design has
 something concrete to argue with. See
