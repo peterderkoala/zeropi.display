@@ -4,9 +4,10 @@
 
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
 > panel draws, verified on real glass. **Map #70 is live and nearly through** —
-> a management surface for both ends, charted 2026-09-10. **Six of its eight
-> tickets closed the same day**; what remains is the offline question, then the
-> CLI prototype and the spec itself. See
+> a management surface for both ends, charted 2026-09-10. **Seven of its eight
+> tickets closed the same day**; what remains is the CLI prototype and the spec
+> itself. The offline question is settled: **no queue exists**
+> ([ADR-0011](../docs/adr/0011-management-actions-are-never-deferred.md)). See
 > [For the next session](#for-the-next-session) below for what is takeable.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
@@ -165,18 +166,17 @@ frame from drawing.
 the Desktop that manages both ends (status, configuration, control), exercised
 by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
-**Takeable now** — exactly one, and **both remaining tickets sit behind it**:
+**Takeable now** — exactly one, and **the last ticket sits behind it**:
 
-- [What an action means when the Pi is
-  unreachable](https://github.com/peterderkoala/zeropi.display/issues/79) —
-  grilling. **Graduated from the fog by #75**, now that the vocabulary it hangs
-  on is settled. Note the shape of the likely answer: Settings need no queue
-  (declarative, already in Configuration), `redraw` is time-bound so rejecting
-  is right, and `wipe` is the one destructive verb — so "no deferred state
-  exists" is a legitimate resolution, and building a queue to have one would be
-  the mistake. ⚠ Watch the direction of travel in #71's ruling that **the
-  resident service never writes Configuration** — a queue the CLI writes and the
-  service drains has to respect that.
+- [What the CLI looks
+  like](https://github.com/peterderkoala/zeropi.display/issues/76) — a
+  **prototype** ticket, so HITL: build something cheap and concrete to argue
+  with, not a paper design. It unblocked when #79 closed on 2026-09-10, and
+  #77 (write the spec) is the only thing left behind it. ⚠ Its fog entry is
+  **"How the CLI is invoked"** — a console-script entry point implies packaging,
+  which this repo has deliberately avoided (`pytest.ini` sets `pythonpath`
+  precisely to dodge it); the alternative is another bare `python desktop/*.py`.
+  That is the prototype's question to settle, not to assume.
 
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
@@ -187,12 +187,39 @@ tier](https://github.com/peterderkoala/zeropi.display/issues/72), [The Pi's
 settings and command
 vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75),
 [Confirm the notify budget on hardware
-(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78), and [What
+(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78), [What
 the Pi reports about
-itself](https://github.com/peterderkoala/zeropi.display/issues/74) — all
-2026-09-10. The rest are blocked: #76 on #79, and #77 (write the spec) on #76
-and #79. **Six of the map's eight tickets are done; only the CLI prototype and
-the spec itself remain behind the offline question.**
+itself](https://github.com/peterderkoala/zeropi.display/issues/74), and [What an
+action means when the Pi is
+unreachable](https://github.com/peterderkoala/zeropi.display/issues/79) — all
+2026-09-10. Only #77 (write the spec) is still blocked, on #76. **Seven of the
+map's eight tickets are done; only the CLI prototype and the spec itself
+remain.**
+
+**What #79 settled** — **no queue exists, and "queued" is not a state the
+surface holds** ([ADR-0011](../docs/adr/0011-management-actions-are-never-deferred.md)):
+
+- **Settings need no queue and no mark.** The Payload is declarative, so the
+  current Configuration *is* the pending state; the Desktop **re-asserts the
+  complete set at the head of every connection**. That is what makes "not
+  applied yet — it will be applied on the next successful connection" true with
+  nothing stored, and it dodges #71's "the service never writes Configuration"
+  entirely. Re-assertion is **best-effort**: a failed Settings write must never
+  fail the Batch or Gauge its connection was opened for.
+- **Every Command is refused at the moment it is typed**; the human is the only
+  retrier. `wipe` decided it — not time-bound, so queueable in principle, but
+  **the reason the Pi is Unreachable may be the reason not to wipe it**.
+- ⚠ **The ticket text undercounts.** It says "three things the Desktop can
+  send"; it predates #74, so there are **four** — `status` is a Command too, and
+  the same rule covers it.
+- **Absent vs busy must be tellable apart**, and today nothing on the Desktop
+  can: `push.py` connects per push and there is **no lock, PID file or IPC of
+  any kind**. The decision is an advisory **`flock(2)` inside
+  `_with_ble_connection`** (so the CLI and the service both take it by
+  construction, and a crashed holder leaves no stale lock), with the **CLI
+  waiting ~15 s and the service failing immediately**.
+- Checked and recorded as a **non-finding**: "the Desktop is off" needs nothing
+  added — ADR-0010's expiry plus #74's *requested* status already answer it.
 
 **What #71 settled**, in one line each — the full reasoning is its resolution
 comment, and the gist is on the map:
@@ -538,8 +565,9 @@ them in the spec's own voice:
 **Live map: [#70 — One management surface for both ends
 (spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
 2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
-fog** as the frontier advanced, making eight. **Six are closed** — only #76 (the
-CLI prototype) and #77 (write the spec) remain, both behind #79. It is a
+fog** as the frontier advanced, making eight. **Seven are closed** — only #76
+(the CLI prototype, takeable now) and #77 (write the spec, behind #76) remain.
+It is a
 **planning** map: tickets resolve decisions; nothing on it builds the management
 surface, the one exception being #76, which prototypes a CLI so the design has
 something concrete to argue with. See
