@@ -3,9 +3,9 @@
 ## Where things stand
 
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
-> panel draws, verified on real glass. There is no live map. See
-> [For the next session](#for-the-next-session) below for what is actually
-> left.
+> panel draws, verified on real glass. **Map #70 is live** — a management
+> surface for both ends, charted 2026-09-10. See
+> [For the next session](#for-the-next-session) below for what is takeable.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -154,13 +154,46 @@ frame from drawing.
 
 ## For the next session
 
-**There is no live map, and no ticket is blocked on a decision.** Map #59
-closed the rendering milestone on 2026-09-10; the panel draws and the whole
-product — real Claude Code usage, on real glass — works end to end.
+**Map #70 is live: [One management surface for both ends
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
+2026-09-10. Its destination is `docs/spec-management-surface.md` — one pane on
+the Desktop that manages both ends (status, configuration, control), exercised
+by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
-**Open items:** only the two spec-prose omissions raised on #66 (§4's `sh`
-pair, §5.4's `5H` label). Cosmetic; whether `docs/spec-eink-rendering.md` gains
-the lines is the maintainer's call.
+**Takeable now** (open, unblocked, unassigned):
+
+- [Where configuration lives, and who
+  wins](https://github.com/peterderkoala/zeropi.display/issues/71) — grilling.
+- [Which constants are settings, and in which
+  tier](https://github.com/peterderkoala/zeropi.display/issues/72) — grilling.
+
+[What the Pi can send back: the notify-direction
+budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research)
+was fired as a subagent at charting time and is **assigned**. The rest are
+blocked: #74 on #73, #75 on #72, #76 on #71/#72/#74/#75, and #77 (write the
+spec) on all six.
+
+⚠ **Five decisions were settled while charting #70 and must not be
+re-litigated** — they are written out in the map's Notes. In short: one
+surface, on the Desktop; this map ends at the spec (the SPA is a later map);
+management reaches the Pi over **BLE only**, with the Pi holding no independent
+config; constants are tiered, and verified invariants are shown read-only with
+their ADR rather than being made editable; the eventual UI is LAN-bound behind
+a single shared token, which is why the config surface must be able to hold a
+secret.
+
+⚠ **Several constants this map will touch are *findings*, not preferences** —
+`REDRAW_FLOOR_S` is ADR-0008, `GAUGE_EXPIRY_S` is ADR-0010, the 120 s throttle
+came from #55, the 512-byte budget is ADR-0001. A settings form that treats
+them as knobs can silently invalidate a hardware verification run. That is the
+single biggest risk on the map.
+
+**Also open, outside the map:** the two spec-prose omissions raised on #66
+(§4's `sh` pair, §5.4's `5H` label). Cosmetic; whether
+`docs/spec-eink-rendering.md` gains the lines is the maintainer's call. And
+`desktop/install-desktop.sh`'s standalone mode is still broken (it deploys only
+`push.py`) — **ruled out of scope for #70** as installer debt, so it needs its
+own home.
 
 ⚠ **The single-write budget is 512 bytes, not 514** (#67, closed 2026-09-10) —
 and this is worth knowing because both the spec and ADR-0003 had it wrong.
@@ -246,10 +279,16 @@ them in the spec's own voice:
 
 ## Maps
 
-**No live map.** #59 was the last one; its destination is reached and its log
-is archived at [`archive/map-59.md`](archive/map-59.md). The next map gets
-charted when there is a next milestone — see
-[For the next session](#for-the-next-session) for what is actually open.
+**Live map: [#70 — One management surface for both ends
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
+2026-09-10 with seven tickets (#71–#77). It is a **planning** map: tickets
+resolve decisions; nothing on it builds the management surface, the one
+exception being #76, which prototypes a CLI so the design has something
+concrete to argue with. See
+[For the next session](#for-the-next-session) for what is takeable.
+
+#59 was the previous map; its destination is reached and its log is archived at
+[`archive/map-59.md`](archive/map-59.md).
 
 ### Closed maps — archived
 
@@ -635,9 +674,9 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** only when there is a next milestone to
-  chart. **There is no live map**: #59 closed on 2026-09-10 and #32 is a single
-  decision-shaped question, not a map's worth of work.
+- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#70**.
+  Invoke it with the map, not with a fresh idea — charting is done. It picks
+  the next frontier ticket for you if you do not name one.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
   assert on pixels). The suite is **243 passing** and must stay green with no
@@ -653,14 +692,18 @@ in `docs/research/`):
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` suits #32 and little else right now** — it is
-  a genuine open question with three candidate answers. It was *not* the tool
-  for map #59, and the reason generalises: on an execution map a question means
-  you have found a **gap in the spec**, so say so on the ticket rather than
-  grilling your way to a private answer. #66 found two and did exactly that.
-- **`mattpocock-skills:domain-modeling`** only if a ticket coins a term the
-  glossary lacks. `CONTEXT.md` is current as of **Active Day** (#52); the
-  One-liner was deleted from it when the feature was dropped.
+- **`mattpocock-skills:grilling` is the default tool on map #70** — five of its
+  seven tickets are grilling tickets, because #70 is a **planning** map. Note
+  the contrast with map #59: on an *execution* map a question means you have
+  found a **gap in the spec**, so you say so on the ticket rather than grilling
+  your way to a private answer (#66 found two and did exactly that). #70 is the
+  opposite case — the whole point is to have the argument now.
+- **`mattpocock-skills:domain-modeling` is load-bearing on #70**, not optional.
+  The map coins configuration and wire vocabulary, and **#75 edits the
+  definition of `Payload` itself** — `CONTEXT.md` currently says it has exactly
+  two shapes, and a Settings Payload makes that three. The glossary is current
+  as of **Active Day** (#52); the One-liner was deleted from it when the
+  feature was dropped.
 - **The `PWR_PIN`-on-BCM-18 question is out of scope, by the maintainer's
   call**, not fog waiting for a home. It needs a multimeter at the bench and
   blocks no frame from drawing. Do not re-adopt it into a map.
