@@ -162,22 +162,25 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
 **Takeable now** (open, unblocked, unassigned):
 
-- [Which constants are settings, and in which
-  tier](https://github.com/peterderkoala/zeropi.display/issues/72) — grilling.
-  It now has a concrete output shape (see the annotation on the ticket): the
-  schema it produces is the **single authority on each key's type, range and
-  Tier**, consumed as validation by the config store. For every Tier 2 key that
-  means an actual machine-checkable range, not just a label.
+- [The Pi's settings and command
+  vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75) —
+  grilling. Unblocked by #72, whose rulings are annotated onto the ticket body:
+  the Settings set is **exactly one key**, so the interesting decisions are all
+  lifecycle and verbs, not wire. Note especially that #72 makes the "redraw now
+  vs `REDRAW_FLOOR_S`" tension **purely a verb question** — the floor is Tier 3,
+  so it cannot be dissolved by making it editable.
 - [Confirm the notify budget on hardware
   (btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — task,
   **at the bench**. Blocks the status surface.
 
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
-fired as a subagent at charting time; graduated #78) and [Where configuration
-lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71)
-— both 2026-09-10. The rest are blocked: #74 on #78, #75 on #72, #76 on
-#72/#74/#75, and #77 (write the spec) on all the others.
+fired as a subagent at charting time; graduated #78), [Where configuration
+lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71),
+and [Which constants are settings, and in which
+tier](https://github.com/peterderkoala/zeropi.display/issues/72) — all
+2026-09-10. The rest are blocked: #74 on #78, #76 on #74/#75, and #77 (write the
+spec) on all the others.
 
 **What #71 settled**, in one line each — the full reasoning is its resolution
 comment, and the gist is on the map:
@@ -201,6 +204,46 @@ comment, and the gist is on the map:
 - Coined **Configuration**, **Settings** and **Tier** in `CONTEXT.md`
   (`ed11166`). Configuration and Settings are **not synonyms** and the
   distinction is load-bearing.
+
+**What #72 settled** — the full inventory is its resolution comment, and that
+table is what #77 lifts into the spec verbatim. **17 Configuration keys** (9
+Tier 1, 8 Tier 2), **10 Tier 3 invariants that are not stored at all**, 8
+constants outside the Tier system:
+
+- **Tier 3 never enters the Configuration store.** It stays a code constant,
+  read from there to display read-only. A row is writable by anyone with
+  `sqlite3`, which is the one thing the Tier exists to prevent. **The schema's
+  tier field only ever reads 1 or 2.** Sharpened into `CONTEXT.md` (`bc1e515`).
+- **Cross-machine invariants are static bounds derived from the Tier 3
+  constant**, written as expressions (`GAUGE_EXPIRY_S/2`) and evaluated where
+  the schema is defined — not cross-key validators, not hand-copied numbers. So
+  amending ADR-0008 or ADR-0010 moves the ranges by itself. This is what carries
+  #55's finding forward.
+- **The pricing table and `CONTEXT_WINDOW` become Tier 1 JSON overlays**, never
+  replacements: a missing entry degrades gracefully via **Cost Complete**, a
+  wrong one silently corrupts every cost the panel draws.
+- **Exactly one Pi constant is a Setting**, `pi.idle_keepalive_s`. `DB_PATH` and
+  `FONT_DIR` are install-time facts owned by `install-pi.sh`.
+- **`FONT_DIR` is Tier 3, not Tier 1** — the 13 px floor was verified on glass
+  with DejaVu specifically, so the typeface carries the evidence.
+- **`usage.window_days` is floored by panel geometry** (five rows at 20 px in
+  `render.py:148`), *not* by `MAX_PAYLOAD_BYTES`. ADR-0003 sends one write per
+  Reading, so the Window scales the write **count**, not one Payload's size.
+- The suspected `BATCH_SCHEDULED_HOUR` ↔ `IDLE_KEEPALIVE_S` coupling **does not
+  exist**. Recorded as looked-at, so nobody re-derives it.
+- **No key is retired**, so the first `user_version` needs no deletion step.
+
+⚠ **Two defects #72 found, for the implementation map:**
+
+1. **`DEFAULT_PROJECTS_ROOT` is defined twice** — `usage.py:43` as
+   `Path("~/.claude/projects").expanduser()`, `gauge.py:25` as `Path.home() /
+   ".claude/projects"`. Equal today by coincidence, with nothing enforcing it.
+   The moment it becomes configurable, two keys would let a Gauge and a Daily
+   read different directories. Collapse to one key, `paths.projects_root`.
+2. **The notify budget has no named constant anywhere in the code.** #73 settled
+   it as `min(512, ATT_MTU-3)` and #78 confirms it at the bench, but unlike
+   `MAX_PAYLOAD_BYTES` nothing expresses it — and this is the direction that
+   truncates **silently, twice**. Add one, symmetric with `MAX_PAYLOAD_BYTES`.
 
 ⚠ **The Pi has no configuration seam at all, and #75 has to build one.** The
 Desktop is already injectable everywhere — every policy value is a default
