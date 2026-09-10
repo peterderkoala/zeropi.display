@@ -4,8 +4,8 @@ Pi Zero e-ink display project reusing pwnagotchi hardware to show live Claude
 Code usage: a gauge of current consumption against the rolling limit windows,
 backed by a daily history graph. That is the whole of it — weather, calendar
 and the One-liner were dropped from the project on 2026-09-09. Current phase:
-specifying one management surface for both ends (map #70) — the panel itself is
-built and hardware-verified.
+the Management Surface is **specified** (`docs/spec-management-surface.md`, map
+#70) and not yet built — the panel itself is built and hardware-verified.
 
 ## Language
 
@@ -80,7 +80,8 @@ _Avoid_: Method, call, instruction, request
 > That rule, more than the list's shortness, is what keeps a vocabulary from
 > becoming an RPC surface.
 
-> A Command may **never override a verified invariant** — it queues behind one.
+> A Command may **never override a verified invariant** — it queues behind one
+> ([ADR-0013](./docs/adr/0013-no-command-overrides-a-verified-invariant.md)).
 > Enforcement that a Tier moved out of reach of a settings form must not be
 > reachable through a verb instead.
 
@@ -101,7 +102,10 @@ _Avoid_: Push (that is the verb), sweep, upload
 The JSON status object the Pi returns on its notify characteristic after a
 write, reporting whether parsing *and* persistence of the Payload succeeded,
 which Reading it refers to, and whether the Pi has wiped its Readings. When the
-write was a Command, it also carries that Command's result.
+write was a Command, it also carries that Command's result — which is the only
+way the Pi's status is ever fetched
+([ADR-0012](./docs/adr/0012-status-is-requested-not-carried.md)): it is
+**requested**, never carried on an ordinary Daily or Gauge Ack.
 _Avoid_: Response, reply
 
 > An Ack reports **durations and counts, never timestamps** — the mirror of
@@ -227,6 +231,28 @@ incomplete rather than being dropped or failing the push.
 _Avoid_: Priced, valid, accurate
 
 ### Managing the ends
+
+**Management Surface**:
+The one place both ends are managed from — answering *is it working?*, *change
+this setting* and *do this now* without opening a session on either machine. It
+is **hosted on the Desktop**, and the Pi appears inside it as a managed device
+rather than as a second interface. Substrate first, exercised by a CLI; a web UI
+skins the same substrate later.
+_Avoid_: Admin panel, dashboard, console, control plane
+
+> Singular on purpose. Two interfaces, one per end, is the thing it exists to
+> replace: two places to look for *is it working* is the pain, not the cure.
+
+**Verdict**:
+The Desktop's single answer to *is it working?*, computed by comparing what it
+sent against what the Pi reports it holds. Four states — working, not working,
+**can't tell**, not paired — because **Unreachable** is an expected steady state
+and must not render as a fault.
+_Avoid_: Health, status (that is what the Pi *reports*), state
+
+> **The Pi reports facts; the Desktop renders the Verdict.** Only the Desktop
+> holds the other side of every comparison, so only it can judge — which is what
+> lets the judgment improve without touching the Pi or the wire.
 
 **Configuration**:
 The Desktop's own tunable values, held in a dedicated SQLite store separate

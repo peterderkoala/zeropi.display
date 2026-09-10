@@ -108,6 +108,15 @@ verified on real glass, and ⚠ **its §11 supersedes three clauses of
 Real data now reaches the panel end to end. The BLE link and the usage pipeline
 beneath it are done and hardware-verified; no case/UPS yet.
 
+**`docs/spec-management-surface.md` is binding and not yet implemented** (map
+#70's destination, closed by #77). It specifies one management surface hosted on
+the Desktop: a Configuration store, the full Tier inventory of every constant in
+this project, two new Payload kinds (`settings`, `command`) with three verbs
+(`redraw`, `wipe`, `status`), and `desktop/cli.py`. **Implementation is a
+separate map.** Note that it makes `receive.py`'s "constants stay hardcoded"
+comment (pipeline §8.1) narrower than it reads, and that ADR-0012 and ADR-0013
+came out of it.
+
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
   `usage.py`/`gauge.py` as its data layer and `service.py` as the resident
