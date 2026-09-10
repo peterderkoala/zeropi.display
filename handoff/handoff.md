@@ -162,19 +162,55 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
 **Takeable now** (open, unblocked, unassigned):
 
-- [Where configuration lives, and who
-  wins](https://github.com/peterderkoala/zeropi.display/issues/71) — grilling.
 - [Which constants are settings, and in which
   tier](https://github.com/peterderkoala/zeropi.display/issues/72) — grilling.
+  It now has a concrete output shape (see the annotation on the ticket): the
+  schema it produces is the **single authority on each key's type, range and
+  Tier**, consumed as validation by the config store. For every Tier 2 key that
+  means an actual machine-checkable range, not just a label.
 - [Confirm the notify budget on hardware
   (btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — task,
   **at the bench**. Blocks the status surface.
 
-[What the Pi can send back: the notify-direction
-budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research)
-was fired as a subagent at charting time and **closed the same day**; it
-graduated #78. The rest are blocked: #74 on #78, #75 on #72, #76 on
-#71/#72/#74/#75, and #77 (write the spec) on all the others.
+**Closed so far:** [What the Pi can send back: the notify-direction
+budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
+fired as a subagent at charting time; graduated #78) and [Where configuration
+lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71)
+— both 2026-09-10. The rest are blocked: #74 on #78, #75 on #72, #76 on
+#72/#74/#75, and #77 (write the spec) on all the others.
+
+**What #71 settled**, in one line each — the full reasoning is its resolution
+comment, and the gist is on the map:
+
+- **Configuration is a dedicated SQLite store**, `~/.config/zeropi-display/config.db`
+  — deliberately **not** a section in the archive store, because `open_store`
+  refuses on a version mismatch, ADR-0005 makes store backups the only backups
+  that matter (so restoring old history would restore old Configuration), and
+  the store is 0644.
+- **Resolved once at startup** into a frozen object, filling parameters that
+  already exist. Never module-level globals populated at import — the suite
+  imports these modules with no `~/.claude`, no panel and no `bluezero`.
+- **Changing a setting requires a restart**, with an explicit restart action
+  rather than an auto-bounce. "Pending restart" needs no new state:
+  `config.updated_at` vs `systemctl --user show zeropi-push -p ActiveEnterTimestamp`.
+  **The resident service never writes Configuration** — do not add a
+  service-side write path.
+- **Unknown keys: rejected on write, warned-and-ignored on read.** The flat
+  "reject" settled in round 1 would have turned retiring a setting into an
+  outage on data the previous version wrote itself.
+- Coined **Configuration**, **Settings** and **Tier** in `CONTEXT.md`
+  (`ed11166`). Configuration and Settings are **not synonyms** and the
+  distinction is load-bearing.
+
+⚠ **The Pi has no configuration seam at all, and #75 has to build one.** The
+Desktop is already injectable everywhere — every policy value is a default
+argument the tests already override. `receive.py` is the opposite: it reads
+`GAUGE_EXPIRY_S`, `REDRAW_FLOOR_S` and `IDLE_KEEPALIVE_S` as **module globals
+from inside methods** (`:366`, `:415`, `:418`) and binds `DB_PATH` to class
+attributes at module scope (`:562`, `:704`) under a comment saying it "stays a
+hardcoded constant (spec §8.1)". So **spec §8.1 has to be revisited**, not
+worked around — and Pi Settings must apply **live**, because a Settings Payload
+cannot restart the service without dropping the connection that delivered it.
 
 ⚠ **Five decisions were settled while charting #70 and must not be
 re-litigated** — they are written out in the map's Notes. In short: one
