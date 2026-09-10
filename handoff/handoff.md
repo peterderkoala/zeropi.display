@@ -166,12 +166,15 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
   wins](https://github.com/peterderkoala/zeropi.display/issues/71) — grilling.
 - [Which constants are settings, and in which
   tier](https://github.com/peterderkoala/zeropi.display/issues/72) — grilling.
+- [Confirm the notify budget on hardware
+  (btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — task,
+  **at the bench**. Blocks the status surface.
 
 [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research)
-was fired as a subagent at charting time and is **assigned**. The rest are
-blocked: #74 on #73, #75 on #72, #76 on #71/#72/#74/#75, and #77 (write the
-spec) on all six.
+was fired as a subagent at charting time and **closed the same day**; it
+graduated #78. The rest are blocked: #74 on #78, #75 on #72, #76 on
+#71/#72/#74/#75, and #77 (write the spec) on all the others.
 
 ⚠ **Five decisions were settled while charting #70 and must not be
 re-litigated** — they are written out in the map's Notes. In short: one
@@ -194,6 +197,21 @@ single biggest risk on the map.
 `desktop/install-desktop.sh`'s standalone mode is still broken (it deploys only
 `push.py`) — **ruled out of scope for #70** as installer debt, so it needs its
 own home.
+
+⚠ **The Pi→Desktop notify budget is also 512 — but it fails SILENTLY** (#73,
+closed 2026-09-10). `min(512, ATT_MTU − 3)`, 512 on this link because both ends
+default to `ExchangeMTU = 517`. Same number as the write direction, **weaker
+guarantee**: the write direction has prepare/execute long writes underneath it,
+notifications have **no fragmentation procedure at all**, and indications buy
+reliability rather than bytes. `bluetoothd` truncates at 512 in
+`gatt-database.c`, the ATT server truncates again at `ATT_MTU − 3` in
+`gatt-server.c`, both return success, and `bluezero` adds no check — so an
+over-long Ack surfaces on the Desktop as `malformed ack from Pi`, **blaming the
+JSON rather than the length**. Do not go hunting the parser. Full working:
+`docs/research/notify-direction-budget.md` on `research/notify-budget`
+(`ef26120`). The number is *derived, not measured* — #78 is the bench
+confirmation, and this project has derived an MTU number wrongly twice already.
+Headroom today: measured max Ack 194 B, worst case ~360 B.
 
 ⚠ **The single-write budget is 512 bytes, not 514** (#67, closed 2026-09-10) —
 and this is worth knowing because both the spec and ADR-0003 had it wrong.
