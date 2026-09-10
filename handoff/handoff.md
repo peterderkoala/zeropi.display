@@ -219,21 +219,23 @@ them in the spec's own voice:
 
 ## Maps
 
-**No live map.** #59 was the last one; its destination is reached and it is
-archived below. The next map gets charted when there is a next milestone —
-see [For the next session](#for-the-next-session) for what is actually open.
+**No live map.** #59 was the last one; its destination is reached and its log
+is archived at [`archive/map-59.md`](archive/map-59.md). The next map gets
+charted when there is a next milestone — see
+[For the next session](#for-the-next-session) for what is actually open.
 
 ### Closed maps — archived
 
-Their session-by-session logs moved to `handoff/archive/` on 2026-09-09, so
-this file stays about live work. **The archive is a record, not guidance**:
+Their session-by-session logs live in `handoff/archive/` (#1, #7, #13, #41 and
+#51 moved there on 2026-09-09; #59 on 2026-09-10), so this file stays about
+live work. **The archive is a record, not guidance**:
 some of what it says was superseded later. Read a map's file when you want to
 know *why* something was decided, or what was tried and rejected — that
 reasoning is not recoverable from the code.
 
 | Map | Reached | Log |
 |---|---|---|
-| [#59 Make the panel draw](https://github.com/peterderkoala/zeropi.display/issues/59) | the panel draws, hardware-verified | this file, until archived |
+| [#59 Make the panel draw](https://github.com/peterderkoala/zeropi.display/issues/59) | the panel draws, hardware-verified | [`archive/map-59.md`](archive/map-59.md) |
 | [#51 What the e-ink panel draws, and how](https://github.com/peterderkoala/zeropi.display/issues/51) | `docs/spec-eink-rendering.md` | [`archive/map-51.md`](archive/map-51.md) |
 | [#41 Implement the usage pipeline](https://github.com/peterderkoala/zeropi.display/issues/41) | pipeline hardware-verified | [`archive/map-41.md`](archive/map-41.md) |
 | [#13 Usage read, pushed, stored](https://github.com/peterderkoala/zeropi.display/issues/13) | `docs/spec-usage-pipeline.md` | [`archive/map-13.md`](archive/map-13.md) |
@@ -618,7 +620,8 @@ in `docs/research/`):
   run is the template for a hardware session: back up the Pi's `data.db`, drive
   each scenario from `push.py`, read the journal for the `render:` line, and
   put a human in front of the glass for what a log cannot show.
-- **Every closed map's log is in `handoff/archive/`** — #1, #7, #13, #41, #51.
+- **Every closed map's log is in `handoff/archive/`** — #1, #7, #13, #41, #51,
+  #59.
   Nothing there is takeable; read one when you want the reasoning behind a
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
