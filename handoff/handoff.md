@@ -21,8 +21,11 @@
 > and the complete Settings set are both taken *inside*
 > `_with_ble_connection`, so the CLI (waits 15 s) and the resident service
 > (`SERVICE_LOCK_WAIT_S = 0`, fails immediately) get them by construction.
-> Still missing: the Verdict (#85), `desktop/cli.py` (#86), and the hardware
-> verification (#87). See
+> **#85 (the Verdict, `0d61808`, 2026-09-10) is done too**: `desktop/verdict.py`
+> is §8 as one pure function over Desktop facts and the Pi's status reply —
+> four states, three severities, six comparisons, one precedence order, and
+> `ok` nullable so *can't tell* cannot be read as *broken*. Still missing:
+> `desktop/cli.py` (#86) and the hardware verification (#87). See
 > [For the next session](#for-the-next-session) below.
 >
 > ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
@@ -66,6 +69,12 @@
 >   service logs INFO and drops the pass. Also fixed there: `flock`'s
 >   `OSError` was reported as *busy* for **every** errno (ENOLCK is this
 >   Desktop's own problem, not an occupied link).
+> - **#85**: `EXPECTED_PI_SCHEMA_VERSION` was defined, drift-tested against
+>   the Pi's constant, and **never actually compared against** — the guard
+>   protected a constant no code path read. And `_coupled` read a *missing*
+>   `wiped` as "not wiped", the one check that silently passed on a malformed
+>   reply. ⚠ **Both are the same shape: a safeguard that looks present and is
+>   inert.** Worth grepping for when reviewing anything else here.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -246,11 +255,20 @@ the judgment calls), tickets in dependency order:
    - **The CLI-initiated settings write already exists**: pass
      `settings_required=True` (and `coro_fn=None`) to `_with_ble_connection`
      — #86 should call that, not re-derive it.
-5. **#85 The Verdict (pure function)** — next, depends on #83, #81 (both
-   done). §7.1's three-row table is now real: catch `push.BleLinkBusy` for
-   *busy*, a scan timeout for *absent*.
-6. #86 `desktop/cli.py` — depends on #81–#85. ⚠ Its exit-code table (§9.6)
-   is partly live already: `push.py`'s own CLI returns **2** on a busy link.
+5. ✅ **#85 The Verdict (pure function)** — done, `0d61808`. 412 tests
+   passing (was 378). What #86 consumes:
+   `build_verdict(facts, status, reach) -> Verdict(state, ok, glyph,
+   headline, advice, reachable, checks)`; `ok` is `True`/`False`/**`None`**,
+   `checks` is always the six of §8.3 in precedence order (with `ok: None`
+   when nothing was learned), and each `Check` carries both `detail` (the
+   evidence row) and `story` (the same fact phrased to headline).
+   `Reach.BUSY`/`Reach.ABSENT` is what #84's lock produces.
+6. **#86 `desktop/cli.py`** — next, depends on #81–#85 (all done).
+   ⚠ Its exit-code table (§9.6) is partly live already: `push.py`'s own CLI
+   returns **2** on a busy link. It also owns the last known defect
+   (`DEFAULT_PROJECTS_ROOT` defined twice), and should call
+   `_with_ble_connection(None, settings_required=True, …)` for `config set`
+   rather than re-deriving the CLI-initiated settings write.
 7. #87 End-to-end hardware verification — depends on #86.
 
 ⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
@@ -1141,7 +1159,7 @@ in `docs/research/`):
   the next frontier ticket for you if you do not name one.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
-  assert on pixels). The suite is **378 passing** and must stay green with no
+  assert on pixels). The suite is **412 passing** and must stay green with no
   panel, no SPI, no bluezero, no `~/.claude` — and, since #84, without taking
   the real BLE lock either (`tests/conftest.py` redirects `BLE_LOCK_PATH` to
   `tmp_path` for every test; a test that took it for real would contend with a
