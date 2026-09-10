@@ -5,11 +5,27 @@
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
 > panel draws, verified on real glass. **Map #70 is DONE too, closed the same
 > day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
-> #77 from all eight of its decision tickets. **It is binding and NOT
-> implemented**: nothing in this repo has a Configuration store, a `settings` or
-> `command` Payload, a BLE lock or a `cli.py`. The next move is an
-> **implementation map opened against the spec**, in the shape of #51→#59 and
-> #13→#41. See [For the next session](#for-the-next-session) below.
+> #77 from all eight of its decision tickets. **Map #80 implements it, and
+> ticket 1 of 7 is done**: #81 (`ef129e3`, 2026-09-10) built
+> `desktop/config.py` — the Configuration store, the 18-key Tier 1/2 schema,
+> and resolution moved to `push.py`/`service.py`'s entry points. Still
+> missing: the Pi's configuration seam (#82), the wire's Settings/Command
+> Payloads (#83), the Desktop's BLE lock (#84), the Verdict (#85),
+> `desktop/cli.py` (#86), and the hardware verification (#87) — no
+> `settings`/`command` Payload crosses the wire yet, and nothing on the Pi
+> reads a Setting. See [For the next session](#for-the-next-session) below.
+>
+> ⚠ **`/code-review` caught a real gap in #81's first pass**: `paths.store`
+> and `paths.projects_root` are threaded into `push.py`'s own CLI entry, but
+> the resident `service.py` loop's `run_batch_pass_fn`/`run_gauge_push_fn`
+> only ever receive `store_path` (their contract — existing tests pass
+> single-arg fakes), so a configured `paths.projects_root` silently didn't
+> reach the service. Fixed by binding it via `functools.partial` rather than
+> widening that call. **If a later ticket adds another Configuration value
+> that only `run_batch_pass`/`run_gauge_push` consume, thread it the same
+> way** — through `functools.partial` at `service.py`'s `main()`, not by
+> adding a positional/required parameter to the `RunBatchPassFn`/
+> `RunGaugePushFn` call inside `run_forever`.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -161,14 +177,22 @@ frame from drawing.
 
 ## For the next session
 
-**Map #70 is CLOSED: [One management surface for both ends
-(spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
-and completed 2026-09-10. Its destination —
+**Map #70 is CLOSED**; its destination,
 [`docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-management-surface.md)
-— is on `dev` (`b4ec9b5`), binding, and **not implemented**.
+(`b4ec9b5`), is binding. **[Map #80](https://github.com/peterderkoala/zeropi.display/issues/80)
+implements it**, execution-mode (no grilling by default — §13 already closed
+the judgment calls), tickets in dependency order:
 
-**The next move is an implementation map opened against that spec**, exactly as
-#51→#59 and #13→#41. Nothing on the tracker is takeable until it is charted.
+1. ✅ **#81 Configuration store + Tier schema** — done, `ef129e3`, this
+   session.
+2. **#82 The Pi's configuration seam** — next. No dependency on #81 (the Pi
+   holds no Configuration of its own); can be picked up directly.
+3. #83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`) —
+   depends on #82.
+4. #84 The Desktop's BLE lock + Settings re-assertion — depends on #81, #83.
+5. #85 The Verdict (pure function) — depends on #83, #81.
+6. #86 `desktop/cli.py` — depends on #81–#85.
+7. #87 End-to-end hardware verification — depends on #86.
 
 ⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
 complete: §4 is the full Tier inventory of every constant in this project, §5
