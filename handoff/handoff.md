@@ -3,12 +3,13 @@
 ## Where things stand
 
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
-> panel draws, verified on real glass. **Map #70 is live and nearly through** —
-> a management surface for both ends, charted 2026-09-10. **All eight of its
-> decision tickets closed the same day**; the only thing left is **#77, writing
-> the spec itself** — which is the map's destination. Every question it needs is
-> answered, and the CLI design was settled against a running prototype, not on
-> paper. See [For the next session](#for-the-next-session) below.
+> panel draws, verified on real glass. **Map #70 is DONE too, closed the same
+> day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
+> #77 from all eight of its decision tickets. **It is binding and NOT
+> implemented**: nothing in this repo has a Configuration store, a `settings` or
+> `command` Payload, a BLE lock or a `cli.py`. The next move is an
+> **implementation map opened against the spec**, in the shape of #51→#59 and
+> #13→#41. See [For the next session](#for-the-next-session) below.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -160,29 +161,55 @@ frame from drawing.
 
 ## For the next session
 
-**Map #70 is live: [One management surface for both ends
+**Map #70 is CLOSED: [One management surface for both ends
 (spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
-2026-09-10. Its destination is `docs/spec-management-surface.md` — one pane on
-the Desktop that manages both ends (status, configuration, control), exercised
-by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
+and completed 2026-09-10. Its destination —
+[`docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-management-surface.md)
+— is on `dev` (`b4ec9b5`), binding, and **not implemented**.
 
-**Takeable now — the last ticket on the map, and it is the destination:**
+**The next move is an implementation map opened against that spec**, exactly as
+#51→#59 and #13→#41. Nothing on the tracker is takeable until it is charted.
 
-- [Write
-  `docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/issues/77)
-  — grilling. Every decision it needs is closed; this is writing them up, not
-  re-deciding them. Read the map's **Decisions so far** first: it gists all eight
-  and links each ticket for the detail. ⚠ **Two things the spec must not lose**,
-  both flagged on closing tickets: `status` prints **all six comparisons
-  always** (say the evidence list is fixed, or an implementer will reasonably
-  "tidy" it into failures-only and reintroduce `--brief` as the only mode), and
-  **`Unreachable` is one glossary term with two headlines** — *absent* and
-  *busy* read as different sentences to a human. #74's resolution also suggests
-  considering whether its ruling 1 (status **requested**, not carried on a
-  widened Ack) deserves an ADR of its own.
+⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
+complete: §4 is the full Tier inventory of every constant in this project, §5
+the wire, §8 the Verdict model, §9 the CLI down to exit codes, §10 how all of it
+is tested with no panel, no BLE and no `~/.claude`.
 
-**The CLI prototype is a primary source for that spec.** It runs, with fake
-data and no dependencies, on
+**What the implementation map inherits, and should be charted around:**
+
+- **§13 lists eight judgment calls the spec took that no ticket had.** The
+  load-bearing one is **`pi.address`, an 18th Configuration key amending #72's
+  17** — `find_pi()` takes the first advertiser, so without it a Desktop cannot
+  know *which* Pi it is coupled to.
+- **Five known defects, none fixed** (spec §11 plus the map's closing comment):
+  `DEFAULT_PROJECTS_ROOT` defined twice with nothing keeping the two equal; no
+  named constant for the notify budget; the Pi echoing unbounded input into an
+  Ack's `reason` (the exact path #78 used to overflow it);
+  `RedrawGate._idle_elapsed` reading its one Setting as a module global, which
+  makes "Settings apply live" false until it is fixed; and
+  `PanelWorker.unavailable` plus the watchdog having no route off the Pi.
+- ⚠ **The Pi has no configuration seam at all** (spec §6). The Desktop's is
+  nearly free — every policy value is already an injected default argument — so
+  the effort is lopsided in a way that is easy to underestimate.
+- ⚠ **A hardware verification run is part of "done"** (spec §10.6), in the shape
+  of `docs/usage-pipeline-verification.md`: a Settings Payload surviving a
+  reboot, all three verbs, a real `status` reply, both Unreachable cases
+  produced deliberately, and `btmon` confirming the status Ack's size.
+- **Two new ADRs bind it**:
+  [0012](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/adr/0012-status-is-requested-not-carried.md)
+  (status requested, not carried) and
+  [0013](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/adr/0013-no-command-overrides-a-verified-invariant.md)
+  (no Command overrides a verified invariant).
+
+**One question the spec left open on purpose, and it is not fog**: whether
+`status` should ever be **pushed** rather than requested, for a fault the Pi
+notices while nobody is asking — a panel that goes stuck at 03:00 is invisible
+until someone runs `status`. ADR-0012 settles the current direction on a
+measured byte budget and explicitly declines to close that. **Re-ask it during
+implementation**, when its cost is known.
+
+**The CLI prototype is still the reference for §9's renderings.** It runs, with
+fake data and no dependencies, on
 [`prototype/cli`](https://github.com/peterderkoala/zeropi.display/tree/prototype/cli)
 (`desktop/prototype-cli.py`) — **throwaway, never merge it to `dev`**:
 
@@ -192,6 +219,11 @@ python3 desktop/prototype-cli.py            # the whole tour, 3 variants x 5 sce
 python3 desktop/prototype-cli.py config     # all three Tiers + both refusal shapes
 python3 desktop/prototype-cli.py verbs      # #75's verbs, pair, and the 2 failure surfaces
 ```
+
+⚠ **Where the prototype and the spec disagree, the spec wins.** It prints
+`zeropi <cmd>`; the invocation is `python desktop/cli.py <cmd>` (§9.1). Its
+Tier 3 table also predates `MAX_ACK_BYTES` being required as a named constant
+(§5.5).
 
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
@@ -208,9 +240,11 @@ itself](https://github.com/peterderkoala/zeropi.display/issues/74), and [What an
 action means when the Pi is
 unreachable](https://github.com/peterderkoala/zeropi.display/issues/79), and
 [What the CLI looks
-like](https://github.com/peterderkoala/zeropi.display/issues/76) — all
-2026-09-10. **All eight decision tickets are done; only #77, the spec itself,
-remains.**
+like](https://github.com/peterderkoala/zeropi.display/issues/76), and [Write
+docs/spec-management-surface.md](https://github.com/peterderkoala/zeropi.display/issues/77)
+— **all nine, all 2026-09-10. The map is closed.** Each ticket's resolution
+comment holds detail the spec compressed; go there when the spec says *why* and
+you want the argument.
 
 **What #76 settled** — the CLI design, against a *running* prototype:
 
