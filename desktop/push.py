@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+import config
 import gauge
 import usage
 
@@ -355,14 +356,19 @@ async def _with_ble_connection(coro_fn) -> Any:
 # ---------------------------------------------------------------------------
 
 
-async def run_batch_pass(store_path: Optional[str] = None) -> BatchResult:
+async def run_batch_pass(store_path: Optional[str] = None, projects_root: Optional[Path] = None) -> BatchResult:
     """One Batch pass: ingest the logs, compute pending Readings, and (if
     any) push them over one BLE connection (spec §7.3). `--dry-run` is
     handled separately by `print_dry_run`, which never calls this.
+
+    `store_path` is expected to already be the fully resolved path (spec
+    §3.3) — an entry point's `main()` resolves Configuration once and passes
+    it down; this only falls back to re-resolving when called with `None`
+    directly (as service.py's `run_forever` default, and existing tests, do).
     """
     store = usage.open_store(usage.resolve_store_path(store_path))
     try:
-        usage.ingest_projects_root(store)
+        usage.ingest_projects_root(store, root=projects_root or usage.DEFAULT_PROJECTS_ROOT)
         readings = usage.pending_readings(store)
         if not readings:
             print("No pending Readings — nothing to push.")
@@ -384,9 +390,14 @@ async def run_batch_pass(store_path: Optional[str] = None) -> BatchResult:
         store.close()
 
 
-async def run_gauge_push(store_path: Optional[str] = None) -> bool:
+async def run_gauge_push(store_path: Optional[str] = None, projects_root: Optional[Path] = None) -> bool:
     """One Gauge push (spec §7.4). `--dry-run` is handled separately by
     `print_dry_run`, which never calls this.
+
+    `projects_root` only matters for the wipe-recovery re-ingest below — it
+    is threaded through to that `run_batch_pass` call so a configured
+    `paths.projects_root` (spec §4.1) is honoured there too, not just on the
+    primary Batch path.
 
     Spec §7.2 requires wipe handling "on any Ack with wiped: true, of
     either kind" — not just the Daily-batch path. A wiped Gauge Ack means
@@ -419,7 +430,7 @@ async def run_gauge_push(store_path: Optional[str] = None) -> bool:
             usage.clear_pushed_marks(store)
         finally:
             store.close()
-        await run_batch_pass(store_path)
+        await run_batch_pass(store_path, projects_root)
     print(f"Gauge push {'ok' if ok else 'failed'}.")
     return ok
 
@@ -429,20 +440,21 @@ async def run_gauge_push(store_path: Optional[str] = None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def print_dry_run(store_path: Optional[str] = None) -> None:
+def print_dry_run(store_path: Optional[str] = None, projects_root: Optional[Path] = None) -> None:
     """`--dry-run`: ingest, aggregate, and print what *would* be sent —
     Payloads, sizes, Project Label + its R-rule, pending/total row counts,
     and the Gauge state. No BLE, no store writes to `pushed_at` (spec §7.6).
     """
+    projects_root = projects_root or usage.DEFAULT_PROJECTS_ROOT
     store = usage.open_store(usage.resolve_store_path(store_path))
     try:
-        usage.ingest_projects_root(store)
+        usage.ingest_projects_root(store, root=projects_root)
         all_readings = usage.aggregate_readings(store)
         pending = [r for r in all_readings if r.pending]
 
         print(f"Pending {len(pending)} / {len(all_readings)} Readings in the Window.")
 
-        projects = usage.discover_projects()
+        projects = usage.discover_projects(projects_root)
         did = "n/a (dry-run: not resolving desktop id)"
         try:
             did = desktop_id()
@@ -500,13 +512,25 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return args
 
 
-async def _async_main(args: argparse.Namespace) -> int:
+async def _async_main(
+    args: argparse.Namespace,
+    resolved_store_path: Optional[str] = None,
+    resolved_projects_root: Optional[Path] = None,
+) -> int:
+    """`resolved_store_path`/`resolved_projects_root` are Configuration,
+    already resolved once by `main()` (spec §3.3). Defaulting to `None`
+    (falling back to `args.store` / the compiled default) keeps this
+    directly callable the way the existing tests call it, without a
+    Configuration store in the picture.
+    """
+    store_path = args.store if resolved_store_path is None else resolved_store_path
+
     if args.dry_run:
-        print_dry_run(args.store)
+        print_dry_run(store_path, resolved_projects_root)
         return 0
 
     if args.resend_all:
-        store = usage.open_store(usage.resolve_store_path(args.store))
+        store = usage.open_store(usage.resolve_store_path(store_path))
         try:
             usage.clear_pushed_marks(store)
         finally:
@@ -515,20 +539,28 @@ async def _async_main(args: argparse.Namespace) -> int:
     exit_code = 0
 
     if not args.gauge_only:
-        result = await run_batch_pass(args.store)
+        result = await run_batch_pass(store_path, resolved_projects_root)
         if not result.ok:
             exit_code = 1
 
     if not args.batch_only:
-        await run_gauge_push(args.store)
+        await run_gauge_push(store_path, resolved_projects_root)
 
     return exit_code
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
+    # Configuration is resolved once, here, into a frozen object (spec
+    # §3.3) — the lazy `usage.resolve_store_path` call that used to live
+    # inside `run_batch_pass` moves up to this entry point.
     try:
-        return asyncio.run(_async_main(args))
+        cfg = config.resolve(cli_store_path=args.store)
+    except config.ConfigVersionError as exc:
+        print(f"Refusing to run: {exc}", file=sys.stderr)
+        return 1
+    try:
+        return asyncio.run(_async_main(args, str(cfg.paths_store), cfg.paths_projects_root))
     except usage.StoreVersionError as exc:
         print(f"Refusing to run: {exc}", file=sys.stderr)
         return 1

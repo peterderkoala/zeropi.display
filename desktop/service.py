@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import logging
 import sys
 import time
@@ -36,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
+import config
 import gauge
 import push
 
@@ -230,6 +232,9 @@ async def run_forever(
     store_path: Optional[str] = None,
     poll_interval_s: float = POLL_INTERVAL_S,
     *,
+    gauge_throttle_s: float = GAUGE_THROTTLE_S,
+    batch_catchup_threshold_s: float = BATCH_CATCHUP_THRESHOLD_S,
+    batch_scheduled_hour: int = BATCH_SCHEDULED_HOUR,
     max_iterations: Optional[int] = None,
     now_wall_fn: WallClockFn = lambda: datetime.now().astimezone(),
     now_mono_fn: MonoClockFn = time.monotonic,
@@ -254,8 +259,11 @@ async def run_forever(
     itself is what a test drives directly, with fakes, rather than testing
     only the pure `GaugeGate`/`BatchScheduler` pieces in isolation.
     """
-    gate = GaugeGate()
-    scheduler = BatchScheduler()
+    gate = GaugeGate(throttle_s=gauge_throttle_s)
+    scheduler = BatchScheduler(
+        catchup_threshold_s=batch_catchup_threshold_s,
+        scheduled_hour=batch_scheduled_hour,
+    )
 
     iterations = 0
     while max_iterations is None or iterations < max_iterations:
@@ -308,8 +316,31 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Configuration is resolved once, here, into a frozen object (spec
+    # §3.3) — never lazily inside the loop itself.
     try:
-        asyncio.run(run_forever(args.store))
+        cfg = config.resolve(cli_store_path=args.store)
+    except config.ConfigVersionError as exc:
+        print(f"Refusing to run: {exc}", file=sys.stderr)
+        return 1
+    # `run_forever` calls `run_batch_pass_fn`/`run_gauge_push_fn` with just
+    # `store_path` (its contract, relied on by tests that pass single-arg
+    # fakes) — `paths.projects_root` is bound in here via partial application
+    # rather than by widening that call.
+    run_batch_pass_fn = functools.partial(push.run_batch_pass, projects_root=cfg.paths_projects_root)
+    run_gauge_push_fn = functools.partial(push.run_gauge_push, projects_root=cfg.paths_projects_root)
+    try:
+        asyncio.run(
+            run_forever(
+                str(cfg.paths_store),
+                poll_interval_s=cfg.service_poll_interval_s,
+                gauge_throttle_s=cfg.service_gauge_throttle_s,
+                batch_catchup_threshold_s=cfg.batch_catchup_threshold_s,
+                batch_scheduled_hour=cfg.batch_scheduled_hour,
+                run_batch_pass_fn=run_batch_pass_fn,
+                run_gauge_push_fn=run_gauge_push_fn,
+            )
+        )
     except KeyboardInterrupt:
         pass
     return 0
