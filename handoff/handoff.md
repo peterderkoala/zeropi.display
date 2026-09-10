@@ -170,20 +170,24 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
   is right, and `wipe` is the one destructive verb — so "no deferred state
   exists" is a legitimate resolution, and building a queue to have one would be
   the mistake.
-- [Confirm the notify budget on hardware
-  (btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — task,
-  **at the bench**. Blocks the status surface.
+- [What the Pi reports about
+  itself](https://github.com/peterderkoala/zeropi.display/issues/74) — grilling.
+  **Unblocked by #78**, which measured the budget it was waiting on: 512 bytes,
+  ~150 B of headroom over today's worst-case Ack. Both #72's and #75's rulings
+  are annotated onto the ticket body, and so is #78's.
 
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
 fired as a subagent at charting time; graduated #78), [Where configuration
 lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71),
 [Which constants are settings, and in which
-tier](https://github.com/peterderkoala/zeropi.display/issues/72), and [The Pi's
+tier](https://github.com/peterderkoala/zeropi.display/issues/72), [The Pi's
 settings and command
-vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75) — all
-2026-09-10. The rest are blocked: #74 on #78, #76 on #74/#79, and #77 (write the
-spec) on all the others.
+vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75), and
+[Confirm the notify budget on hardware
+(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78) — all
+2026-09-10. The rest are blocked: #76 on #74/#79, and #77 (write the spec) on
+all the others.
 
 **What #71 settled**, in one line each — the full reasoning is its resolution
 comment, and the gist is on the map:
@@ -267,6 +271,40 @@ constants outside the Tier system:
 - Coined **Settings Payload**, **Command Payload** and **Command** in
   `CONTEXT.md` (`af5f9e9`); **Payload** no longer says "two shapes".
 
+**What #78 settled** — the bench run; full detail in its resolution comment and
+`docs/research/notify-direction-budget.md` §6 on `research/notify-budget`
+(`6483c00`):
+
+- **The notify budget is 512 bytes, measured.** Bisected: a 512 B Ack arrives
+  whole, **513 B arrives as 512** and fails to parse. `bluetoothd` returns
+  success, `bluezero` raises nothing — **silent truncation confirmed**. The
+  Desktop reports `malformed ack from Pi: … column 513 (char 512)`.
+- **The MTU exchange is real and settles at 517**, captured on the wire. That
+  was the specific doubt #73 raised about its own derivation.
+- ⚠ **The overhead is `ATT_MTU − 5`, not `− 3`.** BlueZ notifies with
+  **`Handle Multiple Value Notification (0x23)`**, which carries a per-value
+  length field. On this link both terms of the `min()` are 512, so the answer
+  did not change **and the two-byte error was invisible** — at a smaller MTU it
+  bites. **This is the third two-byte MTU derivation error in this project**
+  (#32's trap, #67's 514, this). Write budgets as the `min()`, never as a
+  literal.
+- **The two candidate bounds cannot be distinguished on this hardware** — both
+  evaluate to 512 and 517 is the maximum MTU. The *number* is measured; the
+  *mechanism* is still one of two. Recorded rather than re-derived, which is the
+  whole point of the ticket.
+- **Headroom for the status surface: ~150 B** (194 B measured max Ack, ~360 B
+  worst case, against 512).
+
+💡 **Technique worth reusing: `receive.py` echoes a rejected `kind` into the
+Ack's `reason`, so any small Payload amplifies into an arbitrarily large Ack.**
+That is how #78 tested the notify direction with **no Pi-side code change**, and
+safely against a **live** service — an unknown `kind` is rejected before any DB
+write or panel draw, so it does not collide with the panel the way
+`pi/epd-selftest.py` does. `data.db` was md5-identical afterwards. Generally:
+**any field the Pi echoes into an error Ack is an amplifier.**
+`bench/notify-budget-probe.py` (same branch) re-runs the whole measurement in
+about a minute.
+
 ⚠ **Three defects found for the implementation map** (two by #72, one by #75):
 
 1. **`DEFAULT_PROJECTS_ROOT` is defined twice** — `usage.py:43` as
@@ -274,10 +312,12 @@ constants outside the Tier system:
    ".claude/projects"`. Equal today by coincidence, with nothing enforcing it.
    The moment it becomes configurable, two keys would let a Gauge and a Daily
    read different directories. Collapse to one key, `paths.projects_root`.
-2. **The notify budget has no named constant anywhere in the code.** #73 settled
-   it as `min(512, ATT_MTU-3)` and #78 confirms it at the bench, but unlike
-   `MAX_PAYLOAD_BYTES` nothing expresses it — and this is the direction that
-   truncates **silently, twice**. Add one, symmetric with `MAX_PAYLOAD_BYTES`.
+2. **The notify budget has no named constant anywhere in the code.** #78 has now
+   measured it at **512**, but unlike `MAX_PAYLOAD_BYTES` nothing expresses it —
+   and this is the direction that truncates **silently**, corrupting the whole
+   Ack including correlation fields that were fine. Add one, symmetric with
+   `MAX_PAYLOAD_BYTES`, and **write it as `min(512, ATT_MTU - 5)` rather than
+   the literal** — see #78 on why the `-5` and why a literal would rot silently.
 3. **`RedrawGate._idle_elapsed` (`receive.py:418`) reads `IDLE_KEEPALIVE_S` as a
    module constant.** That is the single place the one Setting binds. It must
    become a looked-up value, or **"Settings apply live" is false** — the Pi
