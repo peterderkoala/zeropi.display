@@ -5,7 +5,8 @@ single Gauge push (§7.4), `wiped: true` handling (§7.2), and the manual CLI
 entry point (§7.6). The data layer (which Payloads to send) comes from
 ``usage.py`` and ``gauge.py``; this module is the transport around it and
 keeps the existing BLE mechanics (§10) — service-UUID scanning, a single
-held connection, ``_acquire_mtu``, and deferred-Ack-aware write/notify.
+held connection, and deferred-Ack-aware write/notify. It uses **only public
+`bleak` API**, so it is not tied to the BlueZ backend (#32).
 
 Two functions are the seam #47's resident service is expected to import
 directly, without subprocessing into this file's CLI:
@@ -264,6 +265,9 @@ class BleConnection:
         self._ack_received = asyncio.Event()
         self._ack = {}
         body = json.dumps(payload).encode("utf-8")
+        # One write per Payload, never chunked (ADR-0001). The ceiling is
+        # ATT's 512-byte attribute limit, NOT the MTU -- the largest Daily
+        # Payload measured on real data is 390 bytes (#32).
         await self._client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, body, response=True)
         try:
             await asyncio.wait_for(self._ack_received.wait(), timeout=ACK_TIMEOUT_SECONDS)
@@ -272,12 +276,17 @@ class BleConnection:
         return self._ack
 
     async def __aenter__(self) -> "BleConnection":
-        # bleak's public start_notify() only uses BlueZ's low-MTU
-        # StartNotify call unless the remote characteristic already
-        # advertises "NotifyAcquired" (ours, served by bluezero, never
-        # does). Acquiring the MTU directly is the only way to negotiate
-        # past the 23-byte default (spec §10 trap #2).
-        await self._client._backend._acquire_mtu()
+        # ⚠ Nothing here negotiates the MTU, and nothing needs to (#32).
+        # The ATT MTU is negotiated by the kernel/BlueZ when the link comes
+        # up, before any of our code runs. This used to call bleak's private
+        # `_backend._acquire_mtu()`, which despite the name negotiates
+        # nothing -- it calls BlueZ's AcquireWrite purely to *read* the
+        # already-negotiated value into `client.mtu_size`. Neither of the
+        # paths we use consults that number: `write_gatt_char` goes through
+        # D-Bus WriteValue, and `start_notify` uses BlueZ's StartNotify.
+        # Removing it is what makes this module backend-agnostic rather
+        # than BlueZ-only. Do not reintroduce it to "fix" a size problem;
+        # see the budget note on `send_one` for the limit that is real.
         await self._client.start_notify(NOTIFY_CHARACTERISTIC_UUID, self._handle_ack)
         return self
 
@@ -303,7 +312,13 @@ async def _with_ble_connection(coro_fn) -> Any:
     async with BleakClient(device) as client:
         conn = BleConnection(client)
         async with conn:
-            print(f"Connected to {device.address} (negotiated MTU: {client.mtu_size})")
+            # Deliberately not printing `client.mtu_size`. With
+            # `_acquire_mtu()` gone (#32) bleak never reads the negotiated
+            # value, so the property reports a placeholder 23 and warns.
+            # Printing that is worse than printing nothing: it invites
+            # exactly the wrong diagnosis, since the real MTU is large and
+            # the link is fine.
+            print(f"Connected to {device.address}")
             return await coro_fn(conn.send_one)
 
 

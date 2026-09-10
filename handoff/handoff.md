@@ -158,17 +158,31 @@ frame from drawing.
 closed the rendering milestone on 2026-09-10; the panel draws and the whole
 product — real Claude Code usage, on real glass — works end to end.
 
-**Open issues, both small:**
+**Open items, all small:**
 
-- [#32](https://github.com/peterderkoala/zeropi.display/issues/32) —
-  `push.py` calls `client._backend._acquire_mtu()`, a private BlueZ-specific
-  `bleak` API, so the Desktop end is Linux-only. **Decision-shaped, not
-  urgent**: either a public API can negotiate the MTU now, or ADR-0001 reopens
-  and the Payload needs chunking off-Linux, or Linux-only is recorded as a
-  constraint. No non-Linux Desktop exists yet.
 - **Two spec-prose omissions raised on #66** (§4's `sh` pair, §5.4's `5H`
   label). Cosmetic; whether `docs/spec-eink-rendering.md` gains the lines is
   the maintainer's call.
+- **The single-write budget has less headroom than ADR-0001 assumed** — see
+  the ticket opened from #32.
+
+⚠ **#32 is closed, and its premise was wrong** — worth knowing, because the
+belief it encoded was in the spec for months. `push.py` called bleak's private
+`_backend._acquire_mtu()` and both the code comment and spec §10 trap #2 said
+it was "the only way past the 23-byte default MTU". **It negotiates nothing.**
+The ATT MTU is negotiated by the kernel when the link comes up; that call
+reaches BlueZ's `AcquireWrite` purely to *read* the value into
+`client.mtu_size`, and neither `write_gatt_char` (D-Bus `WriteValue`) nor
+`start_notify` (BlueZ `StartNotify`) consults it. Removed on 2026-09-10, so
+`push.py` is now **public-API-only and not BlueZ-bound**.
+
+**The proof is worth remembering, because it is the one that discriminates**:
+with the call gone and bleak reporting `mtu_size == 23`, 12 Daily Payloads of
+up to 390 bytes went through *and each was answered by an Ack of up to 194
+bytes*. **An ATT notification cannot be fragmented** — so a 194-byte Ack
+arriving whole proves the real MTU is ≥ 197. The write path alone proves
+nothing, since BlueZ will happily long-write a 390-byte payload over a 23-byte
+MTU.
 
 **Two things wanting calendar time, not a session** — inherited from #59 and
 #51, and they finally became *countable* now that a panel actually runs:

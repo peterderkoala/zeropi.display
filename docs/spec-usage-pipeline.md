@@ -481,9 +481,15 @@ expired (§8.5). Skip the push; the next change pushes a better value.
 
 ## 6. The wire format
 
-MTU 517 is negotiated reliably, giving a **514-byte single-write budget**.
-Both shapes are comfortably inside it with verbose named keys; no terse or
-positional encoding.
+MTU 517 is negotiated reliably — by the kernel, with nothing asked of it
+(#32) — giving a **514-byte single-write budget**. Both shapes fit with
+verbose named keys; no terse or positional encoding.
+
+⚠ **The binding ceiling is ATT's 512-byte attribute limit, not the MTU**, and
+the headroom is smaller than "comfortably" suggests: the largest Daily Payload
+measured against real data is **390 bytes**, about 120 short of the budget. The
+variable part is `project`, where one worktree path already accounts for 63
+characters, so a deep enough project path can reach the limit.
 
 ### 6.1 Daily Payload
 
@@ -977,12 +983,27 @@ the Desktop sends explicit zero rows.
    a valid BlueZ 5.82 key. If pushes look like a coin flip, this is why; the Pi
    Zero 2W's BLE hardware is fine. **Do not design chunking or retry logic
    around a presumed hardware limit.**
-2. **`await client._backend._acquire_mtu()` is required** before
-   `start_notify`. It is a private, BlueZ-specific `bleak` API, and it is the
-   only way past the 23-byte default MTU, because bleak's public `start_notify`
-   uses BlueZ's low-MTU path unless the remote characteristic advertises
-   `NotifyAcquired` — which bluezero never does. Keep it, keep the comment
-   explaining it, and keep the Linux-only consequence.
+2. ⚠ **This trap was wrong, and was removed on 2026-09-10
+   ([#32](https://github.com/peterderkoala/zeropi.display/issues/32)).** It
+   used to say `await client._backend._acquire_mtu()` "is required" and "is the
+   only way past the 23-byte default MTU", and to keep the Linux-only
+   consequence. **None of that holds.** `_acquire_mtu()` negotiates nothing:
+   the ATT MTU is negotiated by the kernel/BlueZ when the link comes up, and
+   that call reaches BlueZ's `AcquireWrite` purely to *read* the
+   already-negotiated value into `client.mtu_size`. Neither path we use
+   consults that number — `write_gatt_char` goes through D-Bus `WriteValue`,
+   and `start_notify` uses BlueZ's `StartNotify`.
+
+   Verified on real hardware with the call deleted and `bleak` reporting
+   `mtu_size == 23`: 12 Daily Payloads of up to **390 bytes** were pushed and
+   upserted intact, each answered by an Ack of up to **194 bytes**. **An ATT
+   notification cannot be fragmented**, so a 194-byte Ack arriving whole is
+   proof the real MTU is ≥ 197 with nothing acquired. There was no latency
+   cost either (~9.6 s vs ~12.8 s per Batch, three runs each).
+
+   `push.py` therefore uses **only public `bleak` API** and is no longer tied
+   to the BlueZ backend. Do not reintroduce `_acquire_mtu()`, and do not reach
+   for chunking if a Payload ever fails — see §6 for the limit that is real.
 3. **The Ack must stay deferred.** `receive.py` sends it via
    `async_tools.add_timer_ms(0, ...)` because notifying from inside the write's
    own D-Bus call confuses BlueZ's ATT state machine — the pending write reply
@@ -1132,9 +1153,10 @@ reader.
 - **Reading Readings back for the graph** — query shape and aggregation window
   belong to the display milestone.
 - **Fixing [#12](https://github.com/peterderkoala/zeropi.display/issues/12)**
-  (the masked exception) and
-  [#32](https://github.com/peterderkoala/zeropi.display/issues/32) (Linux-only
-  `_acquire_mtu`). Known, ticketed, not this work.
+  (the masked exception). Known, ticketed, not this work.
+  ([#32](https://github.com/peterderkoala/zeropi.display/issues/32), the
+  Linux-only `_acquire_mtu`, was **closed on 2026-09-10** — the call was
+  removed and §10 trap #2 amended.)
 
 ---
 
