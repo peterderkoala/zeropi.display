@@ -15,9 +15,14 @@
 > module constant, so a Setting applies without a restart. **#83 (the wire,
 > `568ef47`, 2026-09-10) is also done**: `settings`/`command` Payloads now
 > cross the wire, all three verbs (`redraw`/`wipe`/`status`) dispatch, and
-> `MAX_ACK_BYTES` is enforced on every Ack before notifying. Still missing:
-> the Desktop's BLE lock (#84), the Verdict (#85), `desktop/cli.py` (#86),
-> and the hardware verification (#87). See
+> `MAX_ACK_BYTES` is enforced on every Ack before notifying. **#84 (the
+> Desktop's BLE lock + Settings re-assertion, `e5c02b2`, 2026-09-10) is done
+> too**: an advisory `flock(2)` on `~/.local/state/zeropi-display/ble.lock`
+> and the complete Settings set are both taken *inside*
+> `_with_ble_connection`, so the CLI (waits 15 s) and the resident service
+> (`SERVICE_LOCK_WAIT_S = 0`, fails immediately) get them by construction.
+> Still missing: the Verdict (#85), `desktop/cli.py` (#86), and the hardware
+> verification (#87). See
 > [For the next session](#for-the-next-session) below.
 >
 > ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
@@ -50,6 +55,17 @@
 >   which broke `settings`' documented no-`drawn` shape and dropped
 >   `command`'s `verb` on a DB failure — both new kinds needed their own
 >   branch there too, not just on the success path.
+> - **#84**: the busy/absent discriminator was built correctly and then
+>   **destroyed one frame up** — both `run_batch_pass` and `run_gauge_push`
+>   swallowed `BleLinkBusy` under their broad handlers, and the Gauge one
+>   printed literally the `no Pi / connection failed` sentence §7.1 says must
+>   never appear for a busy link. *Both* review axes found it independently.
+>   ⚠ **The lesson generalises: a distinction is only as good as the seam it
+>   is raised through.** `BleLinkBusy` now propagates out of both entry
+>   points; the CLI turns it into §9.6's exit code 2 (*can't tell*), the
+>   service logs INFO and drops the pass. Also fixed there: `flock`'s
+>   `OSError` was reported as *busy* for **every** errno (ENOLCK is this
+>   Desktop's own problem, not an occupied link).
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -215,10 +231,26 @@ the judgment calls), tickets in dependency order:
    `MAX_ACK_BYTES = min(512, ATT_MTU - 5)` is enforced on every Ack in
    `ReceiveState.send_ack` before notifying. 360 tests passing (was 319).
    No BLE/hardware verification of this yet — that is still #87's job.
-4. **#84 The Desktop's BLE lock + Settings re-assertion** — next, depends on
-   #81, #83 (both done).
-5. #85 The Verdict (pure function) — depends on #83, #81.
-6. #86 `desktop/cli.py` — depends on #81–#85.
+4. ✅ **#84 The Desktop's BLE lock + Settings re-assertion** — done,
+   `e5c02b2`. The lock and the re-assertion both live *inside*
+   `_with_ble_connection`; `BleLinkBusy` propagates out of
+   `run_batch_pass`/`run_gauge_push` so *busy* never reads as *absent*.
+   378 tests passing (was 360). No BLE/hardware verification — #87's job.
+   ⚠ **Two things a later ticket will want:**
+   - **`SettingsOutcome.wiped` is load-bearing and is spec drift.** The
+     re-assertion is the FIRST write of every connection, so it is the write
+     a Desktop Id hand-off wipes on, and `receive.py:check_desktop_id` flags
+     that wipe on **that Ack and only that Ack**. §7.2 never mentions the
+     interaction; without `run_batch_with_connection(wiped_already=…)` the
+     wipe is silently lost. Fold it back into the spec if §7 is ever revised.
+   - **The CLI-initiated settings write already exists**: pass
+     `settings_required=True` (and `coro_fn=None`) to `_with_ble_connection`
+     — #86 should call that, not re-derive it.
+5. **#85 The Verdict (pure function)** — next, depends on #83, #81 (both
+   done). §7.1's three-row table is now real: catch `push.BleLinkBusy` for
+   *busy*, a scan timeout for *absent*.
+6. #86 `desktop/cli.py` — depends on #81–#85. ⚠ Its exit-code table (§9.6)
+   is partly live already: `push.py`'s own CLI returns **2** on a busy link.
 7. #87 End-to-end hardware verification — depends on #86.
 
 ⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
@@ -1109,8 +1141,11 @@ in `docs/research/`):
   the next frontier ticket for you if you do not name one.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
-  assert on pixels). The suite is **243 passing** and must stay green with no
-  panel, no SPI, no bluezero and no `~/.claude`.
+  assert on pixels). The suite is **378 passing** and must stay green with no
+  panel, no SPI, no bluezero, no `~/.claude` — and, since #84, without taking
+  the real BLE lock either (`tests/conftest.py` redirects `BLE_LOCK_PATH` to
+  `tmp_path` for every test; a test that took it for real would contend with a
+  live `zeropi-push` on the same machine).
 - **Bench work needs the service stopped — *if it touches the panel*.**
   `receive.py` owns the panel, so `epd-selftest.py` against a live
   `zeropi-display` is a GPIO collision. #66's run is the template for a
