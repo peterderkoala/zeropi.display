@@ -3,8 +3,10 @@
 ## Where things stand
 
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
-> panel draws, verified on real glass. **Map #70 is live** — a management
-> surface for both ends, charted 2026-09-10. See
+> panel draws, verified on real glass. **Map #70 is live and nearly through** —
+> a management surface for both ends, charted 2026-09-10. **Six of its eight
+> tickets closed the same day**; what remains is the offline question, then the
+> CLI prototype and the spec itself. See
 > [For the next session](#for-the-next-session) below for what is takeable.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
@@ -27,7 +29,10 @@ Three things from that run you would otherwise rediscover the hard way:
   Historic View while a Gauge Payload that arrived seconds ago sits in memory.
   That is ADR-0010 working, not a bug — and it is the clearest argument for
   #65's throttle drop. It looks like an off-by-300s error in the journal; it
-  is not.
+  is not. ⚠ **`CONTEXT.md` defined this wrongly until #74** (it said "time since
+  the Payload arrived", which is only the second term), so a reader who checked
+  the binding glossary was actively misled toward the wrong reading. Fixed, with
+  the trap written into the entry.
 - ⚠ **`receive.py` now owns the panel.** Running `pi/epd-selftest.py` against a
   live `zeropi-display` is a GPIO collision. The self-test refuses to run when
   the service is active, but stop the service first rather than relying on it.
@@ -160,7 +165,7 @@ frame from drawing.
 the Desktop that manages both ends (status, configuration, control), exercised
 by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
 
-**Takeable now** (open, unblocked, unassigned):
+**Takeable now** — exactly one, and **both remaining tickets sit behind it**:
 
 - [What an action means when the Pi is
   unreachable](https://github.com/peterderkoala/zeropi.display/issues/79) —
@@ -169,7 +174,10 @@ by a CLI. **Implementation is a separate map**, as with #51→#59 and #13→#41.
   (declarative, already in Configuration), `redraw` is time-bound so rejecting
   is right, and `wipe` is the one destructive verb — so "no deferred state
   exists" is a legitimate resolution, and building a queue to have one would be
-  the mistake.
+  the mistake. ⚠ Watch the direction of travel in #71's ruling that **the
+  resident service never writes Configuration** — a queue the CLI writes and the
+  service drains has to respect that.
+
 **Closed so far:** [What the Pi can send back: the notify-direction
 budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
 fired as a subagent at charting time; graduated #78), [Where configuration
@@ -412,10 +420,36 @@ reliability rather than bytes. `bluetoothd` truncates at 512 in
 `gatt-server.c`, both return success, and `bluezero` adds no check — so an
 over-long Ack surfaces on the Desktop as `malformed ack from Pi`, **blaming the
 JSON rather than the length**. Do not go hunting the parser. Full working:
-`docs/research/notify-direction-budget.md` on `research/notify-budget`
-(`ef26120`). The number is *derived, not measured* — #78 is the bench
-confirmation, and this project has derived an MTU number wrongly twice already.
-Headroom today: measured max Ack 194 B, worst case ~360 B.
+`docs/research/notify-direction-budget.md` §6 on `research/notify-budget`
+(`6483c00`). Headroom today: measured max Ack 194 B, worst case ~360 B.
+
+> ✅ **Measured on hardware by #78 (2026-09-10). 512 confirmed exactly**, and
+> bisected: a 512 B Ack arrives whole, **513 arrives as 512** and fails to
+> parse, with `bluetoothd` returning success and `bluezero` raising nothing.
+> The MTU exchange was captured settling at **517** on the wire.
+>
+> ⚠ **The overhead term above is wrong: it is `ATT_MTU − 5`, not `− 3`.** BlueZ
+> notifies with `Handle Multiple Value Notification` (**opcode `0x23`**), which
+> carries a per-value length field, not the classic `0x1b`. On this link both
+> terms of the `min()` land on 512, so **the answer is unchanged and the
+> two-byte error is invisible** — at a smaller MTU it bites. That is the **third
+> two-byte MTU derivation error** in this project (#32's trap, #67's 514, this
+> one). **Write budgets as the `min()`, never as a literal.**
+>
+> The two candidate bounds (`gatt-database.c`'s clamp vs `ATT_MTU − 5`) **cannot
+> be told apart on this hardware** — both are 512, and 517 is the maximum
+> reachable MTU. The number is measured; the mechanism is still one of two.
+
+💡 **To test the notify direction, use the Pi's own error echo — no Pi-side code
+change, and safe against a LIVE service.** `parse_payload` echoes a rejected
+`kind` straight into the Ack's `reason`, so a ~500-char `kind` inside a
+≤512-byte Payload amplifies into an over-budget Ack coming back. An unknown
+`kind` is rejected **before any DB write or panel draw**, so unlike
+`epd-selftest.py` this does not collide with the panel; #78 ran it against a
+live `zeropi-display` and `data.db` was md5-identical afterwards. Generally:
+**any field the Pi echoes into an error Ack is an amplifier.**
+`bench/notify-budget-probe.py` (same branch) re-runs the whole measurement in
+about a minute.
 
 ⚠ **The single-write budget is 512 bytes, not 514** (#67, closed 2026-09-10) —
 and this is worth knowing because both the spec and ADR-0003 had it wrong.
@@ -503,11 +537,18 @@ them in the spec's own voice:
 
 **Live map: [#70 — One management surface for both ends
 (spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
-2026-09-10 with seven tickets (#71–#77). It is a **planning** map: tickets
-resolve decisions; nothing on it builds the management surface, the one
-exception being #76, which prototypes a CLI so the design has something
-concrete to argue with. See
+2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
+fog** as the frontier advanced, making eight. **Six are closed** — only #76 (the
+CLI prototype) and #77 (write the spec) remain, both behind #79. It is a
+**planning** map: tickets resolve decisions; nothing on it builds the management
+surface, the one exception being #76, which prototypes a CLI so the design has
+something concrete to argue with. See
 [For the next session](#for-the-next-session) for what is takeable.
+
+⚠ **The map's Settled #3 has been amended** — status is a **requested `status`
+verb**, not the "widened Ack" the charting session sketched (#74, with #75
+having deferred the choice there). The amendment is on the map itself; do not
+read the original wording as current.
 
 #59 was the previous map; its destination is reached and its log is archived at
 [`archive/map-59.md`](archive/map-59.md).
@@ -635,6 +676,15 @@ Hand-off facts, established 2026-09-05 by
   two *concurrent* Desktops would clobber each other's Ack channel. Moot under
   the sequential shape settled by #36, but it is why concurrent multi-Desktop
   would have cost far more than a schema change.
+- **⚠ A dead or stuck panel is currently INVISIBLE from the Desktop** (found by
+  #74). BLE keeps serving, Acks keep saying `ok`, Readings keep persisting —
+  only the glass is frozen. The Pi already knows: `PanelWorker.unavailable`
+  (`render.py:407`) and the watchdog (`render.py:388`) compute it and then
+  **discard it into the journal**. **The Ack's `drawn` flag does not cover
+  this** and never did — its own docstring says it means "the redraw floor
+  accepted this for drawing", *not* "pixels moved". #74's `panel` field is the
+  designed route out; until it is built, do not read a successful Ack as
+  evidence the panel is alive.
 
 Live-gauge facts, MEASURED 2026-09-05 by
 [#26](https://github.com/peterderkoala/zeropi.display/issues/26) — these
@@ -662,8 +712,9 @@ correct earlier entries in this file, so prefer them:
   use (27% -> 36% in 8.2 min), so a full 5-hour window is ~91 minutes of
   continuous work. **The trigger therefore fires ~5.5x per 300 s floor** — the
   Desktop-side throttle #25 called a courtesy is doing real work.
-- **The Gauge Payload is 279 bytes against the 514 budget**, verbose keys and
-  all.
+- **The Gauge Payload is 279 bytes against the 512 budget**, verbose keys and
+  all. *(Was written here as 514 until #78; the real ceiling is 512, see
+  §"Both directions are capped at 512" below.)*
 - **⚠ Context-as-a-percentage is a dead readout.** Against #31's 1,000,000
   window, 42 real sessions peaked at **589,408 (59%)**, median peak **15.8%**,
   and **0 of 42** ever passed 900K. The bar is a permanent stub. (The 589,408
@@ -903,29 +954,41 @@ in `docs/research/`):
   names the assertions, and frame builders are unusually easy to test (render,
   assert on pixels). The suite is **243 passing** and must stay green with no
   panel, no SPI, no bluezero and no `~/.claude`.
-- **Bench work now needs the service stopped.** `receive.py` owns the panel, so
-  `epd-selftest.py` against a live `zeropi-display` is a GPIO collision. #66's
-  run is the template for a hardware session: back up the Pi's `data.db`, drive
-  each scenario from `push.py`, read the journal for the `render:` line, and
-  put a human in front of the glass for what a log cannot show.
+- **Bench work needs the service stopped — *if it touches the panel*.**
+  `receive.py` owns the panel, so `epd-selftest.py` against a live
+  `zeropi-display` is a GPIO collision. #66's run is the template for a
+  *rendering* session: back up the Pi's `data.db`, drive each scenario from
+  `push.py`, read the journal for the `render:` line, and put a human in front
+  of the glass for what a log cannot show. **But not every bench ticket is a
+  panel ticket** — #78 measured the notify budget against a **live** service by
+  driving it with Payloads that are rejected before any draw, and needed no
+  human at the glass. Check what you are actually touching before stopping
+  anything; `bench/README.md` on `research/notify-budget` says which probes are
+  safe live.
 - **Every closed map's log is in `handoff/archive/`** — #1, #7, #13, #41, #51,
   #59.
   Nothing there is takeable; read one when you want the reasoning behind a
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` is the default tool on map #70** — five of its
-  seven tickets are grilling tickets, because #70 is a **planning** map. Note
+- **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
+  tickets are grilling tickets, because #70 is a **planning** map. Note
   the contrast with map #59: on an *execution* map a question means you have
   found a **gap in the spec**, so you say so on the ticket rather than grilling
   your way to a private answer (#66 found two and did exactly that). #70 is the
   opposite case — the whole point is to have the argument now.
-- **`mattpocock-skills:domain-modeling` is load-bearing on #70**, not optional.
-  The map coins configuration and wire vocabulary, and **#75 edits the
-  definition of `Payload` itself** — `CONTEXT.md` currently says it has exactly
-  two shapes, and a Settings Payload makes that three. The glossary is current
-  as of **Active Day** (#52); the One-liner was deleted from it when the
-  feature was dropped.
+- **`mattpocock-skills:prototype` for [#76 What the CLI looks
+  like](https://github.com/peterderkoala/zeropi.display/issues/76)**, the map's
+  one non-planning ticket. It exists because this repo has twice had a paper
+  decision overturned the moment something was rendered (#26, #38).
+- **`mattpocock-skills:domain-modeling` is load-bearing on #70**, not optional,
+  and it has now earned that twice over. The map has coined **Configuration**,
+  **Settings**, **Tier** (#71/#72), **Settings Payload**, **Command Payload**,
+  **Command** (#75) and **Panel Health** (#74) — and **`Payload` went from two
+  shapes to four**. It also caught a *wrong* definition: **Gauge Age** described
+  only half of what the code computes, which is the #66 trap living in the
+  binding glossary. Cross-checking a glossary entry against the source is worth
+  doing, not just reading it.
 - **The `PWR_PIN`-on-BCM-18 question is out of scope, by the maintainer's
   call**, not fog waiting for a home. It needs a multimeter at the bench and
   blocks no frame from drawing. Do not re-adopt it into a map.
