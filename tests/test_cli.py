@@ -288,6 +288,32 @@ def test_status_reads_the_desktops_side_only_once_it_holds_the_link(tmp_path, mo
     assert "Working" in out
 
 
+def test_status_does_not_report_a_desktop_store_failure_as_an_unreachable_pi(tmp_path, monkeypatch):
+    # Review of #87: reading the Desktop's side under the lock put it inside
+    # the BLE `try`, whose catch-all means "absent". A broken store is this
+    # Desktop's own fault and must fail loudly, not read as a Pi that is off.
+    import sqlite3
+
+    cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
+    _fake_radio(monkeypatch, [_settings_ack(), _status_ack()])
+
+    real = usage.pushed_summary
+    calls = []
+
+    def fails_once(conn):
+        # Only the read under the lock fails, so nothing downstream can
+        # re-raise it by accident and mask the mislabelling.
+        calls.append(1)
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(conn)
+
+    monkeypatch.setattr(usage, "pushed_summary", fails_once)
+
+    with pytest.raises(sqlite3.OperationalError):
+        asyncio.run(cli.cmd_status(cfg, _args(["status"]), lock_wait_s=0.0))
+
+
 def test_status_busy_exits_2_and_says_busy_not_unreachable(tmp_path, monkeypatch, capsys):
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "deadbeefdeadbeef")

@@ -8,6 +8,8 @@ prototype's seven scenarios (`ok`, `unreachable`, `busy`, `never-paired`,
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import config
@@ -160,6 +162,32 @@ def test_a_pi_that_answered_with_an_error_is_not_working_not_unreachable(reason)
     assert [check.name for check in got.checks] == list(CHECK_ORDER)
     # Nothing in the reply was comparable, so no check may claim a result.
     assert all(check.ok is None for check in got.checks)
+
+
+def test_an_error_reply_names_its_cause_rather_than_listing_both():
+    # §11 trap 6: "The CLI must name this failure explicitly." One advice
+    # line covering both causes names neither.
+    truncated = build_verdict(
+        _facts(), {"status": "error", "reason": "malformed ack from Pi: … column 513 (char 512)"}
+    )
+    old_image = build_verdict(_facts(), {"status": "error", "reason": "unknown kind: 'command'"})
+
+    assert "512" in truncated.advice and "older image" not in truncated.advice
+    assert "older image" in old_image.advice and "512" not in old_image.advice
+
+
+def test_push_still_names_a_malformed_ack_the_way_the_verdict_recognises():
+    import push
+
+    class _Client:
+        pass
+
+    conn = push.BleConnection(_Client())
+    conn._ack_received = asyncio.Event()
+    # What a reply cut at the notify budget looks like on arrival (§5.5).
+    conn._handle_ack(None, bytearray(b'{"status": "ok", "trunc'))
+
+    assert conn._ack["reason"].startswith(verdict_module.MALFORMED_ACK_PREFIX)
 
 
 def test_unlearned_checks_are_present_but_claim_nothing():

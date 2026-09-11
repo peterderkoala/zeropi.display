@@ -179,13 +179,23 @@ NOT_PAIRED_ADVICE = "Nothing was queued. Pair this Desktop with a Pi first."
 UNLEARNED_DETAIL = "not checked — nothing was learned"
 
 ERROR_REPLY_DETAIL = "not checked — the Pi's reply was an error"
-# One line covering both causes #87 met, without parsing the reason: the
-# Pi's own `unknown kind`/`unknown verb`, and the Desktop's `malformed ack`
-# (§11 trap 6 -- the column number is where the notify budget cut it).
+
+# The prefix of the error `push.py`'s `BleConnection` synthesizes when an
+# Ack does not parse. `test_verdict.py` asserts `push.py` still produces it.
+MALFORMED_ACK_PREFIX = "malformed ack from Pi"
+
+# §11 trap 6: "The CLI must name this failure explicitly" — so a truncated
+# reply gets its own advice rather than sharing one line with the old-image
+# case #87 met on hardware.
+TRUNCATED_REPLY_ADVICE = (
+    "The Pi is in range — this is not the Unreachable case. Its reply was cut "
+    "at the 512-byte notify budget and no longer parses (spec §5.5): the "
+    "column number is where it was cut. The status reply has outgrown "
+    "MAX_ACK_BYTES."
+)
 ERROR_REPLY_ADVICE = (
     "The Pi is in range — this is not the Unreachable case. An unknown kind or "
-    "verb means it runs an older image than this Desktop: reinstall it. A "
-    "malformed Ack is a reply cut at the 512-byte notify budget (spec §5.5)."
+    "verb means it runs an older image than this Desktop: reinstall it."
 )
 
 
@@ -223,10 +233,12 @@ def build_verdict(
         # upgraded ahead of its Pi fails *loudly*), and so is §11 trap 6's
         # truncated reply, which the Desktop itself reports as malformed.
         reason = status.get("reason") or "no reason given"
+        truncated = reason.startswith(MALFORMED_ACK_PREFIX)
         return _unlearned(
             State.NOT_WORKING,
             f"Not working — the Pi answered status with an error: {reason}.",
-            ERROR_REPLY_ADVICE,
+            TRUNCATED_REPLY_ADVICE if truncated else ERROR_REPLY_ADVICE,
+            ok=False,
             reachable=True,
             detail=ERROR_REPLY_DETAIL,
         )
@@ -262,6 +274,7 @@ def _unlearned(
     headline: str,
     advice: str,
     *,
+    ok: Optional[bool] = None,
     reachable: bool = False,
     detail: str = UNLEARNED_DETAIL,
 ) -> Verdict:
@@ -270,13 +283,13 @@ def _unlearned(
     ⚠ The six checks are still present (§9.5: "fixed, not filtered … even
     when `reachable` is false, with `ok: null`"). They carry `NOTE` because
     `OK` would claim a comparison that never happened and `FAIL` would be the
-    very collapse §8.1 forbids. `Verdict.ok` stays `None` only for the states
-    that are genuinely *can't tell*; an error reply is a fault the Pi told us
-    about, so there it is `False`.
+    very collapse §8.1 forbids. `ok` defaults to `None` (*can't tell*); the
+    error-reply caller passes `False`, because that is a fault the Pi told
+    us about even though nothing in it was comparable.
     """
     return Verdict(
         state=state,
-        ok=False if state is State.NOT_WORKING else None,
+        ok=ok,
         glyph=GLYPHS[state],
         headline=headline,
         advice=advice,

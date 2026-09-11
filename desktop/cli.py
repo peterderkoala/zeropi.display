@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sqlite3
 import subprocess
 import sys
 import time
@@ -412,6 +413,10 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
     except push.BleLinkBusy as exc:
         reach = verdict.Reach.BUSY
         error_detail = str(exc)
+    except sqlite3.Error:
+        # The Desktop's own store, read under the lock above -- this
+        # Desktop's fault, never evidence that the Pi is absent.
+        raise
     except Exception as exc:  # noqa: BLE001 - scan/connect failure means absent (§7.1)
         reach = verdict.Reach.ABSENT
         error_detail = str(exc)
@@ -816,23 +821,33 @@ async def cmd_push(cfg: config.Configuration, args: argparse.Namespace, *, lock_
     return 0 if result.ok else 1
 
 
+async def _send_user_command(
+    verb: str, cfg: config.Configuration, lock_wait_s: float
+) -> tuple[Optional[dict], Optional[int]]:
+    """Sends a human-typed Command (`redraw`/`wipe`) and returns `(ack,
+    None)`, or `(None, exit_code)` once a refusal has been printed.
+
+    §9.6: a Command refused because the Pi is Unreachable -- busy or absent
+    -- exits 3, not the Verdict's *can't tell* 2. Nothing is queued; the
+    human is the only retrier (ADR-0011).
+    """
+    try:
+        ack = await _send_command(verb, push.desktop_id(), cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
+    except push.BleLinkBusy as exc:
+        _print_unreachable_refusal(exc, busy=True)
+        return None, 3
+    except Exception as exc:  # noqa: BLE001 - no reply from the paired Pi
+        _print_unreachable_refusal(exc, busy=False)
+        return None, 3
+    return ack, _ack_refusal(ack)
+
+
 async def cmd_redraw(cfg: config.Configuration, args: argparse.Namespace, *, lock_wait_s: float = push.CLI_LOCK_WAIT_S) -> int:
     if (code := _require_paired(cfg)) is not None:
         return code
 
-    did = push.desktop_id()
-    try:
-        ack = await _send_command("redraw", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
-    # §9.6: a Command refused because the Pi is Unreachable is 3, not the
-    # Verdict's *can't tell* 2 -- the human is the only retrier (ADR-0011).
-    except push.BleLinkBusy as exc:
-        _print_unreachable_refusal(exc, busy=True)
-        return 3
-    except Exception as exc:  # noqa: BLE001 - no reply from the paired Pi
-        _print_unreachable_refusal(exc, busy=False)
-        return 3
-
-    if (code := _ack_refusal(ack)) is not None:
+    ack, code = await _send_user_command("redraw", cfg, lock_wait_s)
+    if code is not None:
         return code
 
     if ack.get("drawn"):
@@ -872,19 +887,8 @@ async def cmd_wipe(
         print("✗ Confirmation did not match. Nothing was sent.", file=sys.stderr)
         return 3
 
-    did = push.desktop_id()
-    try:
-        ack = await _send_command("wipe", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
-    # §9.6: a Command refused because the Pi is Unreachable is 3, not the
-    # Verdict's *can't tell* 2 -- the human is the only retrier (ADR-0011).
-    except push.BleLinkBusy as exc:
-        _print_unreachable_refusal(exc, busy=True)
-        return 3
-    except Exception as exc:  # noqa: BLE001 - no reply from the paired Pi
-        _print_unreachable_refusal(exc, busy=False)
-        return 3
-
-    if (code := _ack_refusal(ack)) is not None:
+    ack, code = await _send_user_command("wipe", cfg, lock_wait_s)
+    if code is not None:
         return code
 
     print("Wiped. Re-pushing the archive.")

@@ -543,8 +543,9 @@ def clear_pushed_marks(conn: sqlite3.Connection, window: Iterable[str] | None = 
     """Clears `pushed_at` so the next Batch re-sends what it covers.
 
     `window=None` clears every mark — right after a wipe (§7.2, the `wipe`
-    verb), when the Pi holds nothing. Pass the Window instead when the Pi
-    keeps what it has (`pair`, `--resend-all`): a Batch only ever re-sends
+    verb), when the Pi holds nothing — and `--resend-all`, whose "clear every
+    `pushed_at`" is binding pipeline text. Pass the Window instead when the
+    Pi keeps what it has (`pair`): a Batch only ever re-sends
     the Window, so clearing a mark outside it would leave a Reading on the
     Pi that the Desktop no longer records sending — and since #85 the
     Verdict's Readings check compares exactly those marks (found by #87).

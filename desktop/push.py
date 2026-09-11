@@ -490,8 +490,12 @@ async def ble_lock(
                     ) from None
                 if not announced:
                     # Same reason as §7.1's scanning line: up to 15 s of
-                    # silence reads as hung (seen on hardware by #87).
-                    print(f"Waiting for the link — another zeropi-display job holds it (up to {wait_s:.0f}s)…")
+                    # silence reads as hung (seen on hardware by #87). stderr,
+                    # so it cannot spoil `cli.py status --json`'s stdout.
+                    print(
+                        f"Waiting for the link — another zeropi-display job holds it (up to {wait_s:.0f}s)…",
+                        file=sys.stderr,
+                    )
                     announced = True
                 await sleep_fn(min(poll_interval_s, remaining))
         try:
@@ -867,9 +871,11 @@ async def _async_main(
     if args.resend_all:
         store = usage.open_store(usage.resolve_store_path(store_path))
         try:
-            # The Window only: the Pi keeps what it holds, and a mark cleared
-            # outside the Window is never re-set (see clear_pushed_marks).
-            usage.clear_pushed_marks(store, usage.window_dates())
+            # ⚠ Every mark, as pipeline §4.6/§7.6 bind and management §9.1
+            # freezes. That leaves marks outside the Window cleared and never
+            # re-set, which the Verdict then reads as Readings the Desktop did
+            # not send (see clear_pushed_marks; raised on #87, not changed).
+            usage.clear_pushed_marks(store)
         finally:
             store.close()
 
