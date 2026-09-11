@@ -298,16 +298,25 @@ async def _send_command(
     cfg: config.Configuration,
     *,
     lock_wait_s: float = push.CLI_LOCK_WAIT_S,
+    round_trips: Optional[list[float]] = None,
 ) -> Optional[dict]:
     """Sends one Command Payload (spec §5.2) over one BLE connection,
     re-asserting Settings at its head like every other connection (§7.2).
     Returns the Ack dict, or raises (`BleLinkBusy`, or a scan/connect
     failure) exactly like `push.run_batch_pass` does.
+
+    `round_trips`, if given, receives the Command's own write-and-Ack time —
+    not the scan and connect before it, which on real hardware are 5-10 s of
+    the total and would make §9.2's "replied in" read as a slow Pi (#87).
     """
     settings = push.settings_from_config(cfg)
 
     async def _run(send_one: push.SendOne) -> Optional[dict]:
-        return await send_one(push.build_command_payload(verb, desktop_id_))
+        start = time.monotonic()
+        ack = await send_one(push.build_command_payload(verb, desktop_id_))
+        if round_trips is not None:
+            round_trips.append(time.monotonic() - start)
+        return ack
 
     return await push._with_ble_connection(
         _run,
@@ -377,9 +386,11 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
     status_ack: Optional[dict] = None
     round_trip_s: Optional[float] = None
     error_detail: Optional[str] = None
-    start = time.monotonic()
+    round_trips: list[float] = []
     try:
-        status_ack = await _send_command("status", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
+        status_ack = await _send_command(
+            "status", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s, round_trips=round_trips
+        )
     except push.BleLinkBusy as exc:
         reach = verdict.Reach.BUSY
         error_detail = str(exc)
@@ -387,7 +398,7 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
         reach = verdict.Reach.ABSENT
         error_detail = str(exc)
     else:
-        round_trip_s = time.monotonic() - start
+        round_trip_s = round_trips[0] if round_trips else None
         if status_ack is None:
             # Connected, but no Ack came back: nothing was learned (§8.1).
             reach = verdict.Reach.ABSENT
@@ -682,9 +693,12 @@ async def cmd_pair(
     print(f"Found {device.name or device.address} ({device.address})")
     print(f"Coupled. This Desktop is {did[:8]}…")
 
+    # Re-send the Window so a fresh Pi (which adopts this Desktop Id without
+    # a wipe) gets it -- but only the Window: marks outside it are Readings a
+    # re-paired Pi still holds and no Batch can re-send.
     store = usage.open_store(cfg.paths_store)
     try:
-        usage.clear_pushed_marks(store)
+        usage.clear_pushed_marks(store, usage.window_dates())
     finally:
         store.close()
 

@@ -861,7 +861,9 @@ async def _async_main(
     if args.resend_all:
         store = usage.open_store(usage.resolve_store_path(store_path))
         try:
-            usage.clear_pushed_marks(store)
+            # The Window only: the Pi keeps what it holds, and a mark cleared
+            # outside the Window is never re-set (see clear_pushed_marks).
+            usage.clear_pushed_marks(store, usage.window_dates())
         finally:
             store.close()
 

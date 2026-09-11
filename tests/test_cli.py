@@ -12,11 +12,16 @@ import fcntl
 import json
 import os
 
+import pytest
+
 import cli
 import config
 import push
 import usage
 import verdict
+
+# The store fixtures below use fixed dates; see conftest.pin_today.
+pytestmark = pytest.mark.usefixtures("pin_today")
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +471,38 @@ def test_pair_records_address_and_pushes_the_archive(tmp_path, monkeypatch, caps
     finally:
         conn.close()
     assert [w["kind"] for w in client.writes] == ["settings", "daily"]
+
+
+def test_pair_keeps_push_marks_outside_the_window(tmp_path, monkeypatch, capsys):
+    # Found on hardware by #87: re-pairing with the SAME Pi cleared every
+    # push mark, but a Batch only re-sends the Window -- so a Reading older
+    # than the Window stayed on the Pi with no mark on the Desktop, and
+    # `status` said "Not working — the Pi holds 1 Reading this Desktop did not
+    # send", permanently. Only the Window is re-sent, so only it is cleared.
+    cfg = _cfg(tmp_path)
+    _seed_pending(
+        cfg.paths_store,
+        [("2026-09-05", "-home-a", "claude-opus-5"), ("2026-08-01", "-home-a", "claude-opus-5")],
+    )
+    conn = usage.open_store(cfg.paths_store)
+    for date_ in ("2026-09-05", "2026-08-01"):
+        usage.mark_pushed(conn, date_, "-home-a", "claude-opus-5", "2026-09-05T00:00:00+00:00")
+    conn.close()
+    client = _fake_radio(monkeypatch, [_settings_ack(), {"status": "ok"}])
+
+    code = asyncio.run(cli.cmd_pair(cfg, _cfg_path(tmp_path), _args(["pair"])))
+
+    assert code == 0
+    # The in-Window Reading is re-sent (a fresh Pi needs it) ...
+    assert [w["kind"] for w in client.writes] == ["settings", "daily"]
+    conn = usage.open_store(cfg.paths_store)
+    try:
+        summary = usage.pushed_summary(conn)
+    finally:
+        conn.close()
+    # ... and the one outside it, which no Batch can re-send, keeps its mark.
+    assert summary.readings == 2
+    assert summary.coverage_start == "2026-08-01"
 
 
 def test_pair_reports_an_adr_0006_wipe(tmp_path, monkeypatch, capsys):
