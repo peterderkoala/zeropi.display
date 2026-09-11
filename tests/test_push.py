@@ -10,6 +10,7 @@ so those pieces are testable in isolation with a fake one.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import hashlib
 import hmac
 import json
@@ -18,6 +19,24 @@ import pytest
 
 import push
 import usage
+
+
+class _PinnedDate(_dt.date):
+    """`date` with `today()` fixed at 2026-09-05, the date these fixtures
+    were written against."""
+
+    @classmethod
+    def today(cls):
+        return cls(2026, 9, 5)
+
+
+@pytest.fixture(autouse=True)
+def _pin_today(monkeypatch):
+    # The store fixtures below use fixed dates, and `pending_readings` keeps
+    # only the seven-day Window ending `date.today()` (§4.6) — so without
+    # this, a fixture date silently drops out of the Batch as the calendar
+    # advances, and assertions about what was sent start failing.
+    monkeypatch.setattr(usage, "date", _PinnedDate)
 
 
 # ---------------------------------------------------------------------------
