@@ -371,6 +371,7 @@ class StatusResult:
     status: Optional[dict]
     round_trip_s: Optional[float]
     error_detail: Optional[str]
+    reach: verdict.Reach = verdict.Reach.REACHABLE
 
 
 async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = push.CLI_LOCK_WAIT_S) -> StatusResult:
@@ -427,7 +428,7 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
 
     facts = held_facts[0] if held_facts else read_facts()
     v = verdict.build_verdict(facts, status_ack, reach)
-    return StatusResult(v, facts, status_ack, round_trip_s, error_detail)
+    return StatusResult(v, facts, status_ack, round_trip_s, error_detail, reach)
 
 
 def _ago(seconds: Optional[float]) -> str:
@@ -454,7 +455,10 @@ def _render_status_full(r: StatusResult, service_info: ServiceInfo) -> str:
 
     if v.state is verdict.State.CANT_TELL:
         if r.error_detail:
-            lines += [f"     {r.error_detail}.", ""]
+            lines += [f"     {r.error_detail}."]
+        if r.reach is verdict.Reach.ABSENT:
+            lines.append("     Normal when it is powered off or out of range. Not a fault.")
+        lines.append("")
         lines += _desktop_lines(facts, service_info) + [
             f"  Pi        last seen {_ago(facts.seconds_since_last_push)}",
             f"            holding {facts.readings} Readings then",

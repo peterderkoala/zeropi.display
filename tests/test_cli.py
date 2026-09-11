@@ -240,6 +240,8 @@ def test_status_absent_exits_2(tmp_path, monkeypatch, capsys):
     assert code == 2
     assert "Can't tell" in out
     assert "unreachable" in out.lower()
+    # §9.2's rendering: say plainly that an absent Pi is not a fault.
+    assert "Not a fault." in out
 
 
 def test_status_error_ack_exits_1_and_is_not_rendered_as_unreachable(tmp_path, monkeypatch, capsys):
