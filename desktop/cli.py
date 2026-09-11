@@ -299,6 +299,7 @@ async def _send_command(
     *,
     lock_wait_s: float = push.CLI_LOCK_WAIT_S,
     round_trips: Optional[list[float]] = None,
+    before_send: Optional[Callable[[], None]] = None,
 ) -> Optional[dict]:
     """Sends one Command Payload (spec §5.2) over one BLE connection,
     re-asserting Settings at its head like every other connection (§7.2).
@@ -308,10 +309,13 @@ async def _send_command(
     `round_trips`, if given, receives the Command's own write-and-Ack time —
     not the scan and connect before it, which on real hardware are 5-10 s of
     the total and would make §9.2's "replied in" read as a slow Pi (#87).
+    `before_send` runs while the BLE lock is held, just before the write.
     """
     settings = push.settings_from_config(cfg)
 
     async def _run(send_one: push.SendOne) -> Optional[dict]:
+        if before_send is not None:
+            before_send()
         start = time.monotonic()
         ack = await send_one(push.build_command_payload(verb, desktop_id_))
         if round_trips is not None:
@@ -370,14 +374,16 @@ class StatusResult:
 
 
 async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = push.CLI_LOCK_WAIT_S) -> StatusResult:
-    store = usage.open_store(cfg.paths_store)
-    try:
-        summary = usage.pushed_summary(store)
-    finally:
-        store.close()
-    facts = _desktop_facts(cfg, summary)
+    def read_facts() -> verdict.DesktopFacts:
+        store = usage.open_store(cfg.paths_store)
+        try:
+            summary = usage.pushed_summary(store)
+        finally:
+            store.close()
+        return _desktop_facts(cfg, summary)
 
     if cfg.pi_address is None:
+        facts = read_facts()
         v = verdict.build_verdict(facts, None, verdict.Reach.REACHABLE)
         return StatusResult(v, facts, None, None, None)
 
@@ -387,9 +393,20 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
     round_trip_s: Optional[float] = None
     error_detail: Optional[str] = None
     round_trips: list[float] = []
+    # ⚠ The Desktop's side is read while the BLE lock is held, never before
+    # waiting for it: a Batch holding the link is still setting its push
+    # marks, so a snapshot taken then undercounts against the Pi's
+    # post-Batch reply and reads as a false "not working" (found by #87).
+    held_facts: list[verdict.DesktopFacts] = []
     try:
         status_ack = await _send_command(
-            "status", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s, round_trips=round_trips
+            "status",
+            did,
+            cfg.pi_address,
+            cfg,
+            lock_wait_s=lock_wait_s,
+            round_trips=round_trips,
+            before_send=lambda: held_facts.append(read_facts()),
         )
     except push.BleLinkBusy as exc:
         reach = verdict.Reach.BUSY
@@ -408,6 +425,7 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
         # (found on hardware by #87). That includes §11 trap 6's truncated
         # reply, which push.py reports as `malformed ack from Pi: …`.
 
+    facts = held_facts[0] if held_facts else read_facts()
     v = verdict.build_verdict(facts, status_ack, reach)
     return StatusResult(v, facts, status_ack, round_trip_s, error_detail)
 

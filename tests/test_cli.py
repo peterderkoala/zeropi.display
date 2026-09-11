@@ -259,6 +259,33 @@ def test_status_error_ack_exits_1_and_is_not_rendered_as_unreachable(tmp_path, m
     assert "re-run when the pi is back" not in out.lower()
 
 
+def test_status_reads_the_desktops_side_only_once_it_holds_the_link(tmp_path, monkeypatch, capsys):
+    # Found on hardware by #87: `status` read the Desktop's pushed marks,
+    # THEN waited out a Batch holding the link (§7.1's absorbed collision),
+    # THEN compared that mid-Batch snapshot against the Pi's post-Batch reply
+    # -- "Not working — the Pi holds 13 Readings this Desktop did not send".
+    cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
+    _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _fake_radio(monkeypatch, [_settings_ack(), _status_ack(readings=1, coverage_start="2026-09-05")])
+    fd = _hold(push.BLE_LOCK_PATH)
+
+    async def scenario():
+        status = asyncio.create_task(cli.cmd_status(cfg, _args(["status"]), lock_wait_s=5.0))
+        await asyncio.sleep(0.3)
+        # The Batch holding the link marks its row and lets go.
+        conn = usage.open_store(cfg.paths_store)
+        usage.mark_pushed(conn, "2026-09-05", "-home-a", "claude-opus-5", push._now_iso())
+        conn.close()
+        os.close(fd)
+        return await status
+
+    code = asyncio.run(scenario())
+
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "Working" in out
+
+
 def test_status_busy_exits_2_and_says_busy_not_unreachable(tmp_path, monkeypatch, capsys):
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "deadbeefdeadbeef")

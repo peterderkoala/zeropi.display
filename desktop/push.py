@@ -471,6 +471,7 @@ async def ble_lock(
     fd = os.open(str(path), os.O_RDWR | os.O_CREAT, BLE_LOCK_MODE)
     try:
         deadline = monotonic_fn() + wait_s
+        announced = False
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -487,6 +488,11 @@ async def ble_lock(
                         f"the BLE link is busy: {path} is held by another "
                         f"zeropi-display job (waited {wait_s:.0f}s)"
                     ) from None
+                if not announced:
+                    # Same reason as §7.1's scanning line: up to 15 s of
+                    # silence reads as hung (seen on hardware by #87).
+                    print(f"Waiting for the link — another zeropi-display job holds it (up to {wait_s:.0f}s)…")
+                    announced = True
                 await sleep_fn(min(poll_interval_s, remaining))
         try:
             yield
