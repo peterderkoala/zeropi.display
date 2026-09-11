@@ -178,6 +178,16 @@ NOT_PAIRED_ADVICE = "Nothing was queued. Pair this Desktop with a Pi first."
 
 UNLEARNED_DETAIL = "not checked — nothing was learned"
 
+ERROR_REPLY_DETAIL = "not checked — the Pi's reply was an error"
+# One line covering both causes #87 met, without parsing the reason: the
+# Pi's own `unknown kind`/`unknown verb`, and the Desktop's `malformed ack`
+# (§11 trap 6 -- the column number is where the notify budget cut it).
+ERROR_REPLY_ADVICE = (
+    "The Pi is in range — this is not the Unreachable case. An unknown kind or "
+    "verb means it runs an older image than this Desktop: reinstall it. A "
+    "malformed Ack is a reply cut at the 512-byte notify budget (spec §5.5)."
+)
+
 
 def build_verdict(
     facts: DesktopFacts,
@@ -205,6 +215,22 @@ def build_verdict(
         ]
         return _unlearned(State.CANT_TELL, headline, advice)
 
+    if status.get("status") != "ok":
+        # ⚠ The Pi answered, so this is not Unreachable -- found on hardware
+        # by #87, where an older image's `unknown kind: 'command'` rendered as
+        # "the Pi is unreachable … re-run when it is back" directly above
+        # "last seen 2s ago". An error reply is a real fault (§5.1: a Desktop
+        # upgraded ahead of its Pi fails *loudly*), and so is §11 trap 6's
+        # truncated reply, which the Desktop itself reports as malformed.
+        reason = status.get("reason") or "no reason given"
+        return _unlearned(
+            State.NOT_WORKING,
+            f"Not working — the Pi answered status with an error: {reason}.",
+            ERROR_REPLY_ADVICE,
+            reachable=True,
+            detail=ERROR_REPLY_DETAIL,
+        )
+
     checks = _run_checks(facts, status)
     by_name = {check.name: check for check in checks}
 
@@ -231,23 +257,32 @@ def build_verdict(
     )
 
 
-def _unlearned(state: State, headline: str, advice: str) -> Verdict:
+def _unlearned(
+    state: State,
+    headline: str,
+    advice: str,
+    *,
+    reachable: bool = False,
+    detail: str = UNLEARNED_DETAIL,
+) -> Verdict:
     """A Verdict where no comparison could be made.
 
     ⚠ The six checks are still present (§9.5: "fixed, not filtered … even
     when `reachable` is false, with `ok: null`"). They carry `NOTE` because
     `OK` would claim a comparison that never happened and `FAIL` would be the
-    very collapse §8.1 forbids.
+    very collapse §8.1 forbids. `Verdict.ok` stays `None` only for the states
+    that are genuinely *can't tell*; an error reply is a fault the Pi told us
+    about, so there it is `False`.
     """
     return Verdict(
         state=state,
-        ok=None,
+        ok=False if state is State.NOT_WORKING else None,
         glyph=GLYPHS[state],
         headline=headline,
         advice=advice,
-        reachable=False,
+        reachable=reachable,
         checks=tuple(
-            Check(name=name, severity=Severity.NOTE, ok=None, detail=UNLEARNED_DETAIL)
+            Check(name=name, severity=Severity.NOTE, ok=None, detail=detail)
             for name in CHECK_ORDER
         ),
     )

@@ -237,6 +237,23 @@ def test_status_absent_exits_2(tmp_path, monkeypatch, capsys):
     assert "unreachable" in out.lower()
 
 
+def test_status_error_ack_exits_1_and_is_not_rendered_as_unreachable(tmp_path, monkeypatch, capsys):
+    # Found on hardware by #87: a Pi on an image older than the Command
+    # Payload answers `status` with an error Ack. It was rendered as "Can't
+    # tell — the Pi is unreachable", exit 2, directly above "last seen 2s ago".
+    cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
+    _fake_radio(monkeypatch, [_settings_ack(), {"status": "error", "reason": "unknown kind: 'command'"}])
+
+    code = asyncio.run(cli.cmd_status(cfg, _args(["status"]), lock_wait_s=0.0))
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "Not working" in out
+    assert "unknown kind: 'command'" in out
+    assert "the pi is unreachable" not in out.lower()
+    assert "re-run when the pi is back" not in out.lower()
+
+
 def test_status_busy_exits_2_and_says_busy_not_unreachable(tmp_path, monkeypatch, capsys):
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "deadbeefdeadbeef")

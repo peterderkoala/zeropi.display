@@ -136,6 +136,32 @@ def test_a_null_pi_address_is_not_paired_not_unreachable():
     assert got.ok is None
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        # An older Pi image that predates the Command Payload (found by #87).
+        "unknown kind: 'command'",
+        # §11 trap 6: the Desktop's own name for an Ack cut at the notify budget.
+        "malformed ack from Pi: Unterminated string starting at: line 1 column 500 (char 499)",
+    ],
+)
+def test_a_pi_that_answered_with_an_error_is_not_working_not_unreachable(reason):
+    # The Pi was reached and replied. Rendering that as §8.5's "the Pi is
+    # unreachable … re-run when it is back" tells a human to wait for a Pi
+    # that is sitting right there, and exits 2 -- the steady state a cron
+    # wrapper must not page on -- for what is a real fault.
+    got = build_verdict(_facts(), {"status": "error", "reason": reason}, Reach.REACHABLE)
+
+    assert got.state is State.NOT_WORKING
+    assert got.ok is False
+    assert got.reachable is True
+    assert reason in got.headline
+    assert "unreachable" not in got.headline.lower()
+    assert [check.name for check in got.checks] == list(CHECK_ORDER)
+    # Nothing in the reply was comparable, so no check may claim a result.
+    assert all(check.ok is None for check in got.checks)
+
+
 def test_unlearned_checks_are_present_but_claim_nothing():
     got = build_verdict(_facts(), None, Reach.ABSENT)
 

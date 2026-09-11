@@ -388,17 +388,31 @@ async def _status_verdict(cfg: config.Configuration, *, lock_wait_s: float = pus
         error_detail = str(exc)
     else:
         round_trip_s = time.monotonic() - start
-        if status_ack is None or status_ack.get("status") != "ok":
-            # No Ack, or an error Ack: nothing usable was learned (§8.1).
-            # §11 trap 6: a truncated Ack reads as malformed JSON, not as a
-            # budget overrun -- name it, rather than let it read as absent
-            # with no explanation.
+        if status_ack is None:
+            # Connected, but no Ack came back: nothing was learned (§8.1).
             reach = verdict.Reach.ABSENT
-            error_detail = (status_ack or {}).get("reason", "no usable Ack")
-            status_ack = None
+            error_detail = "no Ack from the Pi"
+        # ⚠ An error Ack is passed through, not turned into ABSENT: the Pi
+        # answered, so the Verdict must say *not working*, not *unreachable*
+        # (found on hardware by #87). That includes §11 trap 6's truncated
+        # reply, which push.py reports as `malformed ack from Pi: …`.
 
     v = verdict.build_verdict(facts, status_ack, reach)
     return StatusResult(v, facts, status_ack, round_trip_s, error_detail)
+
+
+def _ago(seconds: Optional[float]) -> str:
+    """`_dur` as a point in the past: "4m 7s ago", or plain "never" -- not
+    "never ago" (found on hardware by #87)."""
+    return "never" if seconds is None else f"{_dur(seconds)} ago"
+
+
+def _desktop_lines(facts: verdict.DesktopFacts, service_info: ServiceInfo) -> list[str]:
+    uptime = f", up {_dur(service_info.uptime_s)}" if service_info.uptime_s is not None else ""
+    return [
+        f"  Desktop   {SERVICE_NAME} {service_info.state}{uptime}",
+        f"            last Batch {_ago(facts.seconds_since_last_push)}, {facts.readings} Readings sent",
+    ]
 
 
 def _render_status_full(r: StatusResult, service_info: ServiceInfo) -> str:
@@ -412,10 +426,8 @@ def _render_status_full(r: StatusResult, service_info: ServiceInfo) -> str:
     if v.state is verdict.State.CANT_TELL:
         if r.error_detail:
             lines += [f"     {r.error_detail}.", ""]
-        lines += [
-            f"  Desktop   {SERVICE_NAME} {service_info.state}, up {_dur(service_info.uptime_s)}",
-            f"            last Batch {_dur(facts.seconds_since_last_push)} ago, {facts.readings} Readings sent",
-            f"  Pi        last seen {_dur(facts.seconds_since_last_push)} ago",
+        lines += _desktop_lines(facts, service_info) + [
+            f"  Pi        last seen {_ago(facts.seconds_since_last_push)}",
             f"            holding {facts.readings} Readings then",
             "",
             f"  {v.advice}",
@@ -423,13 +435,15 @@ def _render_status_full(r: StatusResult, service_info: ServiceInfo) -> str:
         ]
         return "\n".join(lines)
 
-    lines += [
-        f"  Desktop   {SERVICE_NAME} {service_info.state}, up {_dur(service_info.uptime_s)}",
-        f"            last Batch {_dur(facts.seconds_since_last_push)} ago, {facts.readings} Readings sent",
-    ]
+    if v.advice:
+        # Only the error-reply Verdict reaches here with advice: the Pi
+        # answered, but with nothing the six checks could compare.
+        lines += [f"     {v.advice}", ""]
+    lines += _desktop_lines(facts, service_info)
     if status is not None:
         rt = f"{r.round_trip_s:.1f}s" if r.round_trip_s is not None else "?"
-        lines.append(f"  Pi        replied in {rt}, up {_dur(status.get('uptime_s'))}")
+        uptime = f", up {_dur(status['uptime_s'])}" if "uptime_s" in status else ""
+        lines.append(f"  Pi        replied in {rt}{uptime}")
     lines.append("")
     for check in v.checks:
         lines.append(f"  {check.name.capitalize():<10} {SEVERITY_GLYPH[check.severity]}  {check.detail}")
