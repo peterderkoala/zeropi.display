@@ -43,7 +43,8 @@ itself. That script owns the BlueZ configuration the link depends on — most
 critically a `bluetoothd --noplugin=midi,sap,avrcp` systemd drop-in,
 without which `bluetoothd` segfaults on every incoming LE connection. Do
 not hand-apply Pi state; add it to `pi/install-pi.sh` instead. The Desktop
-role (`desktop/install-desktop.sh`) is stubbed pending #34.
+role (`desktop/install-desktop.sh`) sets up a venv; its standalone mode still
+deploys only `push.py`, so the Desktop is run from a clone.
 
 `pi/install-pi.sh` also provisions the **e-ink panel driver**: it enables SPI,
 installs the apt-side stack (`python3-spidev`, `python3-gpiozero`,
@@ -88,9 +89,9 @@ uv pip install -r desktop/requirements-dev.txt
 
 ## What this project is
 
-zeropi.display is a Pi Zero e-ink display project (see
-`pi-eink-ble-concept.md` for the full concept). It reuses existing pwnagotchi
-Pi Zero + Waveshare e-ink HAT hardware to show **live Claude Code usage**: a
+zeropi.display is a Pi Zero e-ink display project (`README.md` is the
+current overview). It reuses existing Pi Zero + Waveshare e-ink HAT hardware
+to show **live Claude Code usage**: a
 gauge of current consumption against the rolling limit windows, backed by a
 daily history graph, read from local session data (JSONL logs in
 `~/.claude/projects/*.jsonl`) rather than a paid API key.
@@ -108,11 +109,31 @@ verified on real glass, and ⚠ **its §11 supersedes three clauses of
 Real data now reaches the panel end to end. The BLE link and the usage pipeline
 beneath it are done and hardware-verified; no case/UPS yet.
 
+**`docs/spec-management-surface.md` is binding** (map #70's destination, closed
+by #77). It specifies one management surface hosted on the Desktop: a
+Configuration store, the full Tier inventory of every constant in this project,
+two new Payload kinds (`settings`, `command`) with three verbs (`redraw`,
+`wipe`, `status`), and `desktop/cli.py`. Note that it makes `receive.py`'s
+"constants stay hardcoded" comment (pipeline §8.1) narrower than it reads, and
+that ADR-0012 and ADR-0013 came out of it.
+
+**Implementation was map #80, all seven tickets done, and the surface is
+verified on real hardware** (#87, 2026-09-11): `desktop/cli.py` — `status`,
+`config` (list/get/set), and the five action commands (`pair`, `push`,
+`redraw`, `wipe`, `restart`), with `--json`/`--brief` and the §9.6 exit-code
+table — driven against the dev Pi for every §10.6 scenario. See
+`docs/management-surface-verification.md` for the run, including the five
+Desktop-side defects it found and fixed, and `handoff/handoff.md` for the
+design questions it raised and left open (push marks are not per-Pi;
+`--resend-all` still clears every mark by binding pipeline text) and #86's
+known gap (`push`/`pair` cannot yet tell an absent Pi from a real per-row
+fault the way `status`/`redraw`/`wipe` can).
+
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
   `usage.py`/`gauge.py` as its data layer and `service.py` as the resident
-  loop. Reads the real Claude Code JSONL logs; weather and calendar are
-  still unsourced.
+  loop, `cli.py` as the management surface. Reads the real Claude Code
+  JSONL logs.
 - **Pi Zero (BLE peripheral)**: `pi/receive.py`, Python + `bluezero`. Dumb
   receiver — advertises the GATT service, accepts a Payload write,
   persists it as a Reading, and returns an Ack. It does not fetch or

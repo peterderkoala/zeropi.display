@@ -53,6 +53,26 @@ def gauge_payload(**overrides):
     return payload
 
 
+def settings_payload(**overrides):
+    payload = {
+        "kind": "settings",
+        "desktop_id": "desktop-a",
+        "settings": {"idle_keepalive_s": 3600},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def command_payload(**overrides):
+    payload = {
+        "kind": "command",
+        "desktop_id": "desktop-a",
+        "verb": "redraw",
+    }
+    payload.update(overrides)
+    return payload
+
+
 def encode_value(payload_dict) -> list:
     return list(json.dumps(payload_dict).encode("utf-8"))
 
@@ -343,6 +363,70 @@ def test_parse_payload_valid_daily_and_gauge_round_trip():
 
 
 # ---------------------------------------------------------------------------
+# spec §5.1/§5.2 Settings/Command Payload parsing
+# ---------------------------------------------------------------------------
+
+
+def test_parse_payload_valid_settings_and_command_round_trip():
+    settings = receive.parse_payload(encode_value(settings_payload()))
+    assert settings["kind"] == "settings"
+    assert settings["settings"] == {"idle_keepalive_s": 3600}
+    command = receive.parse_payload(encode_value(command_payload()))
+    assert command["kind"] == "command"
+    assert command["verb"] == "redraw"
+
+
+def test_parse_payload_rejects_settings_missing_settings_field():
+    payload = settings_payload()
+    del payload["settings"]
+    with pytest.raises(receive.PayloadError) as exc_info:
+        receive.parse_payload(encode_value(payload))
+    assert exc_info.value.kind == "settings"
+    assert "settings" in exc_info.value.reason
+
+
+def test_parse_payload_rejects_settings_field_not_a_dict():
+    payload = settings_payload(settings=["not", "a", "dict"])
+    with pytest.raises(receive.PayloadError):
+        receive.parse_payload(encode_value(payload))
+
+
+@pytest.mark.parametrize("verb", list(receive.COMMAND_VERBS))
+def test_parse_payload_accepts_each_command_verb(verb):
+    payload = receive.parse_payload(encode_value(command_payload(verb=verb)))
+    assert payload["verb"] == verb
+
+
+def test_parse_payload_rejects_missing_verb():
+    payload = command_payload()
+    del payload["verb"]
+    with pytest.raises(receive.PayloadError) as exc_info:
+        receive.parse_payload(encode_value(payload))
+    assert exc_info.value.kind == "command"
+
+
+def test_parse_payload_rejects_unrecognised_verb():
+    payload = command_payload(verb="selftest")
+    with pytest.raises(receive.PayloadError) as exc_info:
+        receive.parse_payload(encode_value(payload))
+    assert "unrecognised verb" in exc_info.value.reason
+
+
+def test_parse_payload_truncates_an_oversized_unknown_kind_in_the_reason():
+    payload = daily_payload(kind="x" * 10_000)
+    with pytest.raises(receive.PayloadError) as exc_info:
+        receive.parse_payload(encode_value(payload))
+    assert len(exc_info.value.reason) < 200
+
+
+def test_parse_payload_truncates_an_oversized_unrecognised_verb_in_the_reason():
+    payload = command_payload(verb="y" * 10_000)
+    with pytest.raises(receive.PayloadError) as exc_info:
+        receive.parse_payload(encode_value(payload))
+    assert len(exc_info.value.reason) < 200
+
+
+# ---------------------------------------------------------------------------
 # §6.3 Ack shape
 # ---------------------------------------------------------------------------
 
@@ -375,6 +459,152 @@ def test_build_ack_error_shape_has_reason():
     assert ack["reason"] == "missing field(s): model"
     assert ack["drawn"] is False
     assert ack["wiped"] is False
+
+
+# ---------------------------------------------------------------------------
+# spec §5.1 The Settings Ack -- deliberately minimal
+# ---------------------------------------------------------------------------
+
+
+def test_build_settings_ack_ok_shape_has_no_drawn_field():
+    ack = receive.build_settings_ack("ok", wiped=False)
+    assert ack == {"status": "ok", "kind": "settings", "wiped": False}
+
+
+def test_build_settings_ack_error_shape_adds_reason_only():
+    ack = receive.build_settings_ack("error", wiped=False, reason="'bogus' is not a known Setting")
+    assert ack == {
+        "status": "error",
+        "kind": "settings",
+        "wiped": False,
+        "reason": "'bogus' is not a known Setting",
+    }
+
+
+# ---------------------------------------------------------------------------
+# spec §5.2-§5.4 The Command Ack -- shape differs per verb
+# ---------------------------------------------------------------------------
+
+
+def test_build_command_ack_redraw_shape_when_drawn():
+    ack = receive.build_command_ack("ok", verb="redraw", drawn=True, wiped=False)
+    assert ack == {"status": "ok", "kind": "command", "verb": "redraw", "drawn": True, "wiped": False}
+
+
+def test_build_command_ack_redraw_shape_when_queued():
+    ack = receive.build_command_ack(
+        "ok", verb="redraw", drawn=False, wiped=False, floor_remaining_s=143
+    )
+    assert ack == {
+        "status": "ok",
+        "kind": "command",
+        "verb": "redraw",
+        "drawn": False,
+        "floor_remaining_s": 143,
+        "wiped": False,
+    }
+
+
+def test_build_command_ack_wipe_shape_has_no_drawn_field():
+    ack = receive.build_command_ack("ok", verb="wipe", wiped=True)
+    assert ack == {"status": "ok", "kind": "command", "verb": "wipe", "wiped": True}
+
+
+def test_build_command_ack_status_shape_includes_status_fields():
+    ack = receive.build_command_ack(
+        "ok",
+        verb="status",
+        drawn=False,
+        wiped=False,
+        frame="historic",
+        since_redraw_s=143,
+        panel="ok",
+        readings=312,
+        coverage_start="2026-08-01",
+        uptime_s=110000,
+        schema_version=1,
+    )
+    assert ack == {
+        "status": "ok",
+        "kind": "command",
+        "verb": "status",
+        "drawn": False,
+        "wiped": False,
+        "frame": "historic",
+        "since_redraw_s": 143,
+        "panel": "ok",
+        "readings": 312,
+        "coverage_start": "2026-08-01",
+        "uptime_s": 110000,
+        "schema_version": 1,
+    }
+
+
+# ---------------------------------------------------------------------------
+# spec §5.5 MAX_ACK_BYTES and the silent-truncation guard
+# ---------------------------------------------------------------------------
+
+
+def test_max_ack_bytes_is_the_min_of_512_and_att_mtu_minus_5():
+    assert receive.MAX_ACK_BYTES == min(512, receive.ATT_MTU - 5)
+    assert receive.MAX_ACK_BYTES == 512
+
+
+def test_worst_case_status_ack_is_under_max_ack_bytes():
+    # Every field at its longest plausible value (spec §5.5's own worked
+    # example: 234 typical, 253 worst case, against a measured 512).
+    ack = receive.build_command_ack(
+        "ok",
+        verb="status",
+        drawn=False,
+        wiped=False,
+        frame="historic",
+        since_redraw_s=999999999,
+        panel="unavailable",
+        readings=999999999,
+        coverage_start="2026-08-01",
+        uptime_s=999999999,
+        schema_version=999999999,
+    )
+    assert len(json.dumps(ack).encode("utf-8")) < receive.MAX_ACK_BYTES
+
+
+def test_enforce_ack_budget_passes_through_a_small_ack():
+    ack = {"status": "ok", "kind": "gauge", "drawn": True, "wiped": False}
+    assert receive._enforce_ack_budget(ack) == ack
+
+
+def test_enforce_ack_budget_replaces_an_over_budget_ack():
+    oversized = {"status": "ok", "kind": "command", "verb": "status", "reason": "x" * 1000}
+    replaced = receive._enforce_ack_budget(oversized)
+    assert len(json.dumps(replaced).encode("utf-8")) < receive.MAX_ACK_BYTES
+    assert replaced["status"] == "error"
+
+
+def test_send_ack_enforces_the_budget_before_notifying(monkeypatch):
+    import sys
+    import types
+
+    class _FakeAsyncTools:
+        @staticmethod
+        def add_timer_ms(ms, fn):
+            fn()
+
+    fake_bluezero = types.ModuleType("bluezero")
+    fake_bluezero.async_tools = _FakeAsyncTools
+    monkeypatch.setitem(sys.modules, "bluezero", fake_bluezero)
+    monkeypatch.setitem(sys.modules, "bluezero.async_tools", _FakeAsyncTools)
+
+    calls = []
+    receive.ReceiveState.ack_characteristic = types.SimpleNamespace(
+        set_value=lambda v: calls.append(bytes(v))
+    )
+    oversized = {"status": "ok", "kind": "command", "verb": "status", "reason": "x" * 1000}
+    receive.ReceiveState.send_ack(oversized)
+
+    assert len(calls) == 1
+    assert len(calls[0]) < receive.MAX_ACK_BYTES
+    assert json.loads(calls[0].decode("utf-8"))["status"] == "error"
 
 
 # ---------------------------------------------------------------------------
@@ -519,6 +749,264 @@ def test_on_write_daily_db_error_echoes_correlation_fields(db_path, monkeypatch)
     assert acks[0]["date"] == "2026-09-05"
     assert acks[0]["project"] == "-home-ryzen-git-zeropi-display"
     assert acks[0]["model"] == "claude-opus-5"
+
+
+# ---------------------------------------------------------------------------
+# spec §5.1/§6 on_write dispatch: the Settings Payload
+# ---------------------------------------------------------------------------
+
+
+def _fresh_receive_state(db_path):
+    receive.init_db(db_path)
+    receive.ReceiveState.db_path = db_path
+    receive.ReceiveState.ack_characteristic = object()
+    receive.ReceiveState.redraw_gate = receive.RedrawGate()
+    receive.ReceiveState.gauge = receive.GaugeState()
+    receive.ReceiveState._panel_worker = None
+    receive.ReceiveState.last_frame_kind = None
+
+
+def test_on_write_settings_ok_persists_and_applies_live(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(settings_payload()), {})
+
+    assert acks[0] == {"status": "ok", "kind": "settings", "wiped": False}
+    conn = sqlite3.connect(db_path)
+    try:
+        assert receive.get_setting(conn, "idle_keepalive_s", None) == 3600
+    finally:
+        conn.close()
+
+
+def test_on_write_settings_unknown_key_rejected_with_reason(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(settings_payload(settings={"bogus": 1})), {})
+
+    assert acks[0]["status"] == "error"
+    assert acks[0]["kind"] == "settings"
+    assert "drawn" not in acks[0]
+    assert "bogus" in acks[0]["reason"]
+
+
+def test_on_write_settings_invalid_value_leaves_no_partial_write(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(
+        encode_value(settings_payload(settings={"idle_keepalive_s": "not-an-int"})), {}
+    )
+
+    assert acks[0]["status"] == "error"
+    conn = sqlite3.connect(db_path)
+    try:
+        assert receive.get_setting(conn, "idle_keepalive_s", None) is None
+    finally:
+        conn.close()
+
+
+def test_on_write_settings_from_a_new_desktop_still_wipes(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    conn = sqlite3.connect(db_path)
+    receive.check_desktop_id(conn, "desktop-a")
+    receive.upsert_reading(conn, daily_payload())
+    conn.commit()
+    conn.close()
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(settings_payload(desktop_id="desktop-b")), {})
+
+    assert acks[0]["wiped"] is True
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# spec §5.2-§5.4 on_write dispatch: the Command Payload
+# ---------------------------------------------------------------------------
+
+
+def test_on_write_command_redraw_drawn_true_first_time(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="redraw")), {})
+
+    assert acks[0] == {"status": "ok", "kind": "command", "verb": "redraw", "drawn": True, "wiped": False}
+
+
+def test_on_write_command_redraw_queued_reports_floor_remaining_s(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="redraw")), {})  # drawn
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="redraw")), {})  # coalesced
+
+    assert acks[1]["drawn"] is False
+    assert acks[1]["floor_remaining_s"] > 0
+    assert acks[1]["floor_remaining_s"] <= receive.REDRAW_FLOOR_S
+
+
+def test_on_write_command_wipe_drops_readings_and_always_reports_wiped_true(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    conn = sqlite3.connect(db_path)
+    receive.check_desktop_id(conn, "desktop-a")
+    receive.upsert_reading(conn, daily_payload())
+    conn.commit()
+    conn.close()
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="wipe")), {})
+
+    assert acks[0] == {"status": "ok", "kind": "command", "verb": "wipe", "wiped": True}
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 0
+        assert receive._get_meta(conn, "coverage_start") is None
+    finally:
+        conn.close()
+
+
+def test_on_write_command_wipe_does_not_clear_settings(db_path, monkeypatch):
+    # The wipe command is repair for the SAME Desktop's data (spec §5.3),
+    # not a hand-off -- unlike the Desktop Id wipe (ADR-0006), it must not
+    # revert this Desktop's own Settings to the code default.
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(settings_payload(settings={"idle_keepalive_s": 3600})), {})
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="wipe")), {})
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert receive.get_setting(conn, "idle_keepalive_s", None) == 3600
+    finally:
+        conn.close()
+
+
+def test_on_write_command_wipe_is_idempotent_resent(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="wipe")), {})
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="wipe")), {})
+
+    assert acks[0]["status"] == acks[1]["status"] == "ok"
+    assert acks[0]["wiped"] is True and acks[1]["wiped"] is True
+
+
+def test_on_write_command_status_reports_fields(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    conn = sqlite3.connect(db_path)
+    receive.check_desktop_id(conn, "desktop-a")
+    receive.upsert_reading(conn, daily_payload(date="2026-09-01"))
+    conn.commit()
+    conn.close()
+
+    class FakePanelWorker:
+        status = "ok"
+
+    receive.ReceiveState._panel_worker = FakePanelWorker()
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="status")), {})
+
+    ack = acks[0]
+    assert ack["status"] == "ok"
+    assert ack["kind"] == "command"
+    assert ack["verb"] == "status"
+    assert ack["drawn"] is False
+    assert ack["wiped"] is False
+    assert ack["readings"] == 1
+    assert ack["coverage_start"] == "2026-09-01"
+    assert ack["panel"] == "ok"
+    assert ack["schema_version"] == receive.SCHEMA_VERSION
+    assert isinstance(ack["uptime_s"], int)
+    assert ack["since_redraw_s"] is None  # nothing drawn yet in this test
+
+
+def test_on_write_command_status_panel_is_never_with_no_worker(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="status")), {})
+
+    assert acks[0]["panel"] == "never"
+
+
+def test_on_write_settings_db_error_keeps_the_minimal_shape(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+
+    def _boom(conn, settings):
+        raise sqlite3.OperationalError("simulated disk full")
+
+    monkeypatch.setattr(receive, "apply_settings", _boom)
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(settings_payload()), {})
+
+    assert acks[0]["status"] == "error"
+    assert acks[0]["kind"] == "settings"
+    assert "drawn" not in acks[0]
+    assert "db write failed" in acks[0]["reason"]
+
+
+def test_on_write_command_db_error_keeps_the_verb(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+
+    def _boom(conn, clear_settings=True):
+        raise sqlite3.OperationalError("simulated disk full")
+
+    monkeypatch.setattr(receive, "_wipe_readings", _boom)
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(verb="wipe")), {})
+
+    assert acks[0]["status"] == "error"
+    assert acks[0]["kind"] == "command"
+    assert acks[0]["verb"] == "wipe"
+    assert "db write failed" in acks[0]["reason"]
+
+
+def test_on_write_command_from_a_new_desktop_still_wipes(db_path, monkeypatch):
+    _fresh_receive_state(db_path)
+    conn = sqlite3.connect(db_path)
+    receive.check_desktop_id(conn, "desktop-a")
+    receive.upsert_reading(conn, daily_payload())
+    conn.commit()
+    conn.close()
+
+    acks = []
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: acks.append(ack)))
+
+    receive.ReceiveState.on_write(encode_value(command_payload(desktop_id="desktop-b", verb="status")), {})
+
+    assert acks[0]["wiped"] is True
+    assert acks[0]["readings"] == 0
 
 
 # ---------------------------------------------------------------------------

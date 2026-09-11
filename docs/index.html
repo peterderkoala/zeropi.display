@@ -129,6 +129,20 @@
     font-size: .85rem;
   }
   a { color: var(--accent); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .88rem;
+  }
+  th, td {
+    text-align: left;
+    padding: .45rem .6rem .45rem 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { color: var(--muted); font-weight: 600; }
+  ul { padding-left: 1.2rem; margin: .5rem 0 0; }
+  li { margin: .25rem 0; }
 </style>
 </head>
 <body>
@@ -136,35 +150,94 @@
   <p class="eyebrow">zeropi.display</p>
   <h1>A Pi Zero e-ink display for live Claude Code usage</h1>
   <p class="lead">
-    A gauge of current consumption against the rolling rate-limit windows,
-    backed by a daily history graph — read from local Claude Code session
-    logs, no paid API key required. Runs on reused pwnagotchi Pi Zero +
-    Waveshare e-ink HAT hardware.
+    A gauge of consumption against the rolling five-hour and seven-day limit
+    windows, backed by a history of daily cost — read from the local Claude
+    Code logs, no API key. Your Linux machine reads the usage and pushes it
+    over Bluetooth Low Energy to a Raspberry Pi Zero with a Waveshare e-ink HAT.
   </p>
 
   <div class="cta-row">
-    <a class="btn primary" href="https://github.com/peterderkoala/zeropi.display/releases/tag/v1.0.0">Get v1.0.0 release</a>
-    <a class="btn secondary" href="https://github.com/peterderkoala/zeropi.display/archive/refs/tags/v1.0.0.tar.gz">Download tarball (.tar.gz)</a>
-    <a class="btn secondary" href="https://github.com/peterderkoala/zeropi.display">View on GitHub</a>
+    <a class="btn primary" href="https://github.com/peterderkoala/zeropi.display">View on GitHub</a>
+    <a class="btn secondary" href="https://github.com/peterderkoala/zeropi.display#readme">Read the README</a>
+    <a class="btn secondary" href="https://github.com/peterderkoala/zeropi.display/releases">Releases</a>
   </div>
 
   <div class="card">
-    <h2>v1.0.0 — verified on real hardware</h2>
-    <p class="meta">Tagged 2026-09-10 · Pi Zero 2 W + Waveshare 2.13″ V4 e-ink HAT</p>
+    <h2>How it works</h2>
     <div class="grid">
-      <div class="stat"><div class="n">BLE link</div><div class="l">Desktop ↔ Pi, single-write Payloads + Ack</div></div>
-      <div class="stat"><div class="n">Usage pipeline</div><div class="l">Real JSONL logs → Daily/Gauge Payloads</div></div>
-      <div class="stat"><div class="n">Provisioning</div><div class="l">Unattended install, reboot-survives</div></div>
-      <div class="stat"><div class="n">E-ink rendering</div><div class="l">Historic View + Gauge frame on real glass</div></div>
+      <div class="stat"><div class="n">Desktop</div><div class="l">Parses and prices the JSONL logs, reads the live rate-limit snapshot, pushes over BLE</div></div>
+      <div class="stat"><div class="n">Pi</div><div class="l">Stores daily Readings, holds the live Gauge, answers every write with an Ack</div></div>
+      <div class="stat"><div class="n">Panel</div><div class="l">250×122, 1-bit, full refresh at most every 300 s</div></div>
     </div>
+    <p>
+      The Pi never reads logs or computes anything, and holds no wall clock:
+      everything time-shaped arrives as a duration. It shows the
+      <strong>Historic View</strong> — recent active days with their cost — at
+      rest, and the <strong>Gauge frame</strong> while a fresh live Gauge is held.
+      An expired Gauge is never drawn.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>What crosses the link</h2>
+    <p class="meta">Four Payload kinds on one write characteristic, each ≤ 512 bytes.</p>
+    <table>
+      <tr><th>Kind</th><th>On the Pi</th></tr>
+      <tr><td>Daily</td><td>Stored as a Reading — the history the panel draws</td></tr>
+      <tr><td>Gauge</td><td>Held in memory; expires 300 s after the snapshot was taken</td></tr>
+      <tr><td>Settings</td><td>Persisted and applied live; re-asserted on every connection</td></tr>
+      <tr><td>Command</td><td><code>status</code>, <code>redraw</code> or <code>wipe</code>, answered in the Ack</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Is it working?</h2>
+    <p class="meta">A resident <code>systemd --user</code> service does the pushing. <code>desktop/cli.py</code> checks on it and manages it.</p>
+    <pre>  ✓  Working.
+
+  Pi        replied in 0.1s, up 1d 6h
+
+  Coupled    ✓  replied, not wiped
+  Image      ✓  schema 1
+  Panel      ✓  historic frame, drew 2m 23s ago
+  Readings   ✓  15
+  Coverage   ✓  2026-09-04
+  Restarted  ✓  up 1d 6h</pre>
+    <p>
+      <code>status</code> compares what the Desktop sent with what the Pi reports
+      and answers <em>working</em>, <em>not working</em>, <em>can't tell</em> or
+      <em>not paired</em> — a powered-off Pi is never reported as broken.
+      Alongside it: <code>pair</code>, <code>push</code>, <code>redraw</code>,
+      <code>wipe</code>, <code>config</code> and <code>restart</code>.
+    </p>
   </div>
 
   <div class="card">
     <h2>Install</h2>
-    <p class="meta">One command per role, run on the machine being provisioned.</p>
-    <pre>curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/v1.0.0/install.sh | bash -s -- pi</pre>
-    <pre>curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/v1.0.0/install.sh | bash -s -- desktop</pre>
-    <p>See the <a href="https://github.com/peterderkoala/zeropi.display/blob/v1.0.0/README.md">README</a> for the full concept, flow diagram and directory layout.</p>
+    <p class="meta">On the Pi — no clone needed:</p>
+    <pre>curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- pi</pre>
+    <p class="meta">On the Desktop, from a clone:</p>
+    <pre>uv venv .venv &amp;&amp; uv pip install -r desktop/requirements.txt
+.venv/bin/python desktop/cli.py pair</pre>
+    <p>
+      The live Gauge needs <a href="https://github.com/jarrodwatts/claude-hud">claude-hud</a>
+      writing its rate-limit snapshot. The
+      <a href="https://github.com/peterderkoala/zeropi.display#setup">README</a>
+      covers the resident service and the rest of the setup.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Verified on real hardware</h2>
+    <p class="meta">Raspberry Pi Zero 2 W · Waveshare 2.13″ e-Paper HAT V4 · BlueZ 5.82</p>
+    <ul>
+      <li>The BLE link — single-write Payloads and Acks at a 517-byte MTU</li>
+      <li>Real usage data from the Claude Code logs, pushed unattended</li>
+      <li>Unattended provisioning that survives reboots and <code>bluetoothd</code> restarts</li>
+      <li>Every frame drawn and read on real glass</li>
+      <li>The management surface end to end: Settings, all three Commands, both unreachable cases</li>
+    </ul>
+    <p class="meta">Each run is written up under <a href="https://github.com/peterderkoala/zeropi.display/tree/main/docs"><code>docs/</code></a>.</p>
   </div>
 
   <footer>

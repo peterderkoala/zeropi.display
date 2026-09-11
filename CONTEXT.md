@@ -4,7 +4,8 @@ Pi Zero e-ink display project reusing pwnagotchi hardware to show live Claude
 Code usage: a gauge of current consumption against the rolling limit windows,
 backed by a daily history graph. That is the whole of it — weather, calendar
 and the One-liner were dropped from the project on 2026-09-09. Current phase:
-specifying what the e-ink panel draws and how.
+the Management Surface is **specified** (`docs/spec-management-surface.md`, map
+#70) and not yet built — the panel itself is built and hardware-verified.
 
 ## Language
 
@@ -41,7 +42,9 @@ _Avoid_: Machine id, host id, client id
 
 **Payload**:
 The JSON object the Desktop writes to the Pi's write characteristic in a
-single BLE write. Comes in two shapes — a Daily Payload or a Gauge Payload.
+single BLE write. Comes in four shapes — a Daily Payload, a Gauge Payload, a
+Settings Payload or a Command Payload. Every shape names its own, and the Pi
+branches on that name rather than on which fields are populated.
 _Avoid_: Message, packet, row
 
 **Daily Payload**:
@@ -55,6 +58,39 @@ limit windows, and the active session's context size. Display-only — the Pi
 never persists it.
 _Avoid_: Live payload, status payload
 
+**Settings Payload**:
+The Payload shape carrying the Pi's Settings. **Declarative** — it names the
+complete set, not a change to it, so the Pi's Settings after applying one are
+exactly what it was sent. That is what makes a resend harmless.
+_Avoid_: Config payload, update payload
+
+**Command Payload**:
+The Payload shape carrying one Command.
+_Avoid_: Action payload, RPC, request
+
+**Command**:
+One verb from a short, closed list, telling the Pi to do something once. A
+Command is **imperative** where Settings are declarative, and every Command
+must be **naturally idempotent** — an Ack can be lost, so a Command will be
+retried, and nothing may depend on it arriving exactly once.
+_Avoid_: Method, call, instruction, request
+
+> Natural idempotency is a **membership rule**, not a property to check
+> afterwards: a verb that cannot be made idempotent does not join the list.
+> That rule, more than the list's shortness, is what keeps a vocabulary from
+> becoming an RPC surface.
+
+> A Command may **never override a verified invariant** — it queues behind one
+> ([ADR-0013](./docs/adr/0013-no-command-overrides-a-verified-invariant.md)).
+> Enforcement that a Tier moved out of reach of a settings form must not be
+> reachable through a verb instead.
+
+> A Command is **delivered or it is not** — it is never held for later. Against
+> an **Unreachable** Pi it is refused at the moment it is typed, so the retrier
+> is always the **human**: nothing on the Desktop re-sends a Command on its own.
+> That is what keeps "a Command will be retried" (above) from quietly meaning
+> "the Desktop will fire it again at a time nobody chose".
+
 **Batch**:
 The set of Daily Payloads sent in one push, each written and acknowledged
 separately over a single BLE connection. Every Payload in a Batch knows its
@@ -65,8 +101,17 @@ _Avoid_: Push (that is the verb), sweep, upload
 **Ack**:
 The JSON status object the Pi returns on its notify characteristic after a
 write, reporting whether parsing *and* persistence of the Payload succeeded,
-which Reading it refers to, and whether the Pi has wiped its Readings.
+which Reading it refers to, and whether the Pi has wiped its Readings. When the
+write was a Command, it also carries that Command's result — which is the only
+way the Pi's status is ever fetched
+([ADR-0012](./docs/adr/0012-status-is-requested-not-carried.md)): it is
+**requested**, never carried on an ordinary Daily or Gauge Ack.
 _Avoid_: Response, reply
+
+> An Ack reports **durations and counts, never timestamps** — the mirror of
+> [ADR-0009](./docs/adr/0009-pi-is-given-durations-not-timestamps.md). The Pi is
+> given durations because it has no wall clock, and for the same reason it can
+> only report them.
 
 ### Held on the Pi
 
@@ -84,6 +129,17 @@ The earliest date the currently coupled Desktop has pushed. It exists so that
 a date the Pi simply never received reads as *outside coverage* rather than
 as zero usage.
 _Avoid_: Since, epoch, first date
+
+**Panel Health**:
+Whether the Pi can actually drive the panel — the render worker alive, and its
+last refresh completed rather than raising or hanging. Distinct from whether a
+frame was *submitted*, which is all the redraw floor's own reporting can say.
+_Avoid_: Panel status, display state, drawn, screen health
+
+> The distinction is the whole point: a stuck or failed panel leaves BLE
+> serving, Acks succeeding and Readings persisting, with only the glass frozen.
+> Until [#74](https://github.com/peterderkoala/zeropi.display/issues/74) the Pi
+> computed this and then discarded it into its own log.
 
 ### The usage data
 
@@ -137,11 +193,21 @@ at zero rather than going negative.
 _Avoid_: resets_at, deadline, expiry, TTL
 
 **Gauge Age**:
-How long ago the Pi received the Gauge it is showing, in monotonic seconds
-since that Payload arrived. The Pi's only measure of freshness, and the reason
-it needs no wall clock. At 300 s the Gauge is **expired** and no longer a live
-reading.
-_Avoid_: Staleness, last updated, timestamp, received_at
+How old the **underlying snapshot** behind the Gauge is: the age it already had
+when the Desktop sent it, plus the monotonic seconds since that Payload
+arrived. The Pi's only measure of freshness, and the reason it needs no wall
+clock. At 300 s the Gauge is **expired** and no longer a live reading.
+_Avoid_: Staleness, last updated, timestamp, received_at, time since arrival
+
+> ⚠ **It is not "how long ago the Pi received it"** — that is only the second
+> half. A Gauge can arrive already half-expired, so the panel can fall back to
+> the Historic View while a Payload that landed seconds ago sits in memory. This
+> was found on glass in
+> [#66](https://github.com/peterderkoala/zeropi.display/issues/66), and this
+> entry defined it wrongly until
+> [#74](https://github.com/peterderkoala/zeropi.display/issues/74). Any new
+> freshness field must say **which** age it means, or it reads as an
+> off-by-300s bug.
 
 **Historic View**:
 What the panel shows when there is no live Gauge — the most recent **Active
@@ -163,4 +229,102 @@ Whether every model in a Reading was found in the pricing table. A Reading
 whose model is unrecognised still counts its tokens, but is marked
 incomplete rather than being dropped or failing the push.
 _Avoid_: Priced, valid, accurate
+
+### Managing the ends
+
+**Management Surface**:
+The one place both ends are managed from — answering *is it working?*, *change
+this setting* and *do this now* without opening a session on either machine. It
+is **hosted on the Desktop**, and the Pi appears inside it as a managed device
+rather than as a second interface. Substrate first, exercised by a CLI; a web UI
+skins the same substrate later.
+_Avoid_: Admin panel, dashboard, console, control plane
+
+> Singular on purpose. Two interfaces, one per end, is the thing it exists to
+> replace: two places to look for *is it working* is the pain, not the cure.
+
+**Verdict**:
+The Desktop's single answer to *is it working?*, computed by comparing what it
+sent against what the Pi reports it holds. Four states — working, not working,
+**can't tell**, not paired — because **Unreachable** is an expected steady state
+and must not render as a fault.
+_Avoid_: Health, status (that is what the Pi *reports*), state
+
+> **The Pi reports facts; the Desktop renders the Verdict.** Only the Desktop
+> holds the other side of every comparison, so only it can judge — which is what
+> lets the judgment improve without touching the Pi or the wire.
+
+**Configuration**:
+The Desktop's own tunable values, held in a dedicated SQLite store separate
+from the archive of record. Read once at process startup and never re-read, so
+a process runs one known Configuration for its whole life. Written only by the
+management surface — never by the resident service.
+_Avoid_: Config file, preferences, options, config table
+
+> Deliberately not a section in the Desktop store. That store is the archive of
+> record (ADR-0005) with its own version gate and its own backup story;
+> Configuration would become unreadable exactly when the archive is broken, and
+> restoring old history would silently restore old Configuration with it.
+
+**Settings**:
+The subset of Configuration that is projected onto the Pi. The Pi holds no
+Configuration of its own — it is told, which is what keeps it a dumb receiver —
+and Settings apply **live** there, because the Pi cannot be restarted without
+dropping the connection that delivered them.
+_Avoid_: Pi config, remote config, device settings
+
+> **Configuration** and **Settings** are not synonyms and the distinction is
+> load-bearing: Configuration is what the Desktop holds, Settings are what the
+> Pi is given. A value can be Configuration without being a Setting; nothing is
+> a Setting without first being Configuration.
+
+> The Pi still compiles in a **default** for every Setting, for the life before
+> it has ever been told one. A code default is not Configuration — the same
+> line drawn for a verified invariant — so this does not weaken "the Pi holds no
+> Configuration of its own". The Pi does persist the Settings it is given, so a
+> reboot cannot silently revert one; a hand-off clears them back to the
+> defaults, because they were the previous Desktop's policy.
+
+> **Settings converge; Commands do not.** Because a Settings Payload is
+> declarative, the Desktop never has to hold a pending change: the current
+> Configuration *is* the pending state, and re-sending it converges the Pi from
+> whatever it held. So there is no queue of undelivered Settings, and none is
+> needed. A **Command** has no such property — it is delivered or it is not,
+> and it is never held (see **Unreachable**).
+
+**Unreachable**:
+The Pi is not addressable by the Desktop right now. An expected steady state,
+**not an error**: the Desktop initiates every connection and the Pi is a
+peripheral that must be in range and advertising. Two cases, worth telling
+apart because they call for different things from a human — **absent** (powered
+off, out of range, mid-`bluetoothd` restart), and **busy** (another process on
+this Desktop holds the link, so the Pi is there but not free).
+_Avoid_: Offline, down, disconnected, unavailable
+
+> Nothing addressed to an Unreachable Pi is deferred
+> ([ADR-0011](./docs/adr/0011-management-actions-are-never-deferred.md)).
+> Settings need no deferral (they converge, above), and a Command against an
+> Unreachable Pi is **refused at the moment it is typed** rather than held —
+> most sharply for a destructive one, because the reason the Pi is Unreachable
+> may be the reason not to act on it.
+
+**Tier**:
+Which of three classes a tunable value belongs to: a deployment fact, freely
+editable; a policy value, editable within a validated range; or a **verified
+invariant** — a value fixed by a hardware verification run and its ADR, which
+is displayed read-only rather than hidden, and is not a Setting at all.
+_Avoid_: Level, category, class, severity
+
+> The third Tier exists because several of this project's constants are
+> *findings*, not preferences. A management surface that let a form change them
+> could silently invalidate the run that established them.
+
+> A verified invariant is **not stored as Configuration at all** — it stays a
+> constant in the code and is read from there to be displayed. A stored row is
+> writable by anyone holding the store, which is the one thing this Tier exists
+> to prevent. Only the first two Tiers ever appear in Configuration.
+
+> Tier applies to *tunable values*. Schema versions, identity constants and
+> parsing markers have no Tier, because there is no sense in which they could be
+> tuned.
 
