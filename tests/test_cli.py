@@ -669,7 +669,9 @@ def test_redraw_queued_names_its_own_wait(tmp_path, monkeypatch, capsys):
     assert "ADR-0008" in out
 
 
-def test_redraw_busy_exits_2(tmp_path, monkeypatch, capsys):
+def test_redraw_busy_exits_3(tmp_path, monkeypatch, capsys):
+    # §9.6: 3 is "a Command refused because the Pi is Unreachable"; 2 is the
+    # Verdict's *can't tell*. #86 returned 2 here (noticed during #87).
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "deadbeefdeadbeef")
 
@@ -683,8 +685,20 @@ def test_redraw_busy_exits_2(tmp_path, monkeypatch, capsys):
     finally:
         os.close(fd)
 
-    assert code == 2
+    assert code == 3
     assert "busy" in capsys.readouterr().err.lower()
+
+
+def test_redraw_absent_exits_3(tmp_path, monkeypatch, capsys):
+    cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
+    _absent_radio(monkeypatch)
+
+    code = asyncio.run(cli.cmd_redraw(cfg, _args(["redraw"]), lock_wait_s=0.0))
+
+    err = capsys.readouterr().err
+    assert code == 3
+    assert "unreachable" in err.lower()
+    assert "not queued" in err.lower()
 
 
 def test_short_id_is_first_three_octets_lowercase():
@@ -744,7 +758,7 @@ def test_wipe_confirmed_wipes_and_repushes(tmp_path, monkeypatch, capsys):
     assert [w["kind"] for w in client.writes] == ["settings", "command", "settings", "daily"]
 
 
-def test_wipe_busy_exits_2_after_confirmation(tmp_path, monkeypatch, capsys):
+def test_wipe_busy_exits_3_after_confirmation(tmp_path, monkeypatch, capsys):
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "deadbeefdeadbeef")
 
@@ -760,7 +774,7 @@ def test_wipe_busy_exits_2_after_confirmation(tmp_path, monkeypatch, capsys):
     finally:
         os.close(fd)
 
-    assert code == 2
+    assert code == 3
     assert "busy" in capsys.readouterr().err.lower()
 
 

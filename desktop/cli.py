@@ -819,12 +819,14 @@ async def cmd_redraw(cfg: config.Configuration, args: argparse.Namespace, *, loc
     did = push.desktop_id()
     try:
         ack = await _send_command("redraw", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
+    # §9.6: a Command refused because the Pi is Unreachable is 3, not the
+    # Verdict's *can't tell* 2 -- the human is the only retrier (ADR-0011).
     except push.BleLinkBusy as exc:
         _print_unreachable_refusal(exc, busy=True)
-        return 2
+        return 3
     except Exception as exc:  # noqa: BLE001 - no reply from the paired Pi
         _print_unreachable_refusal(exc, busy=False)
-        return 2
+        return 3
 
     if (code := _ack_refusal(ack)) is not None:
         return code
@@ -869,12 +871,14 @@ async def cmd_wipe(
     did = push.desktop_id()
     try:
         ack = await _send_command("wipe", did, cfg.pi_address, cfg, lock_wait_s=lock_wait_s)
+    # §9.6: a Command refused because the Pi is Unreachable is 3, not the
+    # Verdict's *can't tell* 2 -- the human is the only retrier (ADR-0011).
     except push.BleLinkBusy as exc:
         _print_unreachable_refusal(exc, busy=True)
-        return 2
+        return 3
     except Exception as exc:  # noqa: BLE001 - no reply from the paired Pi
         _print_unreachable_refusal(exc, busy=False)
-        return 2
+        return 3
 
     if (code := _ack_refusal(ack)) is not None:
         return code
