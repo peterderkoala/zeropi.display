@@ -6,7 +6,7 @@
 > panel draws, verified on real glass. **Map #70 is DONE too, closed the same
 > day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
 > #77 from all eight of its decision tickets. **Map #80 implements it, and
-> tickets 1-2 of 7 are done**: #81 (`ef129e3`) built `desktop/config.py` —
+> tickets 1-6 of 7 are done**: #81 (`ef129e3`) built `desktop/config.py` —
 > the Configuration store and the 18-key Tier 1/2 schema, resolved once at
 > `push.py`/`service.py`'s entry points. #82 (`0eb9393`, both 2026-09-10)
 > built the Pi's configuration seam — `apply_settings`/`get_setting` persist
@@ -24,8 +24,12 @@
 > **#85 (the Verdict, `0d61808`, 2026-09-10) is done too**: `desktop/verdict.py`
 > is §8 as one pure function over Desktop facts and the Pi's status reply —
 > four states, three severities, six comparisons, one precedence order, and
-> `ok` nullable so *can't tell* cannot be read as *broken*. Still missing:
-> `desktop/cli.py` (#86) and the hardware verification (#87). See
+> `ok` nullable so *can't tell* cannot be read as *broken*. **#86
+> (`desktop/cli.py`, 2026-09-11) is done too**: `status`/`config`/`pair`/
+> `push`/`redraw`/`wipe`/`restart`, `--json`/`--brief`, and the §9.6 exit-code
+> table. It also closed spec §11.1 (`DEFAULT_PROJECTS_ROOT` defined twice) and
+> wired `pi.address` into `find_pi()`, both of which #81-#85 had left latent.
+> Only the hardware verification (#87) is left on map #80. See
 > [For the next session](#for-the-next-session) below.
 >
 > ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
@@ -75,6 +79,27 @@
 >   `wiped` as "not wiped", the one check that silently passed on a malformed
 >   reply. ⚠ **Both are the same shape: a safeguard that looks present and is
 >   inert.** Worth grepping for when reviewing anything else here.
+> - **#86**: `cmd_wipe`'s post-wipe archive re-push called `run_batch_pass`
+>   with no exception handling, unlike every other BLE call in `cli.py` —
+>   a busy link *after* a successful wipe would have propagated as an
+>   unhandled traceback instead of §9.6's exit code 2, with the store's
+>   `pushed_at` marks already cleared and no report of the dangling state.
+>   Fixed with the same `BleLinkBusy` handling every other command has.
+>   Also: `find_pi`'s new `pi.address`-preferred path trusted a stored MAC
+>   without checking the device still advertises the zeropi service — a
+>   reused/rotated address would have surfaced as a confusing GATT failure
+>   instead of a clean *absent* Unreachable. Fixed by folding the address
+>   check into the same service-UUID filter rather than a separate
+>   `find_device_by_address` call. **A third finding is a real, accepted
+>   gap, not a fix**: `push`/`pair` route through `run_batch_pass`, which
+>   swallows a scan/connect failure into a failed `BatchResult` (pipeline
+>   §7.3's original design) rather than raising it — so unlike
+>   `status`/`redraw`/`wipe` (built on `_send_command`'s direct
+>   `_with_ble_connection` call), they cannot yet tell *the Pi is absent*
+>   from *the Pi answered and rejected every row*, and report exit code 1
+>   for both. Fixing it means `run_batch_pass` propagating connect
+>   failures too, which also touches `service.py`'s retry semantics —
+>   real work, left for a later ticket rather than expanded into this one.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -263,13 +288,24 @@ the judgment calls), tickets in dependency order:
    when nothing was learned), and each `Check` carries both `detail` (the
    evidence row) and `story` (the same fact phrased to headline).
    `Reach.BUSY`/`Reach.ABSENT` is what #84's lock produces.
-6. **#86 `desktop/cli.py`** — next, depends on #81–#85 (all done).
-   ⚠ Its exit-code table (§9.6) is partly live already: `push.py`'s own CLI
-   returns **2** on a busy link. It also owns the last known defect
-   (`DEFAULT_PROJECTS_ROOT` defined twice), and should call
-   `_with_ble_connection(None, settings_required=True, …)` for `config set`
-   rather than re-deriving the CLI-initiated settings write.
-7. #87 End-to-end hardware verification — depends on #86.
+6. ✅ **#86 `desktop/cli.py`** — done, 2026-09-11. 462 tests passing (was
+   412; three pre-existing, unrelated `test_push.py` failures around the
+   wiped-Ack extra-pass row count were already failing on `dev` before this
+   ticket and were left alone — not investigated, worth a look before #87).
+   `status`/`config`/`pair`/`push`/`redraw`/`wipe`/`restart`, `--json`,
+   `--brief`, and §9.6's exit codes, all built directly on #81-#85's seams
+   per the handoff note above — `config set pi.idle_keepalive_s` calls
+   `_with_ble_connection(None, settings_required=True, …)` exactly as
+   flagged, rather than re-deriving it. Also closed spec §11.1
+   (`DEFAULT_PROJECTS_ROOT` defined twice: collapsed to `usage.py`'s
+   definition, and `projects_root` now threads through
+   `build_gauge_wire_payload`/`print_dry_run`) and wired §4.6's `pi.address`
+   into `find_pi()` (address-preferred, service-UUID-verified either way) —
+   neither had been done despite the key existing in `config.py` since #81.
+   ⚠ **Known, accepted gap, not a bug**: `push`/`pair` cannot yet tell
+   *absent* from *the Pi rejected every row* — see the review-findings bullet
+   above for why, and what fixing it would touch.
+7. #87 End-to-end hardware verification — depends on #86 (done).
 
 ⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
 complete: §4 is the full Tier inventory of every constant in this project, §5

@@ -74,6 +74,91 @@ def test_desktop_id_raises_when_no_machine_id_found(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# §4.6 find_pi prefers a stored pi.address
+# ---------------------------------------------------------------------------
+
+
+class _FakeDevice:
+    def __init__(self, address, service_uuids=()):
+        self.address = address
+        self.service_uuids = service_uuids
+
+
+class _FakeAdvertisement:
+    def __init__(self, service_uuids):
+        self.service_uuids = service_uuids
+
+
+def test_find_pi_prefers_the_stored_address(monkeypatch):
+    from bleak import BleakScanner
+
+    matching = _FakeDevice("AA:BB:CC:DD:EE:FF")
+    other = _FakeDevice("11:22:33:44:55:66")
+    calls = {}
+
+    async def fake_find_device_by_filter(filterfunc, timeout=10.0, **kw):
+        calls["timeout"] = timeout
+        ad = _FakeAdvertisement([push.SERVICE_UUID])
+        # The wrong-address device advertises the right service too -- the
+        # filter must still pick the one whose address matches.
+        assert filterfunc(other, ad) is False
+        assert filterfunc(matching, ad) is True
+        return matching
+
+    monkeypatch.setattr(BleakScanner, "find_device_by_filter", fake_find_device_by_filter)
+
+    device = asyncio.run(push.find_pi(timeout=5.0, address="AA:BB:CC:DD:EE:FF"))
+
+    assert device is matching
+    assert calls["timeout"] == 5.0
+
+
+def test_find_pi_with_address_requires_the_service_too(monkeypatch):
+    # §4.6/#86's review fix: a reused/rotated MAC answering without the
+    # zeropi service must not be accepted just because the address matches.
+    from bleak import BleakScanner
+
+    same_address_wrong_service = _FakeDevice("AA:BB:CC:DD:EE:FF")
+
+    async def fake_find_device_by_filter(filterfunc, timeout=10.0, **kw):
+        ad = _FakeAdvertisement(["some-other-uuid"])
+        assert filterfunc(same_address_wrong_service, ad) is False
+        return None
+
+    monkeypatch.setattr(BleakScanner, "find_device_by_filter", fake_find_device_by_filter)
+
+    with pytest.raises(RuntimeError, match="AA:BB:CC:DD:EE:FF"):
+        asyncio.run(push.find_pi(timeout=5.0, address="AA:BB:CC:DD:EE:FF"))
+
+
+def test_find_pi_with_address_raises_when_absent_no_fallback(monkeypatch):
+    # §4.6: a stored address that does not answer is an ordinary *absent*
+    # Unreachable, not a special failure -- there is deliberately no
+    # fallback to scanning for a different Pi.
+    from bleak import BleakScanner
+
+    async def fake_find_device_by_filter(filterfunc, timeout=10.0, **kw):
+        return None
+
+    monkeypatch.setattr(BleakScanner, "find_device_by_filter", fake_find_device_by_filter)
+
+    with pytest.raises(RuntimeError, match="AA:BB:CC:DD:EE:FF"):
+        asyncio.run(push.find_pi(timeout=5.0, address="AA:BB:CC:DD:EE:FF"))
+
+
+def test_find_pi_falls_back_to_the_generic_filter_when_no_address(monkeypatch):
+    from bleak import BleakScanner
+
+    async def fake_find_device_by_filter(filterfunc, timeout=10.0, **kw):
+        return "generic-device"
+
+    monkeypatch.setattr(BleakScanner, "find_device_by_filter", fake_find_device_by_filter)
+
+    device = asyncio.run(push.find_pi(timeout=5.0))
+    assert device == "generic-device"
+
+
+# ---------------------------------------------------------------------------
 # §7.3 Batch-building
 # ---------------------------------------------------------------------------
 
@@ -373,7 +458,7 @@ def test_run_gauge_with_connection_exception_is_dropped_silently():
 def test_build_gauge_wire_payload_none_when_gauge_has_nothing(monkeypatch):
     import gauge
 
-    monkeypatch.setattr(gauge, "build_gauge_payload", lambda: None)
+    monkeypatch.setattr(gauge, "build_gauge_payload", lambda **kw: None)
     assert push.build_gauge_wire_payload("desktop-id") is None
 
 
@@ -383,12 +468,51 @@ def test_build_gauge_wire_payload_attaches_kind_and_desktop_id(monkeypatch):
     monkeypatch.setattr(
         gauge,
         "build_gauge_payload",
-        lambda: {"snapshot_age_s": 1, "five_hour": {"pct": 10, "resets_in_s": 5}, "seven_day": {"pct": 5, "resets_in_s": 6}, "context": None},
+        lambda **kw: {"snapshot_age_s": 1, "five_hour": {"pct": 10, "resets_in_s": 5}, "seven_day": {"pct": 5, "resets_in_s": 6}, "context": None},
     )
     payload = push.build_gauge_wire_payload("desktop-id")
     assert payload["kind"] == "gauge"
     assert payload["desktop_id"] == "desktop-id"
     assert payload["snapshot_age_s"] == 1
+
+
+def test_build_gauge_wire_payload_threads_projects_root_to_the_context_read(monkeypatch):
+    # management-surface spec §11.1 trap 1: a configured `paths.projects_root`
+    # must reach the Gauge's context read too, not just Daily paths -- this
+    # is the caller-level test the ticket calls for, since a unit test of
+    # `gauge.build_gauge_payload` alone would pass even with the bug (it
+    # already accepts the argument correctly).
+    import gauge
+    from pathlib import Path
+
+    seen = {}
+
+    def fake_build_gauge_payload(**kwargs):
+        seen.update(kwargs)
+        return {"snapshot_age_s": 1, "five_hour": None, "seven_day": None, "context": None}
+
+    monkeypatch.setattr(gauge, "build_gauge_payload", fake_build_gauge_payload)
+    push.build_gauge_wire_payload("desktop-id", Path("/configured/projects"))
+    assert seen["projects_root"] == Path("/configured/projects")
+
+
+def test_run_gauge_push_threads_projects_root_through(monkeypatch):
+    from pathlib import Path
+
+    seen = {}
+
+    monkeypatch.setattr(push, "desktop_id", lambda: "desktop-id")
+
+    def fake_build_gauge_wire_payload(did, projects_root=None):
+        seen["projects_root"] = projects_root
+        return None  # nothing to push -- no BLE attempted, no fake radio needed
+
+    monkeypatch.setattr(push, "build_gauge_wire_payload", fake_build_gauge_wire_payload)
+
+    ok = asyncio.run(push.run_gauge_push(None, Path("/configured/projects")))
+
+    assert ok is False
+    assert seen["projects_root"] == Path("/configured/projects")
 
 
 def test_run_gauge_push_wiped_ack_clears_marks_and_runs_one_batch_pass(tmp_path, monkeypatch):
@@ -402,7 +526,7 @@ def test_run_gauge_push_wiped_ack_clears_marks_and_runs_one_batch_pass(tmp_path,
         conn.close()
 
         monkeypatch.setattr(push, "desktop_id", lambda: "desktop-id")
-        monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did: {"kind": "gauge", "desktop_id": did})
+        monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did, projects_root=None: {"kind": "gauge", "desktop_id": did})
 
         async def fake_with_ble_connection(coro_fn, **kwargs):
             async def send_one(payload):
@@ -445,7 +569,7 @@ def test_run_gauge_push_non_wiped_ack_does_not_touch_store(tmp_path, monkeypatch
         conn.close()
 
         monkeypatch.setattr(push, "desktop_id", lambda: "desktop-id")
-        monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did: {"kind": "gauge", "desktop_id": did})
+        monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did, projects_root=None: {"kind": "gauge", "desktop_id": did})
 
         async def fake_with_ble_connection(coro_fn, **kwargs):
             async def send_one(payload):
@@ -521,6 +645,24 @@ def test_parse_args_gauge_only():
     args = push.parse_args(["--gauge-only"])
     assert args.gauge_only is True
     assert args.batch_only is False
+
+
+def test_print_dry_run_threads_projects_root_to_the_gauge_preview(tmp_path, monkeypatch, capsys):
+    from pathlib import Path
+
+    store_path = tmp_path / "store.db"
+    usage.open_store(store_path).close()
+    seen = {}
+
+    def fake_build_gauge_payload(**kwargs):
+        seen.update(kwargs)
+        return None
+
+    monkeypatch.setattr(push.gauge, "build_gauge_payload", fake_build_gauge_payload)
+
+    push.print_dry_run(str(store_path), Path("/configured/projects"))
+
+    assert seen["projects_root"] == Path("/configured/projects")
 
 
 def test_async_main_dry_run_never_touches_ble(tmp_path, monkeypatch):
@@ -640,6 +782,28 @@ def test_async_main_resend_all_clears_marks_before_batch(tmp_path, monkeypatch):
         conn = usage.open_store(store_path)
         assert len(usage.pending_readings(conn)) == 1
     asyncio.run(_test_async_main_resend_all_clears_marks_before_batch_impl())
+
+
+# ---------------------------------------------------------------------------
+# §5.2 The Command Payload
+# ---------------------------------------------------------------------------
+
+
+def test_build_command_payload_shape():
+    assert push.build_command_payload("redraw", "deadbeefdeadbeef") == {
+        "kind": "command",
+        "desktop_id": "deadbeefdeadbeef",
+        "verb": "redraw",
+    }
+
+
+def test_command_verbs_matches_the_pis_own_vocabulary():
+    # `push.COMMAND_VERBS` is a by-hand mirror of `pi/receive.py:COMMAND_VERBS`
+    # (spec §5.2) -- the two modules install onto different deployments, so
+    # nothing keeps them equal except this test.
+    import receive
+
+    assert set(push.COMMAND_VERBS) == set(receive.COMMAND_VERBS)
 
 
 # ---------------------------------------------------------------------------

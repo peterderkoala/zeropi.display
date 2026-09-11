@@ -341,6 +341,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     common = {
         "projects_root": cfg.paths_projects_root,
         "settings": push.settings_from_config(cfg),
+        "pi_address": cfg.pi_address,
         # ⚠ Asymmetric on purpose: the service never waits for the lock. Both
         # its jobs are droppable (pipeline §7.3 retries the Batch, §7.4 drops
         # the Gauge), and a resident loop blocking on a link a human is using

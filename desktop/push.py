@@ -313,11 +313,17 @@ async def run_gauge_with_connection(payload: Optional[dict], send_one: SendOne) 
     return True, bool(ack.get("wiped"))
 
 
-def build_gauge_wire_payload(desktop_id_: str) -> Optional[dict]:
+def build_gauge_wire_payload(desktop_id_: str, projects_root: Optional[Path] = None) -> Optional[dict]:
     """The Gauge Payload with `kind`/`desktop_id` attached (spec §6.2),
     or None if gauge.py has nothing to send this cycle (spec §7.4/§5.3).
+
+    ⚠ management-surface spec §11.1 trap 1: `projects_root` must be threaded
+    through to `gauge.build_gauge_payload`'s context read, or a configured
+    `paths.projects_root` reaches every Daily path (via `run_batch_pass`)
+    while the Gauge's context read silently keeps falling back to
+    `gauge.DEFAULT_PROJECTS_ROOT` -- one Configuration key, two roots.
     """
-    body = gauge.build_gauge_payload()
+    body = gauge.build_gauge_payload(projects_root=projects_root)
     if body is None:
         return None
     return {"kind": "gauge", "desktop_id": desktop_id_, **body}
@@ -332,11 +338,34 @@ def matches_service(device, advertisement) -> bool:
     return SERVICE_UUID.lower() in [uuid.lower() for uuid in advertisement.service_uuids]
 
 
-async def find_pi(timeout: float = SCAN_TIMEOUT_SECONDS):
+async def find_pi(timeout: float = SCAN_TIMEOUT_SECONDS, address: Optional[str] = None):
+    """Finds the Pi (spec §4.6). `address`, when given, is `pi.address` from
+    Configuration -- `find_pi` prefers it over the service-UUID filter alone,
+    since without it discovery is first-advertiser-wins and a Desktop cannot
+    tell *which* Pi it is coupled to (a two-Pi household is a coin flip).
+
+    ⚠ The address filter narrows the *same* service-UUID-filtered scan
+    rather than replacing it: a stored MAC does not, by itself, prove the
+    device answering at it is still running the zeropi GATT service (a
+    reused/rotated address on different hardware). Requiring both is what
+    turns that case into a clean *absent* Unreachable instead of a
+    confusing GATT/connect failure against the wrong device.
+
+    ⚠ A stored address that does not answer is an ordinary *absent*
+    Unreachable, not a special failure (§4.6) -- there is deliberately no
+    fallback to scanning for a *different* Pi.
+    """
     from bleak import BleakScanner
 
-    device = await BleakScanner.find_device_by_filter(matches_service, timeout=timeout)
+    def _matches(device, advertisement) -> bool:
+        if not matches_service(device, advertisement):
+            return False
+        return address is None or device.address.lower() == address.lower()
+
+    device = await BleakScanner.find_device_by_filter(_matches, timeout=timeout)
     if device is None:
+        if address:
+            raise RuntimeError(f"no reply from paired Pi {address} within {timeout}s")
         raise RuntimeError(
             f"No device advertising service {SERVICE_UUID} found within {timeout}s"
         )
@@ -487,6 +516,19 @@ def build_settings_payload(settings: dict, desktop_id_: str) -> dict:
     return {"kind": "settings", "desktop_id": desktop_id_, "settings": dict(settings)}
 
 
+# Mirrors `pi/receive.py:COMMAND_VERBS` -- kept in step by hand, like the
+# Tier 3 constants `config.py`/`verdict.py` mirror, since neither deployment
+# installs the other's code. `test_cli.py` asserts this against the Pi's own
+# tuple where the Pi module is importable.
+COMMAND_VERBS = ("redraw", "wipe", "status")
+
+
+def build_command_payload(verb: str, desktop_id_: str) -> dict:
+    """The Command Payload (spec §5.2) — `cli.py`'s `redraw`/`wipe`/`status`
+    all send this, differing only in `verb`."""
+    return {"kind": "command", "desktop_id": desktop_id_, "verb": verb}
+
+
 async def write_settings(
     payload: dict,
     send_one: SendOne,
@@ -532,6 +574,7 @@ async def _with_ble_connection(
     settings_required: bool = False,
     settings_outcome: Optional[SettingsOutcome] = None,
     lock_wait_s: float = CLI_LOCK_WAIT_S,
+    pi_address: Optional[str] = None,
 ) -> Any:
     """Takes the BLE lock, scans for the Pi, opens one BleakClient, re-asserts
     Settings, and runs `coro_fn(send_one)` inside it. Raised exceptions
@@ -549,7 +592,7 @@ async def _with_ble_connection(
         # `SCAN_TIMEOUT_SECONDS` before it is known, and silence for ten
         # seconds reads as hung.
         print(f"Scanning for the Pi (up to {SCAN_TIMEOUT_SECONDS:.0f}s)…")
-        device = await find_pi()
+        device = await find_pi(address=pi_address)
         print(f"Found {device.name or device.address} ({device.address})")
         async with _open_client(device) as client:
             conn = BleConnection(client)
@@ -584,6 +627,7 @@ async def run_batch_pass(
     *,
     settings: Optional[dict] = None,
     lock_wait_s: float = CLI_LOCK_WAIT_S,
+    pi_address: Optional[str] = None,
 ) -> BatchResult:
     """One Batch pass: ingest the logs, compute pending Readings, and (if
     any) push them over one BLE connection (spec §7.3). `--dry-run` is
@@ -631,6 +675,7 @@ async def run_batch_pass(
                 settings_payload=None if settings is None else build_settings_payload(settings, did),
                 settings_outcome=settings_outcome,
                 lock_wait_s=lock_wait_s,
+                pi_address=pi_address,
             )
         except BleLinkBusy:
             raise
@@ -649,6 +694,7 @@ async def run_gauge_push(
     *,
     settings: Optional[dict] = None,
     lock_wait_s: float = CLI_LOCK_WAIT_S,
+    pi_address: Optional[str] = None,
 ) -> bool:
     """One Gauge push (spec §7.4). `--dry-run` is handled separately by
     `print_dry_run`, which never calls this.
@@ -668,7 +714,7 @@ async def run_gauge_push(
     mirroring the Daily-batch path's one-extra-pass cap.
     """
     did = desktop_id()
-    payload = build_gauge_wire_payload(did)
+    payload = build_gauge_wire_payload(did, projects_root)
     if payload is None:
         print("No Gauge to push this cycle.")
         return False
@@ -684,6 +730,7 @@ async def run_gauge_push(
             settings_payload=None if settings is None else build_settings_payload(settings, did),
             settings_outcome=settings_outcome,
             lock_wait_s=lock_wait_s,
+            pi_address=pi_address,
         )
     except BleLinkBusy:
         # §7.1: nothing was attempted, so this is not "no Pi". The caller
@@ -708,6 +755,7 @@ async def run_gauge_push(
             projects_root,
             settings=settings,
             lock_wait_s=lock_wait_s,
+            pi_address=pi_address,
         )
     print(f"Gauge push {'ok' if ok else 'failed'}.")
     return ok
@@ -754,7 +802,7 @@ def print_dry_run(store_path: Optional[str] = None, projects_root: Optional[Path
             )
 
         print("Gauge state:")
-        gauge_payload = gauge.build_gauge_payload()
+        gauge_payload = gauge.build_gauge_payload(projects_root=projects_root)
         if gauge_payload is None:
             print("  no Gauge to push this cycle (no snapshot, or stale >= 300s)")
         else:
@@ -795,12 +843,14 @@ async def _async_main(
     resolved_store_path: Optional[str] = None,
     resolved_projects_root: Optional[Path] = None,
     settings: Optional[dict] = None,
+    pi_address: Optional[str] = None,
 ) -> int:
-    """`resolved_store_path`/`resolved_projects_root`/`settings` are
-    Configuration, already resolved once by `main()` (spec §3.3). Defaulting
-    to `None` (falling back to `args.store` / the compiled default, and to no
-    re-assertion) keeps this directly callable the way the existing tests
-    call it, without a Configuration store in the picture.
+    """`resolved_store_path`/`resolved_projects_root`/`settings`/`pi_address`
+    are Configuration, already resolved once by `main()` (spec §3.3).
+    Defaulting to `None` (falling back to `args.store` / the compiled
+    default, no re-assertion, and the generic service-UUID scan) keeps this
+    directly callable the way the existing tests call it, without a
+    Configuration store in the picture.
     """
     store_path = args.store if resolved_store_path is None else resolved_store_path
 
@@ -825,14 +875,22 @@ async def _async_main(
     try:
         if not args.gauge_only:
             result = await run_batch_pass(
-                store_path, resolved_projects_root, settings=settings, lock_wait_s=CLI_LOCK_WAIT_S
+                store_path,
+                resolved_projects_root,
+                settings=settings,
+                lock_wait_s=CLI_LOCK_WAIT_S,
+                pi_address=pi_address,
             )
             if not result.ok:
                 exit_code = 1
 
         if not args.batch_only:
             await run_gauge_push(
-                store_path, resolved_projects_root, settings=settings, lock_wait_s=CLI_LOCK_WAIT_S
+                store_path,
+                resolved_projects_root,
+                settings=settings,
+                lock_wait_s=CLI_LOCK_WAIT_S,
+                pi_address=pi_address,
             )
     except BleLinkBusy as exc:
         print(f"Can't tell yet — {exc}.", file=sys.stderr)
@@ -862,6 +920,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 str(cfg.paths_store),
                 cfg.paths_projects_root,
                 settings_from_config(cfg),
+                cfg.pi_address,
             )
         )
     except usage.StoreVersionError as exc:

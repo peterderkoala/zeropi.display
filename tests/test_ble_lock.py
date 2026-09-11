@@ -382,7 +382,7 @@ def test_a_busy_link_never_reads_as_no_pi_from_run_batch_pass(tmp_path, monkeypa
 
 def test_a_busy_link_never_reads_as_no_pi_from_run_gauge_push(tmp_path, monkeypatch):
     monkeypatch.setattr(push, "desktop_id", lambda *a, **kw: "abc")
-    monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did: {"kind": "gauge"})
+    monkeypatch.setattr(push, "build_gauge_wire_payload", lambda did, projects_root=None: {"kind": "gauge"})
 
     async def never_scanned(*a, **kw):  # pragma: no cover - must not run
         raise AssertionError("the scan must not be attempted while the link is busy")

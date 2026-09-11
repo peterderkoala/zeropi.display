@@ -554,6 +554,43 @@ def mark_pushed(conn: sqlite3.Connection, date_: str, project_key: str, model: s
     conn.commit()
 
 
+@dataclass(frozen=True)
+class PushedSummary:
+    """The Desktop's half of management-surface spec §8.3's comparisons —
+    gathered here because it is a pure store query, and consumed by
+    `cli.py`'s `verdict.DesktopFacts` (verdict.py itself takes no I/O)."""
+
+    readings: int
+    coverage_start: str | None
+    last_pushed_at: str | None
+
+
+def pushed_summary(conn: sqlite3.Connection) -> PushedSummary:
+    """`readings`: the count of distinct `(local_date, project_key, model)`
+    groups with `pushed_at IS NOT NULL` (spec §8.3's Readings check).
+    `coverage_start`: `MIN(local_date)` over those same pushed entries (the
+    Coverage check). `last_pushed_at`: `MAX(pushed_at)`, this Desktop's own
+    record of when it last successfully pushed anything -- what the
+    Restarted check compares the Pi's `uptime_s` against.
+    """
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS readings, MIN(local_date) AS coverage_start, MAX(pushed_at) AS last_pushed_at
+        FROM (
+            SELECT local_date, MAX(pushed_at) AS pushed_at
+            FROM entries
+            WHERE pushed_at IS NOT NULL
+            GROUP BY local_date, project_key, model
+        )
+        """
+    ).fetchone()
+    return PushedSummary(
+        readings=row["readings"],
+        coverage_start=row["coverage_start"],
+        last_pushed_at=row["last_pushed_at"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # §4.6 Aggregating Readings
 # ---------------------------------------------------------------------------
