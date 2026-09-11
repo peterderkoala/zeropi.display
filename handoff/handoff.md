@@ -197,9 +197,10 @@ floor.
 ⚠ **Weather, calendar and the One-liner were dropped from the project**
 (maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
 usage display and nothing else. `CONTEXT.md` no longer defines **One-liner**;
-`pi-eink-ble-concept.md` and `CLAUDE.md` are rewritten, with the concept
-document's milestone-1 sections kept as the historical record they are. Do not
-reintroduce them from an old document.
+`CLAUDE.md` is rewritten, and the original concept document
+(`pi-eink-ble-concept.md`) was **deleted on 2026-09-11** (maintainer's call) —
+its milestone-1 design lives on in the specs, the code and git history. Do not
+reintroduce the dropped ideas from an old document.
 
 **The Pi's fonts are `fonts-dejavu-core`**, installed by `install-pi.sh` since
 #64, at `/usr/share/fonts/truetype/dejavu/`. (Before that the Pi had no fonts
@@ -253,8 +254,11 @@ of the panel. The `PWR_PIN`-on-BCM-18 caveat in `pi/waveshare_epd/README.md`
 does still stand — it is out of scope by the maintainer's call, and blocks no
 frame from drawing.
 
-- Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
-  shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
+- Design: the three binding specs in `docs/` (`spec-usage-pipeline.md`,
+  `spec-eink-rendering.md`, `spec-management-surface.md`) — BLE service shape,
+  Payload/Ack format, SQLite schema, deployment path; UUIDs are in
+  `pi/receive.py` and `desktop/push.py`. `README.md` is the overview. (The
+  original `pi-eink-ble-concept.md` was deleted 2026-09-11.)
 - Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**
   Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
   Coverage Start, Usage, Gauge, Project Key, Project Label, Window, **Limit

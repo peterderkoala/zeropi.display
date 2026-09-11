@@ -43,7 +43,8 @@ itself. That script owns the BlueZ configuration the link depends on — most
 critically a `bluetoothd --noplugin=midi,sap,avrcp` systemd drop-in,
 without which `bluetoothd` segfaults on every incoming LE connection. Do
 not hand-apply Pi state; add it to `pi/install-pi.sh` instead. The Desktop
-role (`desktop/install-desktop.sh`) is stubbed pending #34.
+role (`desktop/install-desktop.sh`) sets up a venv; its standalone mode still
+deploys only `push.py`, so the Desktop is run from a clone.
 
 `pi/install-pi.sh` also provisions the **e-ink panel driver**: it enables SPI,
 installs the apt-side stack (`python3-spidev`, `python3-gpiozero`,
@@ -88,9 +89,9 @@ uv pip install -r desktop/requirements-dev.txt
 
 ## What this project is
 
-zeropi.display is a Pi Zero e-ink display project (see
-`pi-eink-ble-concept.md` for the full concept). It reuses existing pwnagotchi
-Pi Zero + Waveshare e-ink HAT hardware to show **live Claude Code usage**: a
+zeropi.display is a Pi Zero e-ink display project (`README.md` is the
+current overview). It reuses existing Pi Zero + Waveshare e-ink HAT hardware
+to show **live Claude Code usage**: a
 gauge of current consumption against the rolling limit windows, backed by a
 daily history graph, read from local session data (JSONL logs in
 `~/.claude/projects/*.jsonl`) rather than a paid API key.
@@ -131,8 +132,8 @@ fault the way `status`/`redraw`/`wipe` can).
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
   `usage.py`/`gauge.py` as its data layer and `service.py` as the resident
-  loop. Reads the real Claude Code JSONL logs; weather and calendar are
-  still unsourced.
+  loop, `cli.py` as the management surface. Reads the real Claude Code
+  JSONL logs.
 - **Pi Zero (BLE peripheral)**: `pi/receive.py`, Python + `bluezero`. Dumb
   receiver — advertises the GATT service, accepts a Payload write,
   persists it as a Reading, and returns an Ack. It does not fetch or
