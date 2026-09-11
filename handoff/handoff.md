@@ -2,11 +2,20 @@
 
 ## Where things stand
 
+> **The management surface is DONE and hardware-verified (2026-09-11).** Map
+> #80's last ticket, **#87, ran every §10.6 scenario on the dev Pi** —
+> Settings surviving a reboot, all three verbs, a cross-checked `status`,
+> both Unreachable cases, `btmon` (status Ack **229 B** on the wire, request
+> 71 B) — and **found five Desktop-side defects, all fixed during the run**;
+> the Pi-side code needed no change. Write-up:
+> `docs/management-surface-verification.md`. ⚠ Three design questions it
+> raised are on #87, not decided (see [For the next session](#for-the-next-session)).
+>
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
 > panel draws, verified on real glass. **Map #70 is DONE too, closed the same
 > day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
-> #77 from all eight of its decision tickets. **Map #80 implements it, and
-> tickets 1-6 of 7 are done**: #81 (`ef129e3`) built `desktop/config.py` —
+> #77 from all eight of its decision tickets. **Map #80 implemented it, all
+> seven tickets**: #81 (`ef129e3`) built `desktop/config.py` —
 > the Configuration store and the 18-key Tier 1/2 schema, resolved once at
 > `push.py`/`service.py`'s entry points. #82 (`0eb9393`, both 2026-09-10)
 > built the Pi's configuration seam — `apply_settings`/`get_setting` persist
@@ -29,8 +38,7 @@
 > `push`/`redraw`/`wipe`/`restart`, `--json`/`--brief`, and the §9.6 exit-code
 > table. It also closed spec §11.1 (`DEFAULT_PROJECTS_ROOT` defined twice) and
 > wired `pi.address` into `find_pi()`, both of which #81-#85 had left latent.
-> Only the hardware verification (#87) is left on map #80. See
-> [For the next session](#for-the-next-session) below.
+> #87 then verified the whole surface on hardware (above).
 >
 > ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
 > passes** — worth noting as a pattern, not just their specific fixes:
@@ -69,8 +77,10 @@
 >   never appear for a busy link. *Both* review axes found it independently.
 >   ⚠ **The lesson generalises: a distinction is only as good as the seam it
 >   is raised through.** `BleLinkBusy` now propagates out of both entry
->   points; the CLI turns it into §9.6's exit code 2 (*can't tell*), the
->   service logs INFO and drops the pass. Also fixed there: `flock`'s
+>   points; the CLI turns it into §9.6's exit code 2 (*can't tell*) for
+>   `status`/`push`/`pair` — **3** for a refused `redraw`/`wipe` since #87,
+>   which is what §9.6 says for a Command — and the service logs INFO and
+>   drops the pass. Also fixed there: `flock`'s
 >   `OSError` was reported as *busy* for **every** errno (ENOLCK is this
 >   Desktop's own problem, not an occupied link).
 > - **#85**: `EXPECTED_PI_SCHEMA_VERSION` was defined, drift-tested against
@@ -100,6 +110,16 @@
 >   for both. Fixing it means `run_batch_pass` propagating connect
 >   failures too, which also touches `service.py`'s retry semantics —
 >   real work, left for a later ticket rather than expanded into this one.
+> - **#87** (hardware, not review, found these — then review found one more
+>   in the fixes): an error Ack to `status` rendered as *unreachable*; `pair`
+>   cleared push marks outside the Window, so a re-pair with the same Pi read
+>   as *not working* permanently; `status` read the Desktop's marks *before*
+>   waiting out a Batch holding the lock, so the collision §7.1 designed the
+>   wait for produced a false *not working*. ⚠ **All three are a correct
+>   `verdict.py` fed the wrong input** — stale, over-cleared, or mislabelled
+>   on the way in. The pure function is what made them quick to pin, and why
+>   no test inside it could see them. Review then caught the in-lock store
+>   read sitting inside the BLE `try`, whose catch-all means *absent*.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -305,7 +325,24 @@ the judgment calls), tickets in dependency order:
    ⚠ **Known, accepted gap, not a bug**: `push`/`pair` cannot yet tell
    *absent* from *the Pi rejected every row* — see the review-findings bullet
    above for why, and what fixing it would touch.
-7. #87 End-to-end hardware verification — depends on #86 (done).
+7. ✅ **#87 End-to-end hardware verification** — done, 2026-09-11.
+   `docs/management-surface-verification.md`. Five defects fixed (table in
+   the doc); 474 tests passing (was 462 + 3 date-rot failures, which were
+   fixture dates sliding out of the Window, not a product bug —
+   `conftest.pin_today`). The dev Pi runs `10876a5` and its `data.db` was
+   restored to the pre-run backup (`/home/pi/data.db.bak-87`).
+   ⚠ **Raised on #87, not decided — the next real work on this surface:**
+   - **Push marks are not per-Pi.** `pair` now clears only the Window's marks,
+     right for re-pairing the same Pi; a *replacement* Pi (adopts the Desktop
+     Id without a wipe) then shows *missing N Readings* until a `wipe`. And
+     `push.py --resend-all` still clears **every** mark, because pipeline
+     §4.6/§7.6 bind that wording — so it still produces the false *not
+     working*. Fixing either properly means amending the pipeline spec.
+   - **§5.1 defers to a field §5.4 lacks**: "what the Pi now holds" is said
+     to belong to the status verb, which reports no Setting.
+   - **The Pi's journal logs no Command and no Setting** — a `wipe` leaves
+     nothing on the Pi. And `--json` is only clean when no progress line
+     precedes it (`Scanning…` etc. are on stdout, pre-existing).
 
 ⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
 complete: §4 is the full Tier inventory of every constant in this project, §5
@@ -1195,7 +1232,7 @@ in `docs/research/`):
   the next frontier ticket for you if you do not name one.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
-  assert on pixels). The suite is **412 passing** and must stay green with no
+  assert on pixels). The suite is **474 passing** and must stay green with no
   panel, no SPI, no bluezero, no `~/.claude` — and, since #84, without taking
   the real BLE lock either (`tests/conftest.py` redirects `BLE_LOCK_PATH` to
   `tmp_path` for every test; a test that took it for real would contend with a

@@ -116,13 +116,17 @@ two new Payload kinds (`settings`, `command`) with three verbs (`redraw`,
 "constants stay hardcoded" comment (pipeline §8.1) narrower than it reads, and
 that ADR-0012 and ADR-0013 came out of it.
 
-**Implementation is map #80, and tickets 1-6 of 7 are now done** — only #87
-(hardware verification) is left. `desktop/cli.py` (#86) is built: `status`,
+**Implementation was map #80, all seven tickets done, and the surface is
+verified on real hardware** (#87, 2026-09-11): `desktop/cli.py` — `status`,
 `config` (list/get/set), and the five action commands (`pair`, `push`,
 `redraw`, `wipe`, `restart`), with `--json`/`--brief` and the §9.6 exit-code
-table. See `handoff/handoff.md` for what #86 found and fixed, and the one
-known gap it left for later (`push`/`pair` cannot yet tell an absent Pi from a
-real per-row fault the way `status`/`redraw`/`wipe` can).
+table — driven against the dev Pi for every §10.6 scenario. See
+`docs/management-surface-verification.md` for the run, including the five
+Desktop-side defects it found and fixed, and `handoff/handoff.md` for the
+design questions it raised and left open (push marks are not per-Pi;
+`--resend-all` still clears every mark by binding pipeline text) and #86's
+known gap (`push`/`pair` cannot yet tell an absent Pi from a real per-row
+fault the way `status`/`redraw`/`wipe` can).
 
 Roles (see `CONTEXT.md` for the domain vocabulary):
 - **Desktop (BLE central)**: `desktop/push.py`, Python + `bleak`, with
