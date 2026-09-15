@@ -2,6 +2,16 @@
 
 ## Where things stand
 
+> **Live work (2026-09-16): [map #89 — a lightweight web UI for the Management
+> Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
+> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Five
+> of its nine tickets are closed: stack research (#90), the stack (#91), the
+> in-process seam (#92), the process model (#93) and how a long BLE action
+> appears over HTTP (#94). The detail is on the map's Decisions-so-far; see
+> [For the next session](#for-the-next-session) for what can be taken next.
+> **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
+> (`dev` → `main`) is still open.
+>
 > **The management surface is DONE and hardware-verified (2026-09-11).** Map
 > #80's last ticket, **#87, ran every §10.6 scenario on the dev Pi** —
 > Settings surviving a reboot, all three verbs, a cross-checked `status`,
@@ -274,6 +284,47 @@ frame from drawing.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## For the next session
+
+### Map #89 — the web UI spec (live)
+
+Work it with `/mattpocock-skills:wayfinder continue`. The map body has the
+standing constraints. ⚠ **Read its Notes before anything else**, especially:
+localhost only, no JS build step, the web UI is a skin over the same substrate
+as `cli.py`, and the Pi is absent.
+
+- ✅ **#90 Candidate stacks** (research): `docs/research/web-ui-stack.md` on
+  `research/web-ui-stack`.
+- ✅ **#91 Pick the stack**: FastAPI + uvicorn, with Preact 10 + htm vendored,
+  in a separate `desktop/requirements-web.txt`. ⚠ Pydantic describes the HTTP
+  shape only; `config.py` stays the single validation authority.
+- ✅ **#92 The seam**: operations are extracted from `cli.py`, return structured
+  results and never print. Configuration is read **per operation** in a
+  long-lived surface. `BatchResult` gains `settings_ok` and `unreachable`.
+- ✅ **#93 Process model** (2026-09-15): a resident `zeropi-web` `systemd --user`
+  unit running `cli.py web`, **independent of `zeropi-push`**. It binds
+  `127.0.0.1:8737`. It ships as a unit file that nothing installs yet, and
+  nothing installs `zeropi-push` either.
+- ✅ **#94 Long BLE actions over HTTP** (2026-09-16): a `POST` returns an
+  **Operation** handle that is followed over SSE. One BLE Operation runs per
+  process, and it runs to completion with no cancel. ⚠ The handle names an
+  Operation that has already started, never a queue (ADR-0011).
+- ⏭ **Takeable now, both grilling:** **#95 When the page asks for status** and
+  **#96 What stops another website from driving the localhost service**. Both
+  carry input comments from #93/#94; read the comments, not just the bodies.
+- 🔒 **#97 The pages (prototype, fake data)** is blocked by #95. **#98 Write
+  `docs/spec-web-ui.md`** is blocked by #95–#97. Each resolution comment
+  carries a *Consequences for the spec* list, which is #98's gap check.
+- **Fog on the map:** install and packaging (two units, neither installed),
+  push marks not per-Pi, pushed status.
+
+**Branches for this map:**
+- `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
+  carries two changes: *Configuration* is read once per run, and a web
+  operation counts as a run (#92); and the new term **Operation** (#94).
+  **`dev`'s `CONTEXT.md` has neither yet.**
+- Prototypes go on `prototype/*` branches and research on `research/*`.
+
+### Map #80 — the management surface implementation (closed)
 
 **Map #70 is CLOSED**; its destination,
 [`docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-management-surface.md)
@@ -818,8 +869,15 @@ them in the spec's own voice:
 
 ## Maps
 
-**Live map: [#70 — One management surface for both ends
-(spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
+**Live map: [#89 — A lightweight web UI for the Management Surface
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, charted
+2026-09-15. It is a planning map with tickets #90–#98, and five are closed. See
+[For the next session](#for-the-next-session). The two maps below it, #70 (the
+spec) and #80 (its implementation), are **closed but not yet archived** into
+`handoff/archive/`.
+
+*Previous live map:* [#70 — One management surface for both ends
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/70), charted
 2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
 fog** as the frontier advanced, making eight. **All eight are closed** — only
 #77 (write the spec) remains, and it is the map's destination rather than
@@ -1231,9 +1289,19 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#70**.
-  Invoke it with the map, not with a fresh idea — charting is done. It picks
-  the next frontier ticket for you if you do not name one.
+- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
+  Invoke it with `continue` or the map, not with a fresh idea, because
+  charting is done. It picks the next frontier ticket for you if you do not
+  name one. #95 and #96 are grilling tickets:
+  - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
+  - Ask in numbered rounds, with a recommendation per question.
+  - Glossary edits go to `plan/web-ui`, never to `dev`.
+- **`mattpocock-skills:prototype` for #97 The pages**, on fake data. The
+  Unreachable, *busy* and Operation states (listed in #97's input comment) must
+  all render.
+- **`mattpocock-skills:writing-for-agents`** is worth loading for #98, the
+  spec write-up. Model it on `docs/spec-management-surface.md`'s shape: the
+  gap check, the ⚠ traps, and an out-of-scope section.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
   assert on pixels). The suite is **474 passing** and must stay green with no
@@ -1258,13 +1326,13 @@ in `docs/research/`):
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
+- *(historic, map #70 — closed; the same holds for #89)* **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
   tickets are grilling tickets, because #70 is a **planning** map. Note
   the contrast with map #59: on an *execution* map a question means you have
   found a **gap in the spec**, so you say so on the ticket rather than grilling
   your way to a private answer (#66 found two and did exactly that). #70 is the
   opposite case — the whole point is to have the argument now.
-- **`mattpocock-skills:prototype` for [#76 What the CLI looks
+- *(historic, closed)* **`mattpocock-skills:prototype` for [#76 What the CLI looks
   like](https://github.com/peterderkoala/zeropi.display/issues/76)**, the map's
   one non-planning ticket. It exists because this repo has twice had a paper
   decision overturned the moment something was rendered (#26, #38).
