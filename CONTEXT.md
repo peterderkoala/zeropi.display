@@ -256,10 +256,19 @@ _Avoid_: Health, status (that is what the Pi *reports*), state
 
 **Configuration**:
 The Desktop's own tunable values, held in a dedicated SQLite store separate
-from the archive of record. Read once at process startup and never re-read, so
-a process runs one known Configuration for its whole life. Written only by the
-management surface — never by the resident service.
+from the archive of record. Read once at the start of a **run** and never
+re-read during it, so a run executes one known Configuration throughout. Written
+only by the management surface — never by the resident service.
 _Avoid_: Config file, preferences, options, config table
+
+> A **run** is the resident service's whole process life, and one CLI
+> invocation. For a long-lived Management Surface process such as the web UI it
+> is **one operation**, not the process life: the surface writes Configuration
+> (`pair` records the Pi's address) and must see its own writes. A web UI that
+> froze Configuration at startup would answer *not paired* straight after its
+> own `pair`. What the rule protects is that *which Configuration is the
+> resident service running?* has one answer. That is untouched, and it is what
+> *pending restart* is measured against.
 
 > Deliberately not a section in the Desktop store. That store is the archive of
 > record (ADR-0005) with its own version gate and its own backup story;
