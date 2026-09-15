@@ -317,6 +317,22 @@ _Avoid_: Offline, down, disconnected, unavailable
 > most sharply for a destructive one, because the reason the Pi is Unreachable
 > may be the reason not to act on it.
 
+**Operation**:
+One management action that touches the link, as the Management Surface
+carries it out: a status request, a push, a pairing, a Command, or a Settings
+change. An Operation has **started or been refused**. There is no third state
+in which it is waiting to start. A surface runs one Operation at a time, and
+a second one asked for meanwhile is refused, not held. Once started, an
+Operation runs to completion whether or not anyone is still watching.
+_Avoid_: Job, task, request, action queue, pending action
+
+> Following an Operation already running, from a reloaded page or a second
+> window, is **not** a queue. A queue holds something that has not started and
+> fires later, at a time nobody chose; that is exactly what
+> [ADR-0011](./docs/adr/0011-management-actions-are-never-deferred.md) rules
+> out. If you find yourself describing an Operation as *pending*, it is the
+> wrong word or the wrong design.
+
 **Tier**:
 Which of three classes a tunable value belongs to: a deployment fact, freely
 editable; a policy value, editable within a validated range; or a **verified
