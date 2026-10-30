@@ -590,6 +590,26 @@ def test_pair_absent_exits_2(tmp_path, capsys, monkeypatch):
     assert "unreachable" in capsys.readouterr().err.lower()
 
 
+def test_pair_whose_batch_finds_no_pi_exits_2(tmp_path, capsys, monkeypatch):
+    cfg = _cfg(tmp_path)
+    _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _fake_radio(monkeypatch, [])
+    found = push.find_pi
+
+    async def gone_on_the_batch_scan(*a, **kw):
+        if kw.get("address"):
+            raise RuntimeError("no reply from paired Pi AA:BB:CC:DD:EE:FF")
+        return await found(*a, **kw)
+
+    monkeypatch.setattr(push, "find_pi", gone_on_the_batch_scan)
+
+    code = asyncio.run(cli.cmd_pair(cfg, _cfg_path(tmp_path), _args(["pair"]), lock_wait_s=0.0))
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "unreachable" in captured.err and "1 failed" not in captured.out
+
+
 def test_push_not_paired_exits_2(tmp_path, capsys):
     cfg = _cfg(tmp_path)
 
@@ -631,23 +651,19 @@ def test_push_busy_exits_2(tmp_path, monkeypatch, capsys):
     assert "busy" in capsys.readouterr().err.lower()
 
 
-def test_push_absent_reports_the_failed_batch(tmp_path, monkeypatch, capsys):
-    # ⚠ Known, pre-existing limitation (shared with push.py's own CLI):
-    # `run_batch_pass` swallows a scan/connect failure into a failed
-    # BatchResult rather than raising it (spec §7.3 -- "no Pi advertising
-    # fails the whole Batch"), so `push`/`pair` cannot distinguish *absent*
-    # from *some rows rejected* the way `status`/`redraw`/`wipe` can via
-    # `_send_command`'s direct `_with_ble_connection` call. Exit code is 1
-    # here, not §9.6's 2 -- a real gap, not a chosen design, worth fixing in
-    # a later ticket by having `run_batch_pass` propagate connect failures.
+def test_push_absent_exits_2_as_unreachable(tmp_path, monkeypatch, capsys):
+    # #104 closed #86's gap: a connection that never opened is Unreachable
+    # (§9.6's 2), never "every row failed".
     cfg = _cfg(tmp_path, **{"pi.address": "AA:BB:CC:DD:EE:FF"})
     _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
     _absent_radio(monkeypatch)
 
     code = asyncio.run(cli.cmd_push(cfg, _args(["push"]), lock_wait_s=0.0))
 
-    assert code == 1
-    assert "0 sent, 1 failed" in capsys.readouterr().out
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "unreachable" in captured.err
+    assert "1 failed" not in captured.out
 
 
 def test_redraw_not_paired_exits_2(tmp_path, capsys):

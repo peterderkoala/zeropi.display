@@ -272,3 +272,138 @@ def test_default_progress_prints_the_lock_wait_to_stderr_and_the_rest_to_stdout(
     captured = capsys.readouterr()
     assert captured.err == "Waiting for the link\n"
     assert captured.out == "Scanning for the Pi\n"
+
+
+# ---------------------------------------------------------------------------
+# §4.5 BatchResult.unreachable / settings_ok, §9.3 discover (#104)
+# ---------------------------------------------------------------------------
+
+
+def test_push_batch_absent_is_unreachable_with_the_failed_count_unchanged(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path, **PAIRED)
+    _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _absent_radio(monkeypatch, detail="no reply from paired Pi")
+
+    r = asyncio.run(operations.push_batch(cfg, lock_wait_s=0.0))
+
+    assert r.batch.unreachable == "no reply from paired Pi"
+    assert r.batch.failed == 1 and not r.batch.ok  # service.py's retry signal
+    assert r.unreachable.reason == "absent" and r.unreachable.detail == "no reply from paired Pi"
+    assert r.outcome is Outcome.CANT_TELL
+
+
+@pytest.mark.parametrize(
+    "settings_ack, expected",
+    [(_settings_ack(), True), ({"status": "error", "reason": "bad setting"}, False)],
+)
+def test_push_batch_settings_ok_reflects_the_re_assertion(tmp_path, monkeypatch, settings_ack, expected):
+    cfg = _cfg(tmp_path, **PAIRED)
+    _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _fake_radio(monkeypatch, [settings_ack, {"status": "ok"}])
+
+    r = asyncio.run(operations.push_batch(cfg, lock_wait_s=0.0))
+
+    assert r.batch.settings_ok is expected
+    assert r.batch.sent == 1 and r.batch.unreachable is None and r.unreachable is None
+    assert r.outcome is Outcome.OK
+
+
+def test_pair_by_address_scans_for_that_address(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    _fake_radio(monkeypatch, [_settings_ack()])
+    real_find_pi = push.find_pi
+    asked = []
+
+    async def recording_find_pi(*a, **kw):
+        asked.append(kw.get("address"))
+        return await real_find_pi(*a, **kw)
+
+    monkeypatch.setattr(push, "find_pi", recording_find_pi)
+
+    r = asyncio.run(operations.pair(cfg, _cfg_path(tmp_path), address="AA:BB:CC:DD:EE:FF"))
+
+    assert asked[0] == "AA:BB:CC:DD:EE:FF"
+    assert r.address == "AA:BB:CC:DD:EE:FF" and _stored(tmp_path)["pi.address"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_pair_whose_batch_finds_no_pi_is_unreachable(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    _seed_pending(cfg.paths_store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _fake_radio(monkeypatch, [])
+    calls = 0
+    found = push.find_pi
+
+    async def gone_after_the_first_scan(*a, **kw):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("no reply from paired Pi")
+        return await found(*a, **kw)
+
+    monkeypatch.setattr(push, "find_pi", gone_after_the_first_scan)
+
+    r = asyncio.run(operations.pair(cfg, _cfg_path(tmp_path)))
+
+    assert r.address == "AA:BB:CC:DD:EE:FF"
+    assert r.unreachable.reason == "absent" and r.outcome is Outcome.CANT_TELL
+
+
+class _Adv:
+    def __init__(self, uuids, rssi, local_name=None):
+        self.service_uuids, self.rssi, self.local_name = uuids, rssi, local_name
+
+
+class _Dev:
+    def __init__(self, address, name):
+        self.address, self.name = address, name
+
+
+def test_discover_returns_every_zeropi_device_not_the_first(monkeypatch):
+    from bleak import BleakScanner
+
+    seen_timeout = []
+
+    async def fake_discover(timeout=5.0, *, return_adv=False, **kw):
+        seen_timeout.append(timeout)
+        assert return_adv
+        return {
+            "AA:AA:AA:00:00:01": (_Dev("AA:AA:AA:00:00:01", "zeropi"), _Adv([push.SERVICE_UUID.upper()], -60)),
+            "BB:BB:BB:00:00:02": (_Dev("BB:BB:BB:00:00:02", "headphones"), _Adv(["0000110b-0000-1000-8000-00805f9b34fb"], -40)),
+            "CC:CC:CC:00:00:03": (_Dev("CC:CC:CC:00:00:03", None), _Adv([push.SERVICE_UUID], -80, "zeropi-display")),
+        }
+
+    monkeypatch.setattr(BleakScanner, "discover", fake_discover)
+
+    r = asyncio.run(operations.discover(lock_wait_s=0.0))
+
+    assert seen_timeout == [push.SCAN_TIMEOUT_SECONDS]  # the full scan, §9.3
+    assert r.devices == (
+        operations.FoundPi("zeropi", "AA:AA:AA:00:00:01", -60),
+        operations.FoundPi("zeropi-display", "CC:CC:CC:00:00:03", -80),
+    )
+    assert r.unreachable is None and r.outcome is Outcome.OK
+
+
+def test_discover_takes_the_ble_lock(monkeypatch):
+    fd = _hold(push.BLE_LOCK_PATH)
+    try:
+        r = asyncio.run(operations.discover(lock_wait_s=0.0))
+    finally:
+        os.close(fd)
+
+    assert r.devices == () and r.unreachable.reason == "busy"
+    assert r.outcome is Outcome.CANT_TELL
+
+
+def test_discover_with_no_adapter_is_unreachable_not_a_crash(monkeypatch):
+    from bleak import BleakScanner
+
+    async def no_adapter(*a, **kw):
+        raise OSError("No Bluetooth adapters found.")
+
+    monkeypatch.setattr(BleakScanner, "discover", no_adapter)
+
+    r = asyncio.run(operations.discover(lock_wait_s=0.0))
+
+    assert r.devices == () and r.unreachable.reason == "absent"
+    assert r.outcome is Outcome.CANT_TELL

@@ -13,9 +13,13 @@
 > `desktop/operations.py` holds every action, with results carrying an
 > `outcome` and pre-BLE refusals raised as `Refused(kind, …)`; `cli.py` is a
 > renderer whose output was diffed byte-identical; `push.py` takes
-> `progress(kind, text)`. **Takeable now: #104.** Work it with
-> `/mattpocock-skills:wayfinder continue` (plus `tdd`); read #103's resolution
-> comment and the note on #104 first.
+> `progress(kind, text)`. **#104 is done too**: `BatchResult` has
+> `settings_ok`/`unreachable`, so `push`/`pair` against an absent Pi exit 2
+> as Unreachable (#86's gap closed); `operations.pair(address=…)`;
+> `operations.discover` → `DiscoverResult(devices: FoundPi…)` over
+> `push.scan_for_pis`. **Takeable now: #105.** Work it with
+> `/mattpocock-skills:wayfinder continue` (plus `tdd`); read #104's
+> resolution comment first.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

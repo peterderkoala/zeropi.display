@@ -205,6 +205,12 @@ class BatchResult:
     sent: int = 0
     failed: int = 0
     wiped: bool = False
+    # Additive (web-ui §4.5); `failed` still counts every row, so `ok` and
+    # service.py's retry are unchanged.
+    settings_ok: bool = False  # also False when no connection was opened, so nothing was re-asserted
+    # Set only when the connection never opened; it is always the *absent*
+    # case, since `BleLinkBusy` propagates instead.
+    unreachable: Optional[str] = None
 
     @property
     def ok(self) -> bool:
@@ -385,6 +391,16 @@ async def find_pi(timeout: float = SCAN_TIMEOUT_SECONDS, address: Optional[str] 
             f"No device advertising service {SERVICE_UUID} found within {timeout}s"
         )
     return device
+
+
+async def scan_for_pis(timeout: float = SCAN_TIMEOUT_SECONDS) -> list[tuple[Any, Any]]:
+    """Every `(device, advertisement)` advertising the zeropi service in one
+    full scan (web-ui §9.3) -- `find_pi` stops at the first, and a second Pi
+    in range is a real case."""
+    from bleak import BleakScanner
+
+    found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    return [(device, adv) for device, adv in found.values() if matches_service(device, adv)]
 
 
 class BleConnection:
@@ -693,7 +709,13 @@ async def run_batch_pass(
         did = desktop_id()
         settings_outcome = SettingsOutcome()
 
+        # Set once scan, connect, notify and §7.2's re-assertion are behind us:
+        # a failure before then is a Pi that never answered usably.
+        opened = False
+
         async def _run(send_one: SendOne) -> BatchResult:
+            nonlocal opened
+            opened = True
             return await run_batch_with_connection(
                 store, did, send_one, wiped_already=settings_outcome.wiped, progress=progress
             )
@@ -711,7 +733,8 @@ async def run_batch_pass(
             raise
         except Exception as exc:  # noqa: BLE001 - no Pi advertising fails the whole Batch (§7.3)
             print(f"Batch failed: {exc}")
-            return BatchResult(sent=0, failed=len(readings))
+            return BatchResult(sent=0, failed=len(readings), unreachable=None if opened else str(exc))
+        result.settings_ok = settings_outcome.ok
         print(f"Batch complete: {result.sent} sent, {result.failed} failed, wiped={result.wiped}")
         return result
     finally:

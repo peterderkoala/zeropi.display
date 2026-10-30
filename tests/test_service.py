@@ -10,6 +10,7 @@ ticket's testing brief.
 from __future__ import annotations
 
 import asyncio
+import functools
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,6 +18,7 @@ import pytest
 import push
 import service
 from service import BatchScheduler, DisplayedGaugeState, GaugeGate
+from test_cli import _absent_radio, _seed_pending
 
 
 def _dt(hour, minute=0, day=5, tz=timezone.utc):
@@ -573,3 +575,36 @@ def test_a_busy_link_is_dropped_quietly_not_logged_as_a_failure(caplog):
 
 async def _noop_sleep(_seconds):
     return None
+
+
+def test_an_unreachable_batch_is_still_a_failure_so_it_is_retried(tmp_path, monkeypatch, pin_today):
+    """#104 added `BatchResult.unreachable`; `failed` and `ok` are unchanged,
+    so the service still records no success and retries (pipeline §7.3)."""
+    store = tmp_path / "store.db"
+    _seed_pending(store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _absent_radio(monkeypatch)
+    results, successes = [], []
+    real_pass = functools.partial(
+        push.run_batch_pass, projects_root=tmp_path / "no-projects", lock_wait_s=0.0
+    )
+
+    async def recording_pass(store_path):
+        results.append(await real_pass(store_path))
+        return results[-1]
+
+    monkeypatch.setattr(BatchScheduler, "note_success", lambda self, now: successes.append(now))
+
+    asyncio.run(
+        service.run_forever(
+            str(store),
+            max_iterations=1,
+            now_wall_fn=lambda: _dt(4, 30),
+            read_snapshot_fn=lambda: None,
+            run_batch_pass_fn=recording_pass,
+            run_gauge_push_fn=_noop_sleep,
+            sleep_fn=_noop_sleep,
+        )
+    )
+
+    assert results[0].unreachable is not None and results[0].failed == 1
+    assert successes == []

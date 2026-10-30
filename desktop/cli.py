@@ -324,9 +324,9 @@ async def cmd_push(cfg: config.Configuration, args: argparse.Namespace, *, lock_
 
     _print_batch(r.batch)
     # Best-effort (§7.2): re-assertion riding this same connection may have
-    # failed independently of the Batch, and `BatchResult` carries no field
-    # for that -- `write_settings` already prints its own failure line when
-    # it happens, so this is deliberately phrased as "attempted", not "done".
+    # failed independently of the Batch. `write_settings` already prints its
+    # own failure line (`batch.settings_ok` is the page's copy, web-ui §4.5),
+    # so this stays phrased as "attempted", not "done".
     print(f"Settings re-assertion attempted: {PI_PROJECTED_SETTING} = {r.idle_keepalive_s}.")
     return EXIT_CODE[r.outcome]
 

@@ -614,6 +614,11 @@ def _batch_outcome(batch: Optional[push.BatchResult], unreachable: Optional[Unre
     return Outcome.OK if batch.ok else Outcome.FAULT
 
 
+def _batch_unreachable(batch: push.BatchResult) -> Optional[Unreachable]:
+    """The Batch's own never-opened connection (§4.5) as an absent Pi."""
+    return None if batch.unreachable is None else Unreachable(verdict.Reach.ABSENT, batch.unreachable)
+
+
 def _clear_marks(cfg: config.Configuration, dates=None) -> None:
     store = usage.open_store(cfg.paths_store)
     try:
@@ -651,9 +656,12 @@ async def pair(
     cfg: config.Configuration,
     cfg_path,
     *,
+    address: Optional[str] = None,
     lock_wait_s: float = push.CLI_LOCK_WAIT_S,
     progress: push.Progress = push.print_progress,
 ) -> PairResult:
+    """`address` is the one `discover` listed and the user chose (§9.3);
+    `None` keeps the CLI's first-advertiser scan."""
     did = push.desktop_id()
     # ⚠ This scan is deliberately separate from the one `run_batch_pass`
     # performs below via `_with_ble_connection` -- pairing has to discover
@@ -665,7 +673,7 @@ async def pair(
     # already-open connection.
     progress("scanning", f"Scanning (up to {push.SCAN_TIMEOUT_SECONDS:.0f}s)…")
     try:
-        device = await push.find_pi()
+        device = await push.find_pi(address=address)
     except Exception as exc:  # noqa: BLE001 - no candidate Pi found
         return PairResult(did, None, None, Unreachable(verdict.Reach.ABSENT, str(exc)))
 
@@ -686,7 +694,39 @@ async def pair(
         batch = await _run_batch(cfg, device.address, lock_wait_s, progress)
     except push.BleLinkBusy as exc:
         return PairResult(did, device.address, None, _unreachable(exc))
-    return PairResult(did, device.address, batch, None)
+    return PairResult(did, device.address, batch, _batch_unreachable(batch))
+
+
+@dataclass(frozen=True)
+class FoundPi:
+    name: str
+    address: str
+    rssi: int
+
+
+@dataclass(frozen=True)
+class DiscoverResult:
+    devices: tuple[FoundPi, ...]  # empty: no Pi in range, a real answer
+    unreachable: Optional[Unreachable]  # busy, or the scan itself failed
+
+    @property
+    def outcome(self) -> Outcome:
+        return Outcome.OK if self.unreachable is None else Outcome.CANT_TELL
+
+
+async def discover(
+    *, lock_wait_s: float = push.CLI_LOCK_WAIT_S, progress: push.Progress = push.print_progress
+) -> DiscoverResult:
+    """Every `zeropi-display` device in one full scan (§9.3), under the BLE lock."""
+    try:
+        async with push.ble_lock(wait_s=lock_wait_s, progress=progress):
+            progress("scanning", f"Scanning ({push.SCAN_TIMEOUT_SECONDS:.0f}s)…")
+            found = await push.scan_for_pis()
+    except Exception as exc:  # noqa: BLE001 - busy, or no adapter to scan with: as pair's scan
+        return DiscoverResult((), _unreachable(exc))
+    return DiscoverResult(
+        tuple(FoundPi(d.name or a.local_name or d.address, d.address, a.rssi) for d, a in found), None
+    )
 
 
 @dataclass(frozen=True)
@@ -715,7 +755,7 @@ async def push_batch(
         raise
     except Exception as exc:  # noqa: BLE001 - busy, or no reply from the paired Pi
         return PushResult(None, _unreachable(exc), cfg.pi_idle_keepalive_s)
-    return PushResult(batch, None, cfg.pi_idle_keepalive_s)
+    return PushResult(batch, _batch_unreachable(batch), cfg.pi_idle_keepalive_s)
 
 
 @dataclass(frozen=True)
