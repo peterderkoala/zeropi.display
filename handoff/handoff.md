@@ -59,8 +59,9 @@
 > 2026-10-30). On the dev Pi, through the installed `zeropi-web` and a real
 > browser, these pass: the guard; `busy`; `busy_here`; the second tab attaching; the
 > restart mid-`push` (*outcome unknown*, stop in 1.18 s); the banner and
-> Setup's Start; the two-phase partial `wipe`; a `→ Pi` Setting (the Ack only);
-> and real discover and pair. Two defects were fixed:
+> Setup's Start; the two-phase partial `wipe`; `absent` (the Pi's receiver
+> stopped); a `→ Pi` Setting, read back from `meta` on the Pi; and real
+> discover and pair. Two defects were fixed:
 > - re-pairing the same Pi left Setup stuck in *choosing*;
 > - pages had no `Cache-Control`, so browsers ran an old `app.js` after an
 >   upgrade. They are now `no-cache`. ⚠ A browser that cached a pre-fix copy
@@ -68,10 +69,9 @@
 >
 > ⚠ Found, not fixed: Setup's step 4 after a re-pair shows the previous,
 > out-of-date Verdict (§9.5 covers only the first pair). **Still owed, by
-> the maintainer** (the agent has no SSH to the Pi and cannot reboot):
-> - from scratch with the curl bootstrap;
-> - `absent`, with the Pi powered off;
-> - `meta` on the Pi for the Setting;
+> the maintainer:**
+> - from scratch with the curl bootstrap, which removes the Desktop's units
+>   first;
 > - a Desktop reboot.
 >
 > #109 and map #102 stay open until those have run.

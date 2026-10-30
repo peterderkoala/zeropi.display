@@ -7,12 +7,11 @@ and the run §13 says the map owes. Everything below ran against the real dev Pi
 over real BLE, through the installed `zeropi-web` and a real browser
 (Playwright's Chromium). Nothing here is `tests/web_demo.py` or a fixture.
 
-**Result: partial.** §13 items 3 (except `absent`) and 4 pass on hardware,
-item 5 passes as far as the Pi's Ack can show it, and the installer ran in both
-layouts. The run found and fixed **two defects**. Item 1 *from scratch*, item
-3's `absent`, item 5's check of the Pi's `meta`, and item 6 (reboot) are still
-owed. Each needs the maintainer, and is listed in
-[What is still owed](#what-is-still-owed). #109 stays open until they have run.
+**Result: partial.** §13 items 3, 4 and 5 pass on hardware, and the installer
+ran in both layouts. The run found and fixed **two defects**. Item 1 *from
+scratch* and item 6 (reboot) are still owed. Both need the maintainer, and are
+listed in [What is still owed](#what-is-still-owed). #109 stays open until they
+have run.
 
 ## Environment
 
@@ -24,9 +23,11 @@ owed. Each needs the maintainer, and is listed in
 | Browser | Playwright's Chromium at `http://127.0.0.1:8737` |
 | Suite | `573 passed` at the start, **`577 passed`** at the end |
 
-The agent ran without SSH to the Pi: reading its credentials was refused by the
-session's permission policy. Pi-side facts come from what the Pi says over BLE
-(`status` replies, Acks).
+SSH to the Pi came late in the run, with access details as in the gitignored
+`infrastructure.md`. It was confirmed to be the same Pi (`hciconfig`:
+`B8:27:EB:7C:97:0F`). Until then, Pi-side facts came from what the Pi says over
+BLE (`status` replies, Acks). Afterwards, they came from its `meta` table and
+`systemctl`.
 
 ## 1. The installer, both layouts (§13.1, partly)
 
@@ -59,7 +60,7 @@ one Pi (`zeropi-display B8:27:EB:7C:97:0F`, −40 to −44 dBm), preselected, as
 | `zeropi-push` stopped | `systemctl --user stop zeropi-push` | the banner *zeropi-push is not running …* on Configuration, linking to `/setup#service`. Step 3's *Start zeropi-push* started the real unit, every step turned ✓ and the banner cleared |
 | Two-phase partial `wipe` | *Wipe…* with `7c970f`, with `flock -w 60 … sleep 30` blocked on the lock so it took the link between the wipe and its re-push | `Wiped. Re-pushing the archive.`, then `? Wiped, but could not re-push yet — the BLE link is busy …`, outcome `cant_tell` and a *Push now* button, which re-pushed `1 sent, 0 failed` once the lock was free |
 | A second action refused with `busy_here` | `POST /api/operations` `push` (`202`), then `redraw` 1 s later | `409`, `busy_here`, *push is already running here*, carrying the running push's id. The push finished `ok`. The page attaching on that refusal was checked on fake BLE only (#107) |
-| `absent` | **not run** | needs the Pi powered off |
+| `absent` | `sudo systemctl stop zeropi-display` on the Pi (no advertisement; the board stays powered), then *Check now* | `? Can't tell — the Pi is unreachable.` with *no reply from paired Pi B8:27:EB:7C:97:0F within 10.0s. Normal when it is powered off or out of range. Not a fault.* and *Nothing was queued*; the tiles were replaced. After `systemctl start`, `cli.py status` → `✓ Working`, with the receiver's restart noted |
 
 ⚠ `busy` and the colliding `wipe` used `flock(1)` as the link's holder, not
 the CLI or `zeropi-push`. For the `wipe`, the real service's collision needs
@@ -97,9 +98,11 @@ failed` line. The service logs only failures, so this shows no failure, not the
 value it sent. The same path restored
 `86400`.
 
-⚠ **Owed:** reading `meta` on the Pi (`setting.idle_keepalive_s`), as #87 did,
-needs SSH. #87's open point stands: no `status` field carries a Setting, so
-over BLE the Ack is all the evidence there is.
+On the Pi, read as #87 did, once SSH was available: saved `7200` from
+Configuration again, and `meta` read `setting.idle_keepalive_s = '7200'`.
+Restored `86400` the same way (save, then *Restart zeropi-push*), and `meta`
+read `'86400'`. #87's open point stands: no `status` field carries a Setting,
+so over BLE alone the Ack is all the evidence there is.
 
 ## 6. Reboot survival (§13.6): not run
 
@@ -139,14 +142,12 @@ lines from Operations), so its `PYTHONUNBUFFERED=1` works.
 
 ## What is still owed
 
-Each needs the maintainer's hands, or permission the agent did not have:
+Each needs the maintainer's hands:
 
 1. **From scratch (§13.1)**: stop, disable and remove both units, unset
    `pi.address`, then run the curl bootstrap's Desktop role
    (`curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- desktop`)
    and walk Setup in the browser it opens. Then the clone, last.
-2. **`absent` (§13.3)**: power the Pi off and open Status.
-3. **The Setting on the Pi (§13.5)**: `meta` on the Pi.
-4. **Reboot (§13.6)**: reboot the Desktop, log in, and run
+2. **Reboot (§13.6)**: reboot the Desktop, log in, and run
    `systemctl --user is-active zeropi-web zeropi-push` and
    `journalctl --user -u zeropi-web -b`.
