@@ -4,10 +4,10 @@
 
 > **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
 > Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
-> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Five
+> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Six
 > of its **ten** tickets are closed: stack research (#90), the stack (#91), the
-> in-process seam (#92), the process model (#93) and how a long BLE action
-> appears over HTTP (#94). **#100 (graphical first-run setup) was added on
+> in-process seam (#92), the process model (#93), how a long BLE action
+> appears over HTTP (#94) and when the page asks for status (#95). **#100 (graphical first-run setup) was added on
 > 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
 > [For the next session](#for-the-next-session) for what can be taken next.
 > **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
@@ -316,18 +316,25 @@ as `cli.py`, and the Pi is absent.
   **Operation** handle that is followed over SSE. One BLE Operation runs per
   process, and it runs to completion with no cancel. ⚠ The handle names an
   Operation that has already started, never a queue (ADR-0011).
-- ⏭ **Takeable now, all grilling:** **#95 When the page asks for status**,
-  **#96 What stops another website from driving the localhost service**, and
-  **#100 First-run setup: discover a Pi, pair, install and start the Desktop
-  services** (added 2026-10-30, maintainer's request). #95/#96 carry input
-  comments from #93/#94; read the comments, not just the bodies.
+- ✅ **#95 When the page asks for status** (2026-10-30): **no polling, ever**
+  — a Gauge push that hits a busy link is *lost*, not retried
+  (`service.py:148-150`). An in-memory last-status slot, separate from the
+  current Operation; the check time (Desktop wall clock) on the headline, Pi
+  durations shown as at the check; one automatic check on load only when the
+  slot is empty; a result that a later mutating Operation or Batch makes out of
+  date is labelled, never recomputed.
+- ⏭ **Takeable now, both grilling:** **#96 What stops another website from
+  driving the localhost service** and **#100 First-run setup: discover a Pi,
+  pair, install and start the Desktop services** (added 2026-10-30,
+  maintainer's request). #96 carries input comments from #93/#94; read the
+  comments, not just the body.
   - #100 is **Desktop services only** (`zeropi-push`, `zeropi-web`); Pi
     provisioning stays the curl bootstrap — decided by the maintainer. Its
     hardest question is the bootstrap: the UI is served by `zeropi-web`, so
     it can't install `zeropi-web` before running. It is where the map's
     "install and packaging" fog is expected to resolve.
-- 🔒 **#97 The pages (prototype, fake data)** is blocked by #95 and #100. **#98
-  Write `docs/spec-web-ui.md`** is blocked by #95–#97 and #100. Each
+- 🔒 **#97 The pages (prototype, fake data)** is blocked by #100 only. **#98
+  Write `docs/spec-web-ui.md`** is blocked by #96, #97 and #100. Each
   resolution comment carries a *Consequences for the spec* list, which is
   #98's gap check.
 - **Fog on the map:** install and packaging (two units, neither installed by
@@ -1349,7 +1356,7 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
   Invoke it with `continue` or the map, not with a fresh idea, because
   charting is done. It picks the next frontier ticket for you if you do not
-  name one. #95, #96 and #100 are grilling tickets:
+  name one. #96 and #100 are grilling tickets:
   - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
   - Ask in numbered rounds, with a recommendation per question.
   - Glossary edits go to `plan/web-ui`, never to `dev`.
