@@ -194,11 +194,13 @@ def _dur(seconds: Optional[float]) -> str:
 
 
 def _short_id(address: str) -> str:
-    """The Pi's "short id" (§9.4's wipe confirmation) -- the first three
+    """The Pi's "short id" (§9.4's wipe confirmation) -- the last three
     octets of its BLE address, lowercase, no separators. Short enough to
     type, long enough that a slip does not silently match a different Pi.
+    Not the first three: those are the manufacturer prefix (B8:27:EB on every
+    Pi of this generation), so they cannot tell two Pis apart (#101).
     """
-    return address.replace(":", "").lower()[:6]
+    return address.replace(":", "").lower()[-6:]
 
 
 def _now_utc() -> datetime:

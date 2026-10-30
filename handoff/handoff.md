@@ -11,8 +11,8 @@
 > check. ⚠ **`plan/web-ui` is not on `dev` yet.** It carries the spec and two
 > `CONTEXT.md` changes (*Configuration* read per run; **Operation**), and goes
 > in once PR #88 (`dev` → `main`) merges. **Next: an implementation map
-> opened against the spec**, not yet charted. Standalone bug **#101** (wipe's
-> short id is the manufacturer prefix) is a prerequisite the spec leans on.
+> opened against the spec**, not yet charted. **#101 is fixed**
+> (`wipe`'s short id is now the last three octets, `7c970f` on the dev Pi).
 >
 > **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
 > `B8:27:EB:7C:97:0F`): user **`zero`**, not `pi`, SSH key only. It is
@@ -330,9 +330,8 @@ as `cli.py`, and the Pi is absent.
   `TrustedHostMiddleware` (hardcoded `127.0.0.1`/`localhost`); every state
   change is a JSON `POST`, `Origin` must match when present, no CORS;
   `frame-ancestors 'none'` + `X-Frame-Options: DENY`; **no token**. It found
-  **#101** (standalone bug, not on a map): `wipe`'s short id is the first three
-  octets, i.e. the Raspberry Pi manufacturer prefix `b827eb`, so it can't tell
-  two Pis apart.
+  **#101**: `wipe`'s short id was the manufacturer prefix `b827eb`. **Fixed
+  2026-10-30**: it is now the last three octets (`7c970f` on the dev Pi).
 - ✅ **#100 First-run setup** (2026-10-30): `install-desktop.sh` is the one
   terminal step: venv + `requirements-web.txt`, writes **both** units, enables
   **only** `zeropi-web`, opens `127.0.0.1:8737`. Standalone deploys all of

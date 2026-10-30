@@ -729,8 +729,26 @@ def test_redraw_absent_exits_3(tmp_path, monkeypatch, capsys):
     assert "not queued" in err.lower()
 
 
-def test_short_id_is_first_three_octets_lowercase():
-    assert cli._short_id("e4:5F:01:9c:2d:aa") == "e45f01"
+def test_wipe_short_id_is_the_device_part_not_the_manufacturer_prefix(tmp_path, monkeypatch, capsys):
+    # B8:27:EB is the Raspberry Pi Foundation's OUI, shared by every Pi of this
+    # generation -- typing it must not confirm a wipe of one particular Pi (#101).
+    cfg = _cfg(tmp_path, **{"pi.address": "B8:27:EB:7C:97:0F"})
+    prompts = []
+
+    async def never_scanned(*a, **kw):  # pragma: no cover
+        raise AssertionError("must not attempt BLE without a matching confirmation")
+
+    monkeypatch.setattr(push, "find_pi", never_scanned)
+
+    def confirm(prompt):
+        prompts.append(prompt)
+        return "b827eb"
+
+    code = asyncio.run(cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=confirm))
+
+    assert code == 3
+    assert "did not match" in capsys.readouterr().err.lower()
+    assert "[7c970f]" in prompts[0]
 
 
 def test_wipe_not_paired_exits_2(tmp_path, capsys):
@@ -776,7 +794,7 @@ def test_wipe_confirmed_wipes_and_repushes(tmp_path, monkeypatch, capsys):
     )
 
     code = asyncio.run(
-        cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "aabbcc", lock_wait_s=0.0)
+        cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "ddeeff", lock_wait_s=0.0)
     )
 
     out = capsys.readouterr().out
@@ -797,7 +815,7 @@ def test_wipe_busy_exits_3_after_confirmation(tmp_path, monkeypatch, capsys):
     fd = _hold(push.BLE_LOCK_PATH)
     try:
         code = asyncio.run(
-            cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "aabbcc", lock_wait_s=0.0)
+            cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "ddeeff", lock_wait_s=0.0)
         )
     finally:
         os.close(fd)
@@ -825,7 +843,7 @@ def test_wipe_reports_a_busy_link_during_the_repush_instead_of_crashing(tmp_path
     monkeypatch.setattr(push, "run_batch_pass", busy_run_batch_pass)
 
     code = asyncio.run(
-        cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "aabbcc", lock_wait_s=0.0)
+        cli.cmd_wipe(cfg, _args(["wipe"]), confirm_fn=lambda prompt: "ddeeff", lock_wait_s=0.0)
     )
 
     err = capsys.readouterr().err
