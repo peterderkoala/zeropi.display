@@ -483,3 +483,21 @@ def test_start_service_enables_it_now_and_passes_systemctls_text_through():
 
     r = asyncio.run(operations.start_service(run_fn=_Systemctl(returncode=1, stderr="Failed to start.\n")))
     assert r.error == "Failed to start."
+
+
+@pytest.mark.parametrize(
+    "stdout, unit",
+    [
+        ("LoadState=loaded\nActiveState=active\n", "running"),
+        ("LoadState=loaded\nActiveState=failed\n", "failed"),
+        ("LoadState=loaded\nActiveState=inactive\n", "stopped"),
+        ("LoadState=not-found\nActiveState=inactive\n", "missing"),
+    ],
+)
+def test_service_info_names_the_units_state_for_the_banner(stdout, unit):
+    import subprocess
+
+    info = operations.service_info(run_fn=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, stdout=stdout))
+    assert info.unit == unit
+    # §5.3's banner is Desktop-side: the CLI's own `state` words are unchanged.
+    assert info.state == ("running" if unit == "running" else "not running")

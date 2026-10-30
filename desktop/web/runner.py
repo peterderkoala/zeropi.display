@@ -84,9 +84,10 @@ class Runner:
         try:
             result, outcome = run(op)
         except Refused as r:  # raced past the precheck, e.g. Configuration changed
-            result, outcome = {"refusal": refusal_json(r)}, r.outcome
+            result, outcome = {"refusal": refusal_json(r), "summary": r.message}, r.outcome
         except Exception as exc:  # noqa: BLE001 - e.g. this Desktop's own store; never lost silently
-            result, outcome = {"error": f"{type(exc).__name__}: {exc}"}, Outcome.FAULT
+            error = f"{type(exc).__name__}: {exc}"
+            result, outcome = {"error": error, "summary": error}, Outcome.FAULT
         op.outcome = outcome.value
         op.events.append(("result", {**result, "outcome": outcome.value}))
         op.done = True

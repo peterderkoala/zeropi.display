@@ -141,7 +141,20 @@ def test_status_last_is_empty(client):
 def test_desktop_facts(client):
     body = client.get("/api/desktop").json()
     assert body.pop("service")["state"] == "running"
-    assert body == {"seconds_since_last_batch": None, "readings_sent": 0, "pending_restart": []}
+    assert body == {
+        "seconds_since_last_batch": None,
+        "readings_sent": 0,
+        "last_batch_at": None,
+        "pending_restart": [],
+        "pi_address": None,
+        "short_id": None,
+    }
+
+
+def test_desktop_facts_carry_the_banner_state_and_the_short_id(paired):
+    body = paired.get("/api/desktop").json()
+    assert body["service"]["unit"] == "unknown"  # the fixture's ServiceInfo names none
+    assert body["pi_address"] == "AA:BB:CC:DD:EE:FF" and body["short_id"] == "ddeeff"
 
 
 def test_config_lists_three_tiers_with_marks(client, tmp_path):
@@ -272,8 +285,22 @@ def _push_ok():
     return operations.PushResult(push.BatchResult(sent=3), None, 3600)
 
 
+def _fake_status(status, outcome, reach="reachable"):
+    import verdict
+
+    return SimpleNamespace(
+        status=status,
+        outcome=outcome,
+        verdict=SimpleNamespace(advice=None),
+        reach=verdict.Reach(reach),
+        error_detail=None,
+        round_trip_s=1.0,
+        facts=SimpleNamespace(seconds_since_last_push=None),
+    )
+
+
 def _status_ok(monkeypatch):
-    _fake(monkeypatch, "status", SimpleNamespace(status={"uptime_s": 5}, outcome=Outcome.OK))
+    _fake(monkeypatch, "status", _fake_status({"uptime_s": 5}, Outcome.OK))
     monkeypatch.setattr(operations, "status_json", lambda r, s: {"verdict": {"ok": True}})
 
 
@@ -371,7 +398,7 @@ def test_status_fills_the_slot_with_the_desktop_clock(paired, monkeypatch):
     _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
 
     slot = paired.get("/api/status/last").json()
-    assert slot["result"] == {"verdict": {"ok": True}, "outcome": "ok"}
+    assert slot["result"]["verdict"] == {"ok": True} and slot["result"]["outcome"] == "ok"
     assert slot["checked_at"] == CHECKED_AT.isoformat()
     assert slot["outdated_by"] is None
 
@@ -390,7 +417,7 @@ def test_slot_survives_a_later_push_and_is_labelled_out_of_date(paired, monkeypa
 def test_a_status_with_no_reply_empties_the_slot(paired, monkeypatch):
     _status_ok(monkeypatch)
     _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
-    _fake(monkeypatch, "status", SimpleNamespace(status=None, outcome=Outcome.CANT_TELL))
+    _fake(monkeypatch, "status", _fake_status(None, Outcome.CANT_TELL, "absent"))
     monkeypatch.setattr(operations, "status_json", lambda r, s: {"verdict": {"ok": None}})
     _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
     assert paired.get("/api/status/last").status_code == 204
@@ -492,3 +519,68 @@ def test_a_wipe_repush_with_no_pi_is_absent_not_fault(paired, monkeypatch):
     _fake(monkeypatch, "wipe", operations.WipeResult(operations.CommandResult({"status": "ok"}, None), repush))
     op_id = paired.post("/api/operations", json={"verb": "wipe", "args": {"confirm": "ddeeff"}}).json()["id"]
     assert _finish(paired, op_id)["phases"] == {"command": "ok", "repush": "absent"}
+
+
+def test_status_result_carries_what_the_page_shows_beside_the_json(paired, monkeypatch):
+    import verdict
+
+    facts = verdict.DesktopFacts("AA:BB:CC:DD:EE:FF", 3, "2026-09-01", 3600, 4000.0)
+    v = verdict.build_verdict(facts, None, verdict.Reach.ABSENT)
+    r = operations.StatusResult(v, facts, None, None, "no Pi advertising within 10.0s", verdict.Reach.ABSENT)
+    _fake(monkeypatch, "status", r)
+
+    result = _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+
+    assert result["unreachable"] == {"reason": "absent", "detail": "no Pi advertising within 10.0s"}
+    assert result["advice"] == v.advice
+    assert result["seconds_since_last_push"] == 4000.0 and result["round_trip_s"] is None
+    assert result["checked_at"] == CHECKED_AT.isoformat()
+
+
+# --- result summaries: the page's one line per result, pinned here (§12.4) ---
+
+
+def _result_of(paired, monkeypatch, verb, result, args=None):
+    _fake(monkeypatch, {"push": "push_batch"}.get(verb, verb), result)
+    body = {"verb": verb, "args": args or {}}
+    return _finish(paired, paired.post("/api/operations", json=body).json()["id"])
+
+
+def test_summary_of_a_partial_wipe(paired, monkeypatch):
+    wiped = operations.WipeResult(operations.CommandResult({"status": "ok"}, None), repush_busy="link busy")
+    r = _result_of(paired, monkeypatch, "wipe", wiped, {"confirm": "ddeeff"})
+    assert r["summary"] == "Wiped, but could not re-push yet — link busy. Run push once the link is free."
+
+
+def test_summary_of_an_unreachable_push_uses_the_clis_words(paired, monkeypatch):
+    import verdict
+
+    u = operations.Unreachable(verdict.Reach.BUSY, "lock held")
+    r = _result_of(paired, monkeypatch, "push", operations.PushResult(None, u, 3600))
+    assert r["summary"] == "Refused — the link is busy (lock held). Not queued. Retry in a moment — a Batch takes about two minutes."
+
+
+def test_summary_of_a_redraw_held_by_the_floor(paired, monkeypatch):
+    ack = {"status": "ok", "drawn": False, "floor_remaining_s": 143}
+    r = _result_of(paired, monkeypatch, "redraw", operations.CommandResult(ack, None))
+    assert r["summary"] == "Queued on the Pi. It will draw in 2m 23s."
+
+
+def test_summary_of_a_setting_that_did_not_reach_the_pi_says_it_was_written(paired, monkeypatch):
+    failed = operations.SettingPushResult(operations.PI_PROJECTED_SETTING, 7200, "no Pi")
+    _fake(monkeypatch, "push_setting", failed)
+    resp = paired.post(f"/api/config/{operations.PI_PROJECTED_SETTING}", json={"value": "7200"})
+    r = _finish(paired, resp.json()["id"])
+    assert r["summary"] == (
+        f"Set {operations.PI_PROJECTED_SETTING} = 7200. Could not push it to the Pi yet — no Pi. "
+        "It will apply on the next successful connection (§7.2)."
+    )
+
+
+def test_summary_of_a_refusal_inside_an_operation_is_its_message(paired, monkeypatch):
+    async def refuses(*a, **kw):
+        raise Refused("not_paired", "Not paired — no Pi address is recorded.")
+
+    monkeypatch.setattr(operations, "push_batch", refuses)
+    r = _finish(paired, paired.post("/api/operations", json={"verb": "push"}).json()["id"])
+    assert r["summary"] == "Not paired — no Pi address is recorded."

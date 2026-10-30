@@ -233,6 +233,24 @@ def short_id(address: str) -> str:
     return address.replace(":", "").lower()[-6:]
 
 
+def dur(seconds: Optional[float]) -> str:
+    """A short human duration, or "never" for `None` -- the same shorthand
+    used throughout status rendering (§9.2's `up 3d 4h`, `drew 2m 23s ago`)."""
+    if seconds is None:
+        return "never"
+    seconds = max(0, int(seconds))
+    days, rest = divmod(seconds, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -274,6 +292,8 @@ class ServiceInfo:
 
     state: str  # "running" | "not running" | "unknown"
     uptime_s: Optional[float]
+    # web-ui §5.3's banner: "running" | "failed" | "stopped" | "missing" | "unknown"
+    unit: str = "unknown"
 
 
 def service_info(
@@ -282,7 +302,7 @@ def service_info(
 ) -> ServiceInfo:
     try:
         result = run_fn(
-            ["systemctl", "--user", "show", service_name, "-p", "ActiveState", "-p", "ActiveEnterTimestamp"],
+            ["systemctl", "--user", "show", service_name, "-p", "LoadState", "-p", "ActiveState", "-p", "ActiveEnterTimestamp"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -300,6 +320,14 @@ def service_info(
         state = "not running"
     else:
         state = "unknown"
+    if fields.get("LoadState") == "not-found":
+        unit = "missing"
+    elif state != "not running":
+        unit = state  # "running" or "unknown"
+    elif active_state == "failed":
+        unit = "failed"
+    else:
+        unit = "stopped"
 
     uptime_s = None
     timestamp = fields.get("ActiveEnterTimestamp", "")
@@ -309,7 +337,7 @@ def service_info(
             uptime_s = (datetime.now() - entered).total_seconds()
         except ValueError:
             uptime_s = None
-    return ServiceInfo(state=state, uptime_s=uptime_s)
+    return ServiceInfo(state=state, uptime_s=uptime_s, unit=unit)
 
 
 @dataclass(frozen=True)

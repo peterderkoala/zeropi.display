@@ -39,22 +39,8 @@ _service_info = operations.service_info
 # ---------------------------------------------------------------------------
 
 
-def _dur(seconds: Optional[float]) -> str:
-    """A short human duration, or "never" for `None` -- the same shorthand
-    used throughout status rendering (§9.2's `up 3d 4h`, `drew 2m 23s ago`)."""
-    if seconds is None:
-        return "never"
-    seconds = max(0, int(seconds))
-    days, rest = divmod(seconds, 86400)
-    hours, rest = divmod(rest, 3600)
-    minutes, secs = divmod(rest, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
+# Kept under its old name: the renderers here call it throughout.
+_dur = operations.dur
 
 
 def _err(*lines: str) -> None:

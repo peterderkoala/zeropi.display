@@ -37,6 +37,7 @@ from web import guard
 from web.runner import BusyHere, Operation, Runner, refusal_json
 
 HOST = "127.0.0.1"  # §5.1: no --host flag
+SHUTDOWN_GRACE_S = 1
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -81,6 +82,58 @@ def _phases(verb: str, r: Any) -> Optional[dict]:
 
 def _raise(exc: Exception):
     raise exc
+
+
+def _refused(u: operations.Unreachable, action: str = "queued") -> str:
+    """cli.py's `_print_unreachable_refusal`, as one line."""
+    if u.reason is verdict.Reach.BUSY:
+        return f"Refused — the link is busy ({u.detail}). Not {action}. Retry in a moment — a Batch takes about two minutes."
+    return f"Refused — the Pi is unreachable ({u.detail}). Not {action}. Re-run when the Pi is back."
+
+
+def _batch_line(b) -> str:
+    return f"Batch: {b.sent} sent, {b.failed} failed."
+
+
+def _command_failure(c: operations.CommandResult) -> str:
+    return _refused(c.unreachable) if c.unreachable is not None else f"Refused — {c.reason}."
+
+
+def _summary(verb: str, r: Any) -> str:
+    """The page's one line for a result, in the CLI's words where it has
+    them (§10.5). Here rather than in the page, so a test pins it (§12.4)."""
+    if verb == "push":
+        return _refused(r.unreachable) if r.unreachable is not None else _batch_line(r.batch)
+    if verb == "redraw":
+        if r.outcome is not Outcome.OK:
+            return _command_failure(r)
+        return "Drawn." if r.ack.get("drawn") else f"Queued on the Pi. It will draw in {operations.dur(r.ack.get('floor_remaining_s'))}."
+    if verb == "wipe":
+        if r.command.outcome is not Outcome.OK:
+            return _command_failure(r.command)
+        if r.repush_busy is not None:
+            return f"Wiped, but could not re-push yet — {r.repush_busy}. Run push once the link is free."
+        if r.repush.unreachable is not None:
+            return f"Wiped, but could not re-push — {r.repush.unreachable}. Run push when the Pi is back."
+        return f"Wiped. Re-pushed: {_batch_line(r.repush)}"
+    if verb == "pair":
+        if r.address is None:
+            return f"Refused — the Pi is unreachable ({r.unreachable.detail}). Not paired."
+        if r.unreachable is not None:
+            return f"Paired with {r.address}. " + _refused(r.unreachable, "pushed")
+        return f"Paired with {r.address}. {_batch_line(r.batch)}"
+    if verb == "discover":
+        if r.unreachable is not None:
+            return _refused(r.unreachable, "scanned")
+        return f"{len(r.devices)} Pi(s) found." if r.devices else "No Pi found."
+    if verb == "config_set":
+        if r.error is not None:
+            return (
+                f"Set {r.key} = {r.value}. Could not push it to the Pi yet — {r.error}. "
+                "It will apply on the next successful connection (§7.2)."
+            )
+        return f"Set {r.key} = {r.value}. Pushed to the Pi — it applies immediately (§6.1)."
+    return ""
 
 
 class OperationRequest(BaseModel):
@@ -131,14 +184,19 @@ def create_app(
         cfg = resolve()
         store = usage.open_store(cfg.paths_store)
         try:
-            facts = operations.desktop_facts(cfg, usage.pushed_summary(store))
+            summary = usage.pushed_summary(store)
+            facts = operations.desktop_facts(cfg, summary)
         finally:
             store.close()
         return {
-            "service": {"state": service.state, "uptime_s": service.uptime_s},
+            "service": {"state": service.state, "uptime_s": service.uptime_s, "unit": service.unit},
             "seconds_since_last_batch": facts.seconds_since_last_push,
             "readings_sent": facts.readings,
+            # The moment itself, so the page never derives it from a duration that ages (§7.5).
+            "last_batch_at": summary.last_pushed_at,
             "pending_restart": marked,
+            "pi_address": cfg.pi_address,
+            "short_id": None if cfg.pi_address is None else operations.short_id(cfg.pi_address),
         }
 
     @app.get("/api/config")
@@ -187,15 +245,27 @@ def create_app(
             }
             r = asyncio.run(calls[verb]())
             if verb == "status":
-                result = operations.status_json(r, service_info_fn())
+                # §4.3's JSON, plus the parts of the result the CLI's text shows
+                # beside it (the Unreachable block, "replied in", "last seen").
+                result = {
+                    **operations.status_json(r, service_info_fn()),
+                    "advice": r.verdict.advice,
+                    "unreachable": None
+                    if r.reach is verdict.Reach.REACHABLE
+                    else {"reason": r.reach.value, "detail": r.error_detail},
+                    "round_trip_s": r.round_trip_s,
+                    "seconds_since_last_push": r.facts.seconds_since_last_push,
+                    # Also on a failed check, which the page shows from this result alone.
+                    "checked_at": now_fn().isoformat(),
+                }
                 # §7.3: a check with no reply empties the slot, so the next load re-checks.
                 app.state.last_status = None if r.status is None else {
                     "result": {**result, "outcome": r.outcome.value},
-                    "checked_at": now_fn().isoformat(),
+                    "checked_at": result["checked_at"],
                     "outdated_by": None,
                 }
-                return result, r.outcome
-            result = _json_value(r)
+                return {**result, "summary": r.verdict.headline}, r.outcome
+            result = {**_json_value(r), "summary": _summary(verb, r)}
             phases = _phases(verb, r)
             if phases is not None:
                 result["phases"] = phases
@@ -281,7 +351,7 @@ def create_app(
 
         def run(op: Operation) -> tuple[dict, Outcome]:
             r = asyncio.run(operations.push_setting(resolve(), written[0], progress=op.progress))
-            return _json_value(r), r.outcome
+            return {**_json_value(r), "summary": _summary("config_set", r)}, r.outcome
 
         # The write is the precheck: busy_here refuses before anything is written.
         return start("config_set", run, write)
@@ -317,5 +387,12 @@ def serve(*, port: int, cfg_path: Path, cli_store_path: Optional[str] = None) ->
     import uvicorn
 
     # §5.1: a taken port fails loudly; there is no fallback port.
-    uvicorn.run(create_app(port=port, cfg_path=cfg_path, cli_store_path=cli_store_path), host=HOST, port=port)
+    uvicorn.run(
+        create_app(port=port, cfg_path=cfg_path, cli_store_path=cli_store_path),
+        host=HOST,
+        port=port,
+        # §5.3: shutdown does not wait for an in-flight Operation, and an open
+        # events stream would otherwise hold it until the Operation ends.
+        timeout_graceful_shutdown=SHUTDOWN_GRACE_S,
+    )
     return 0

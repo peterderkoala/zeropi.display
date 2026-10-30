@@ -35,8 +35,15 @@
 > /api/service/start|restart`. Smoke-tested: a real `status` over SSE
 > against the dev Pi. ⚠ Pre-existing, not changed: `WipeResult.outcome` is
 > FAULT, not CANT_TELL, when the re-push finds no Pi (the web's `phases`
-> say `absent`). **Takeable now: #107 and #108, in parallel.** Read #106's
-> resolution comment first.
+> say `absent`). **#107 is done too**: `desktop/web/static/app.js` builds
+> the Status and Configuration tabs, the Operation modal and indicator, and
+> the banner. Every result carries a Python-built `summary` in the CLI's
+> words. The fog item *checking the pages by hand* is settled in
+> `docs/web-ui-page-checks.md`, with `tests/web_demo.py` (the real app over
+> fake BLE, one scenario per §10.7 state). ⚠ `zeropi-web` now shuts down
+> with `timeout_graceful_shutdown=1`: an open events stream used to hold
+> shutdown until the Operation ended (§5.3). **Takeable now: #108.** Read
+> #107's resolution comment first.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
