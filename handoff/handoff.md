@@ -347,13 +347,10 @@ as `cli.py`, and the Pi is absent.
   with the Verdict and the actions; the six checks as tiles; refusals inline.
   ⚠ The differences from the CLI are listed on #97 on purpose. Narrow screens
   are not covered.
-- ⏭ **Takeable now: #98 Write `docs/spec-web-ui.md`** (`wayfinder:task`, AFK).
-  Its gap check is the *Consequences for the spec* list in every resolution
-  comment (#91–#97, #100), plus #96's tests list and #97's list of states.
-  ⚠ Before writing, decide the two fog items (push marks, pushed status):
-  either they become tickets or the spec states them as open.
-- **Fog on the map:** push marks not per-Pi, pushed status. (Install and
-  packaging was resolved by #100.)
+- ✅ **#98 Write `docs/spec-web-ui.md`** (2026-10-30): on `plan/web-ui`
+  (`6dfeca6`). It overrides the prototype on one point: a `→ Pi` key's
+  `config set` is an Operation (#94). No new ADR. The fog was ruled out of
+  scope and is named in spec §14.
 
 **Branches for this map:**
 - `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
