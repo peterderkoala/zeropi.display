@@ -21,7 +21,9 @@ set -euo pipefail
 REQUIRED_BLUEZ_VERSION="5.82-1.1+rpt2"
 INSTALL_DIR="/opt/zeropi-display"
 VENV_DIR="$INSTALL_DIR/venv"
-RUN_AS_USER="pi"
+# The account that sudo'd us (install.sh re-execs under sudo), not a
+# hardcoded "pi": Imager lets the user pick any name. ZEROPI_USER overrides.
+RUN_AS_USER="${ZEROPI_USER:-${SUDO_USER:-pi}}"
 DROPIN_DIR="/etc/systemd/system/bluetooth.service.d"
 DROPIN_FILE="$DROPIN_DIR/noplugin.conf"
 MAIN_CONF="/etc/bluetooth/main.conf"
@@ -36,6 +38,11 @@ if [[ $EUID -ne 0 ]]; then
     echo "install-pi.sh must run as root, e.g.: sudo ./install-pi.sh" >&2
     exit 1
 fi
+
+id "$RUN_AS_USER" >/dev/null 2>&1 || {
+    echo "FAIL: service user '$RUN_AS_USER' does not exist; set ZEROPI_USER." >&2
+    exit 1
+}
 
 echo "==> Checking BlueZ version"
 BLUEZ_VERSION="$(dpkg-query -W -f='${Version}' bluez 2>/dev/null || true)"
@@ -185,8 +192,15 @@ sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 sudo -u "$RUN_AS_USER" "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
 
 echo "==> Installing the zeropi-display systemd unit"
-cp "$SCRIPT_DIR/zeropi-display.service" /etc/systemd/system/zeropi-display.service
+sed "s/^User=.*/User=$RUN_AS_USER/" "$SCRIPT_DIR/zeropi-display.service" \
+    > /etc/systemd/system/zeropi-display.service
 systemctl daemon-reload
+
+# A fresh trixie image can ship the radio soft-blocked (Imager unblocks
+# only wlan); bluezero then dies with "Not Powered". systemd-rfkill
+# persists the unblock across reboots.
+echo "==> Unblocking the Bluetooth radio"
+rfkill unblock bluetooth
 
 echo "==> Restarting bluetooth to pick up the drop-in and main.conf changes"
 systemctl restart bluetooth
