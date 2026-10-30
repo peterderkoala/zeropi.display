@@ -128,7 +128,7 @@ def test_wipe_confirm_mismatch_sends_nothing_and_keeps_push_marks(tmp_path, no_r
     conn.close()
 
     with pytest.raises(Refused) as exc:
-        asyncio.run(operations.wipe(cfg, "b827eb"))
+        asyncio.run(operations.wipe(cfg, "aabbcc"))  # the OUI, not the short id
 
     assert exc.value.kind == "confirm_mismatch"
     assert operations.readings_sent(cfg) == 1
@@ -200,6 +200,25 @@ def test_pair_absent_writes_no_address(tmp_path, monkeypatch):
     assert r.address is None and r.unreachable.reason == "absent"
     assert r.outcome is Outcome.CANT_TELL
     assert "pi.address" not in _stored(tmp_path)
+
+
+def test_push_batch_does_not_report_a_broken_desktop_store_as_an_absent_pi(tmp_path, no_radio):
+    cfg = _cfg(tmp_path, **PAIRED)
+    conn = usage.open_store(cfg.paths_store)
+    conn.execute("PRAGMA user_version = 99")
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(usage.StoreVersionError):
+        asyncio.run(operations.push_batch(cfg, lock_wait_s=0.0))
+
+
+def test_status_json_reads_no_desktop_id_when_not_paired(tmp_path, no_radio):
+    cfg = _cfg(tmp_path)
+
+    r = asyncio.run(operations.status(cfg))
+
+    assert operations.status_json(r, operations.ServiceInfo("unknown", None))["desktop"]["desktop_id"] == ""
 
 
 # ---------------------------------------------------------------------------

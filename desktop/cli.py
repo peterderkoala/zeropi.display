@@ -88,7 +88,7 @@ def _print_refusal(r: Refused) -> int:
 
 
 def _print_unreachable_refusal(u: operations.Unreachable, *, action: str = "queued") -> None:
-    if u.reason == "busy":
+    if u.reason is verdict.Reach.BUSY:
         _err(
             f"✗ Refused — the link is busy ({u.detail}).",
             f"Not {action}. Retry in a moment — a Batch takes about two minutes.",
@@ -193,8 +193,7 @@ def _render_status_brief(r: operations.StatusResult) -> str:
 async def cmd_status(cfg: config.Configuration, args: argparse.Namespace, *, lock_wait_s: float = push.CLI_LOCK_WAIT_S) -> int:
     r = await operations.status(cfg, lock_wait_s=lock_wait_s)
     if args.json:
-        did = "" if cfg.pi_address is None else push.desktop_id()
-        print(json.dumps(operations.status_json(r, did, _service_info()), indent=2))
+        print(json.dumps(operations.status_json(r, _service_info()), indent=2))
     elif args.brief:
         print(_render_status_brief(r))
     else:
@@ -252,6 +251,9 @@ async def _config_set(conn, cfg: config.Configuration, key: str, raw_value: str)
     try:
         value = operations.write_config(conn, key, raw_value)
     except Refused as r:
+        if r.kind == "unknown_key":
+            _err(f"✗ {r.message} Nothing was written.")
+            return EXIT_CODE[r.outcome]
         return _print_refusal(r)
 
     if operations.is_pi_push(cfg, key):
@@ -389,12 +391,12 @@ async def cmd_wipe(
 
 
 def cmd_restart(run_fn: Callable[..., Any] = subprocess.run) -> int:
-    ok, detail = operations.restart_service(run_fn=run_fn)
-    if not ok:
-        print(f"✗ Failed to restart {SERVICE_NAME}: {detail}", file=sys.stderr)
-        return 3
-    print(f"Restarted {SERVICE_NAME}.")
-    return 0
+    r = asyncio.run(operations.restart(run_fn=run_fn))
+    if r.error is not None:
+        print(f"✗ Failed to restart {r.service}: {r.error}", file=sys.stderr)
+    else:
+        print(f"Restarted {r.service}.")
+    return EXIT_CODE[r.outcome]
 
 
 # ---------------------------------------------------------------------------

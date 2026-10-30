@@ -63,7 +63,7 @@ PI_ADDRESS_KEY = "pi.address"
 # ⚠ These are strings, not live references, because this module must import
 # cleanly on a Desktop-only install that never ships pi/receive.py or
 # pi/render.py. `test_cli.py::test_tier3_mirrors_match_the_pis_real_constants`
-# is what stands between an amendment on the Pi and a silently stale value
+# (through `cli.TIER3`, which is this dict) is what stands between an amendment on the Pi and a silently stale value
 # here -- for every entry it can reach (the numeric ones); "SERVICE_UUID + 2
 # characteristics" is a live `push.SERVICE_UUID` reference below, and
 # "historic pitch" has no single named constant on the Pi to assert against.
@@ -207,14 +207,15 @@ class Refused(Exception):
 
 @dataclass(frozen=True)
 class Unreachable:
-    """The Pi could not be asked (§7.1): `reason` is "absent" or "busy"."""
+    """The Pi could not be asked (§7.1): `reason` is `Reach.ABSENT` or `Reach.BUSY`."""
 
-    reason: str
+    reason: verdict.Reach
     detail: str
 
 
 def _unreachable(exc: Exception) -> Unreachable:
-    return Unreachable("busy" if isinstance(exc, push.BleLinkBusy) else "absent", str(exc))
+    busy = isinstance(exc, push.BleLinkBusy)
+    return Unreachable(verdict.Reach.BUSY if busy else verdict.Reach.ABSENT, str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +312,17 @@ def service_info(
     return ServiceInfo(state=state, uptime_s=uptime_s)
 
 
-def restart_service(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> tuple[bool, str]:
+@dataclass(frozen=True)
+class RestartResult:
+    service: str
+    error: Optional[str]  # None: restarted; else systemctl's own text
+
+    @property
+    def outcome(self) -> Outcome:
+        return Outcome.OK if self.error is None else Outcome.REFUSED
+
+
+async def restart(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> RestartResult:
     try:
         result = run_fn(
             ["systemctl", "--user", "restart", service_name],
@@ -320,10 +331,10 @@ def restart_service(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any]
             timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
+        return RestartResult(service_name, str(exc))
     if result.returncode != 0:
-        return False, result.stderr.strip() or f"exit code {result.returncode}"
-    return True, ""
+        return RestartResult(service_name, result.stderr.strip() or f"exit code {result.returncode}")
+    return RestartResult(service_name, None)
 
 
 def require_paired(cfg: config.Configuration) -> None:
@@ -393,6 +404,7 @@ class StatusResult:
     round_trip_s: Optional[float]
     error_detail: Optional[str]
     reach: verdict.Reach = verdict.Reach.REACHABLE
+    desktop_id: str = ""  # §9.5: empty when not paired, so no machine id is read
 
     @property
     def outcome(self) -> Outcome:
@@ -467,10 +479,10 @@ async def status(
 
     facts = held_facts[0] if held_facts else read_facts()
     v = verdict.build_verdict(facts, status_ack, reach)
-    return StatusResult(v, facts, status_ack, round_trip_s, error_detail, reach)
+    return StatusResult(v, facts, status_ack, round_trip_s, error_detail, reach, did)
 
 
-def status_json(r: StatusResult, desktop_id_: str, service: ServiceInfo) -> dict:
+def status_json(r: StatusResult, service: ServiceInfo) -> dict:
     """The one builder of management-surface §9.5's `status` JSON (web-ui
     §4.3), used by `cli.py status --json` and the web layer alike."""
     v, facts, status_ = r.verdict, r.facts, r.status
@@ -478,7 +490,7 @@ def status_json(r: StatusResult, desktop_id_: str, service: ServiceInfo) -> dict
         "verdict": {"ok": v.ok, "state": v.state.value, "headline": v.headline},
         "reachable": v.reachable,
         "desktop": {
-            "desktop_id": desktop_id_,
+            "desktop_id": r.desktop_id,
             "service": service.state,
             "readings_sent": facts.readings,
             "coverage_start": facts.coverage_start,
@@ -546,7 +558,7 @@ def write_config(conn, key: str, raw_value: str) -> Any:
 
     key_spec = config.KEYS.get(key)
     if key_spec is None:
-        raise Refused("unknown_key", f"{key!r} is not a known Configuration key. Nothing was written.")
+        raise Refused("unknown_key", f"{key!r} is not a known Configuration key.")
 
     try:
         value = _parse_value(key_spec, raw_value)
@@ -602,6 +614,27 @@ def _batch_outcome(batch: Optional[push.BatchResult], unreachable: Optional[Unre
     return Outcome.OK if batch.ok else Outcome.FAULT
 
 
+def _clear_marks(cfg: config.Configuration, dates=None) -> None:
+    store = usage.open_store(cfg.paths_store)
+    try:
+        usage.clear_pushed_marks(store, dates)
+    finally:
+        store.close()
+
+
+async def _run_batch(
+    cfg: config.Configuration, pi_address: str, lock_wait_s: float, progress: push.Progress
+) -> push.BatchResult:
+    return await push.run_batch_pass(
+        str(cfg.paths_store),
+        cfg.paths_projects_root,
+        settings=push.settings_from_config(cfg),
+        pi_address=pi_address,
+        lock_wait_s=lock_wait_s,
+        progress=progress,
+    )
+
+
 @dataclass(frozen=True)
 class PairResult:
     desktop_id: str
@@ -634,7 +667,7 @@ async def pair(
     try:
         device = await push.find_pi()
     except Exception as exc:  # noqa: BLE001 - no candidate Pi found
-        return PairResult(did, None, None, Unreachable("absent", str(exc)))
+        return PairResult(did, None, None, Unreachable(verdict.Reach.ABSENT, str(exc)))
 
     conn = config.open_config_store(cfg_path)
     try:
@@ -647,21 +680,10 @@ async def pair(
     # Re-send the Window so a fresh Pi (which adopts this Desktop Id without
     # a wipe) gets it -- but only the Window: marks outside it are Readings a
     # re-paired Pi still holds and no Batch can re-send.
-    store = usage.open_store(cfg.paths_store)
-    try:
-        usage.clear_pushed_marks(store, usage.window_dates())
-    finally:
-        store.close()
+    _clear_marks(cfg, usage.window_dates())
 
     try:
-        batch = await push.run_batch_pass(
-            str(cfg.paths_store),
-            cfg.paths_projects_root,
-            settings=push.settings_from_config(cfg),
-            pi_address=device.address,
-            lock_wait_s=lock_wait_s,
-            progress=progress,
-        )
+        batch = await _run_batch(cfg, device.address, lock_wait_s, progress)
     except push.BleLinkBusy as exc:
         return PairResult(did, device.address, None, _unreachable(exc))
     return PairResult(did, device.address, batch, None)
@@ -687,14 +709,10 @@ async def push_batch(
 ) -> PushResult:
     require_paired(cfg)
     try:
-        batch = await push.run_batch_pass(
-            str(cfg.paths_store),
-            cfg.paths_projects_root,
-            settings=push.settings_from_config(cfg),
-            pi_address=cfg.pi_address,
-            lock_wait_s=lock_wait_s,
-            progress=progress,
-        )
+        batch = await _run_batch(cfg, cfg.pi_address, lock_wait_s, progress)
+    except (sqlite3.Error, usage.StoreVersionError):
+        # This Desktop's own store: never evidence that the Pi is absent.
+        raise
     except Exception as exc:  # noqa: BLE001 - busy, or no reply from the paired Pi
         return PushResult(None, _unreachable(exc), cfg.pi_idle_keepalive_s)
     return PushResult(batch, None, cfg.pi_idle_keepalive_s)
@@ -787,20 +805,9 @@ async def wipe(
     progress("phase", "Wiped. Re-pushing the archive.")
     # The wipe itself already succeeded, so a busy link here only affects
     # when the re-push happens, not whether the wipe did.
-    store = usage.open_store(cfg.paths_store)
+    _clear_marks(cfg)
     try:
-        usage.clear_pushed_marks(store)
-    finally:
-        store.close()
-    try:
-        repush = await push.run_batch_pass(
-            str(cfg.paths_store),
-            cfg.paths_projects_root,
-            settings=push.settings_from_config(cfg),
-            pi_address=cfg.pi_address,
-            lock_wait_s=lock_wait_s,
-            progress=progress,
-        )
+        repush = await _run_batch(cfg, cfg.pi_address, lock_wait_s, progress)
     except push.BleLinkBusy as exc:
         return WipeResult(command, repush_busy=str(exc))
     return WipeResult(command, repush)
