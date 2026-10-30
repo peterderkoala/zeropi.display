@@ -395,7 +395,7 @@ verified on hardware in `docs/web-ui-verification.md`. Two spec gaps it left:
 - the paired line shows the address, not §9.5's name, because every Pi
   advertises the same name.
 
-Neither has a ticket. #99 is closed too, so no issues are open. PR #88
+They are #110 and #111, both `needs-triage` with a recommendation. #99 is closed. PR #88
 merged into `main` (`81736cd`).
 
 ### Map #89 — the web UI spec (closed)
