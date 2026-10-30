@@ -2,6 +2,26 @@
 
 ## Where things stand
 
+> **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
+> Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
+> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Nine
+> of its **ten** tickets are closed: stack research (#90), the stack (#91), the
+> in-process seam (#92), the process model (#93), how a long BLE action
+> appears over HTTP (#94), when the page asks for status (#95), the
+> localhost guard (#96), first-run setup (#100) and the pages prototype
+> (#97, variant B). Only #98, writing the spec, remains. **#100 (graphical first-run setup) was added on
+> 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
+> [For the next session](#for-the-next-session) for what can be taken next.
+> **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
+> (`dev` → `main`) is still open.
+>
+> **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
+> `B8:27:EB:7C:97:0F`): user **`zero`**, not `pi`, SSH key only. It is
+> re-provisioned and verified end to end — see [Environment
+> notes](#environment-notes). Doing so found two `install-pi.sh` bugs, fixed
+> in `cf83d61`. **#99** (standalone, not on a map) asks for a "last heard from
+> the Desktop" timestamp in the Historic View footer.
+>
 > **The management surface is DONE and hardware-verified (2026-09-11).** Map
 > #80's last ticket, **#87, ran every §10.6 scenario on the dev Pi** —
 > Settings surviving a reboot, all three verbs, a cross-checked `status`,
@@ -274,6 +294,74 @@ frame from drawing.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## For the next session
+
+### Map #89 — the web UI spec (live)
+
+Work it with `/mattpocock-skills:wayfinder continue`. The map body has the
+standing constraints. ⚠ **Read its Notes before anything else**, especially:
+localhost only, no JS build step, the web UI is a skin over the same substrate
+as `cli.py`, and the Pi is absent.
+
+- ✅ **#90 Candidate stacks** (research): `docs/research/web-ui-stack.md` on
+  `research/web-ui-stack`.
+- ✅ **#91 Pick the stack**: FastAPI + uvicorn, with Preact 10 + htm vendored,
+  in a separate `desktop/requirements-web.txt`. ⚠ Pydantic describes the HTTP
+  shape only; `config.py` stays the single validation authority.
+- ✅ **#92 The seam**: operations are extracted from `cli.py`, return structured
+  results and never print. Configuration is read **per operation** in a
+  long-lived surface. `BatchResult` gains `settings_ok` and `unreachable`.
+- ✅ **#93 Process model** (2026-09-15): a resident `zeropi-web` `systemd --user`
+  unit running `cli.py web`, **independent of `zeropi-push`**. It binds
+  `127.0.0.1:8737`. It ships as a unit file that nothing installs yet, and
+  nothing installs `zeropi-push` either.
+- ✅ **#94 Long BLE actions over HTTP** (2026-09-16): a `POST` returns an
+  **Operation** handle that is followed over SSE. One BLE Operation runs per
+  process, and it runs to completion with no cancel. ⚠ The handle names an
+  Operation that has already started, never a queue (ADR-0011).
+- ✅ **#95 When the page asks for status** (2026-10-30): **no polling, ever**
+  — a Gauge push that hits a busy link is *lost*, not retried
+  (`service.py:148-150`). An in-memory last-status slot, separate from the
+  current Operation; the check time (Desktop wall clock) on the headline, Pi
+  durations shown as at the check; one automatic check on load only when the
+  slot is empty; a result that a later mutating Operation or Batch makes out of
+  date is labelled, never recomputed.
+- ✅ **#96 The localhost guard** (2026-10-30): browser-borne attacks only.
+  `TrustedHostMiddleware` (hardcoded `127.0.0.1`/`localhost`); every state
+  change is a JSON `POST`, `Origin` must match when present, no CORS;
+  `frame-ancestors 'none'` + `X-Frame-Options: DENY`; **no token**. It found
+  **#101** (standalone bug, not on a map): `wipe`'s short id is the first three
+  octets, i.e. the Raspberry Pi manufacturer prefix `b827eb`, so it can't tell
+  two Pis apart.
+- ✅ **#100 First-run setup** (2026-10-30): `install-desktop.sh` is the one
+  terminal step: venv + `requirements-web.txt`, writes **both** units, enables
+  **only** `zeropi-web`, opens `127.0.0.1:8737`. Standalone deploys all of
+  `desktop/` (closes #47's gap), no `pyproject.toml`. `/setup` is a checklist
+  derived from real state; a new `discover` Operation lists every Pi; setup
+  enables `zeropi-push` only **after** a successful pair. This resolved the
+  map's "Install and packaging" fog.
+- ✅ **#97 The pages** (2026-10-30): **variant B** of the prototype on
+  `prototype/web-ui` (`5deb9bf`, throwaway; `?variant=B&scenario=…`). It has
+  three tabs (Status, Configuration, Setup) on their own routes; the Operation
+  is a modal opened from a nav indicator, hideable, no cancel; a Status hero
+  with the Verdict and the actions; the six checks as tiles; refusals inline.
+  ⚠ The differences from the CLI are listed on #97 on purpose. Narrow screens
+  are not covered.
+- ⏭ **Takeable now: #98 Write `docs/spec-web-ui.md`** (`wayfinder:task`, AFK).
+  Its gap check is the *Consequences for the spec* list in every resolution
+  comment (#91–#97, #100), plus #96's tests list and #97's list of states.
+  ⚠ Before writing, decide the two fog items (push marks, pushed status):
+  either they become tickets or the spec states them as open.
+- **Fog on the map:** push marks not per-Pi, pushed status. (Install and
+  packaging was resolved by #100.)
+
+**Branches for this map:**
+- `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
+  carries two changes: *Configuration* is read once per run, and a web
+  operation counts as a run (#92); and the new term **Operation** (#94).
+  **`dev`'s `CONTEXT.md` has neither yet.**
+- Prototypes go on `prototype/*` branches and research on `research/*`.
+
+### Map #80 — the management surface implementation (closed)
 
 **Map #70 is CLOSED**; its destination,
 [`docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-management-surface.md)
@@ -818,8 +906,16 @@ them in the spec's own voice:
 
 ## Maps
 
-**Live map: [#70 — One management surface for both ends
-(spec)](https://github.com/peterderkoala/zeropi.display/issues/70)**, charted
+**Live map: [#89 — A lightweight web UI for the Management Surface
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, charted
+2026-09-15. It is a planning map with tickets #90–#98 plus #100 (added
+2026-10-30), and five are closed. See
+[For the next session](#for-the-next-session). The two maps below it, #70 (the
+spec) and #80 (its implementation), are **closed but not yet archived** into
+`handoff/archive/`.
+
+*Previous live map:* [#70 — One management surface for both ends
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/70), charted
 2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
 fog** as the frontier advanced, making eight. **All eight are closed** — only
 #77 (write the spec) remains, and it is the map's destination rather than
@@ -861,6 +957,22 @@ mode deploys only `push.py`.
 
 ## Hard-won facts — do not relearn these
 
+- ⚠ **A fresh Imager-provisioned Pi broke `install-pi.sh` twice** (found
+  reimaging the dev Pi on 2026-10-30, fixed in `cf83d61`):
+  - **The service user is not necessarily `pi`.** Imager lets the user pick
+    any name; `RUN_AS_USER` was hardcoded and `chown pi:pi` failed mid-install.
+    It is now `${ZEROPI_USER:-${SUDO_USER:-pi}}`, checked up front, and
+    stamped into the installed unit's `User=` (the repo's
+    `pi/zeropi-display.service` still says `User=pi`; the installer seds it).
+  - **The Bluetooth radio can ship rfkill soft-blocked** (Imager unblocks only
+    wlan). `bluezero` then dies with `org.bluez.Error.Failed: Not Powered`
+    in a restart loop, and the installer's self-check reports only *no
+    active LE advertisement after 20s*. The installer now runs
+    `rfkill unblock bluetooth`; systemd-rfkill persists it across reboots.
+- ⚠ **A reimaged Pi meets the not-per-Pi push marks.** `pair` against the
+  real store sent 1 Reading and `status` said *missing 11 Readings*;
+  `push.py --resend-all --batch-only` cleared it (2026-10-30). Same
+  mechanism as #87's open question; #100 asks whether setup should do it.
 - ⚠ **`install-desktop.sh`'s standalone mode is incomplete, and it is the
   common non-maintainer path.** It deploys only `push.py` into
   `~/.local/share/zeropi-display/` — not `gauge.py`, `usage.py` or
@@ -1195,9 +1307,33 @@ in `docs/research/`):
 
 ## Environment notes
 
-- Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
+- ~~Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
   `sshpass` is installed in this dev environment for non-interactive SSH;
-  the sudo password is the same as the SSH password.
+  the sudo password is the same as the SSH password.~~ Superseded by the
+  reimage below; `infrastructure.md` still describes the old image.
+- **Dev Pi, reimaged 2026-10-30** (Raspberry Pi OS trixie, via Imager +
+  cloud-init): `ssh zero@pi-zero.local` (Wi-Fi, currently `192.168.4.108`).
+  User **`zero`**, **SSH key auth only** (`ssh_pwauth: false`) — `sshpass` no
+  longer applies. **`sudo` needs the maintainer's password**: ask them to run
+  `sudo -v` in their own SSH session; it is cached ~15 min, and then
+  `sudo -n` works from yours. Same board, same BT address
+  `B8:27:EB:7C:97:0F`. Provisioned from the patched `pi/` via standalone
+  `install-pi.sh` (equivalent to `cf83d61`); `receive.py`/`bluezero` run from
+  `/opt/zeropi-display/venv` as user `zero`. Old `/home/pi/*` backups are gone.
+- **USB gadget on the dev Pi** (added 2026-10-30, boot partition only, originals
+  kept as `cmdline.txt.orig`/`config.txt.orig`): `dtoverlay=dwc2,dr_mode=peripheral`
+  + `modules-load=dwc2,g_cdc systemd.wants=serial-getty@ttyGS0.service`. The
+  inner "USB" port gives the laptop **`/dev/ttyACM0`, a login console**
+  (`picocom -b 115200 /dev/ttyACM0`; the laptop user is not in `dialout`, so
+  `sudo`), plus a CDC-ECM link (`usb0` / `enx…`) that has **no IPv4 on either
+  side** — SSH still goes over Wi-Fi. Image's own `rpi-usb-gadget` does
+  networking only (`g_ether`), which is why it wasn't used.
+- **Maintainer's Desktop, 2026-10-30:** paired with the reimaged Pi (real
+  Configuration), `push.py --resend-all --batch-only` run, `status` green.
+  `zeropi-push` is **installed by hand** in `~/.config/systemd/user/`
+  (in-place layout: `ExecStart=<repo>/.venv/bin/python3 <repo>/desktop/service.py`,
+  `WorkingDirectory=<repo>`), enabled and running — no installer does this
+  yet (#100).
 - **⚠ The dev Pi is shared with other concurrent sessions/jobs.** Before
   touching `/opt`, systemd units, `config.txt`, or rebooting, check for a
   live collision (`who`/`w` over SSH, recent `/var/log/dpkg.log`) — a
@@ -1218,7 +1354,7 @@ in `docs/research/`):
   during #48 on 2026-09-09; the reset is at most an hour out and
   `curl -i https://api.github.com/rate_limit` from the Pi says when.
 - Pi: Debian 13 (trixie), Python 3.13.5, aarch64, BlueZ `5.82-1.1+rpt2`,
-  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
+  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` ~~in `~pi/.local`~~ in `/opt/zeropi-display/venv` (2026-10-30 reimage).
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
   `uv venv .venv && uv pip install -r desktop/requirements.txt`.
 - Labels `wayfinder:map`, `wayfinder:task`, `wayfinder:grilling`,
@@ -1231,9 +1367,24 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#70**.
-  Invoke it with the map, not with a fresh idea — charting is done. It picks
-  the next frontier ticket for you if you do not name one.
+- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
+  Invoke it with `continue` or the map, not with a fresh idea, because
+  charting is done. It picks the next frontier ticket for you if you do not
+  name one. #98 is a task (writing the spec); for any grilling one:
+  - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
+  - Ask in numbered rounds, with a recommendation per question.
+  - Glossary edits go to `plan/web-ui`, never to `dev`.
+- **#99 (Historic View timestamp) is not on a map.** Its open question is
+  footer fit, which needs a mock **on glass** (#57's lesson) — so it wants
+  `mattpocock-skills:prototype`, then spec + ADR-0009/0010 edits, then
+  `mattpocock-skills:tdd` on `render.py`. Unlike #89 it needs the Pi; the
+  maintainer has to run `sudo -v` there first (Environment notes).
+- **`mattpocock-skills:prototype` for #97 The pages**, on fake data. The
+  Unreachable, *busy* and Operation states (listed in #97's input comment) must
+  all render.
+- **`mattpocock-skills:writing-for-agents`** is worth loading for #98, the
+  spec write-up. Model it on `docs/spec-management-surface.md`'s shape: the
+  gap check, the ⚠ traps, and an out-of-scope section.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
   assert on pixels). The suite is **474 passing** and must stay green with no
@@ -1258,13 +1409,13 @@ in `docs/research/`):
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
+- *(historic, map #70 — closed; the same holds for #89)* **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
   tickets are grilling tickets, because #70 is a **planning** map. Note
   the contrast with map #59: on an *execution* map a question means you have
   found a **gap in the spec**, so you say so on the ticket rather than grilling
   your way to a private answer (#66 found two and did exactly that). #70 is the
   opposite case — the whole point is to have the argument now.
-- **`mattpocock-skills:prototype` for [#76 What the CLI looks
+- *(historic, closed)* **`mattpocock-skills:prototype` for [#76 What the CLI looks
   like](https://github.com/peterderkoala/zeropi.display/issues/76)**, the map's
   one non-planning ticket. It exists because this repo has twice had a paper
   decision overturned the moment something was rendered (#26, #38).
