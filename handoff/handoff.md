@@ -48,15 +48,14 @@
 > `zeropi-web` only, `try-restart`s a running `zeropi-push`, waits for the URL
 > and `xdg-open`s it; the old end-of-install BLE scan is gone, since Setup
 > discovers) and the Setup tab (§9.5 checklist, scenarios `setup_none`,
-> `setup_two`, `setup_missing` in `tests/web_demo.py`). ⚠ **The installer has
-> not run end to end on this Desktop**: the agent's sandbox refused to write
-> systemd user units. The units were rendered for both layouts and passed
-> `systemd-analyze --user verify`, and the standalone copy served the UI.
-> Running `desktop/install-desktop.sh` (both layouts, in-place last) by hand
-> belongs to #109's checks, and #108 stays open until it has run. ⚠ Setup's
+> `setup_two`, `setup_missing` in `tests/web_demo.py`). The installer ran end
+> to end on this Desktop on 2026-10-30, both layouts (standalone, then
+> in-place last; the maintainer ran it, since the agent's sandbox refuses to
+> write systemd user units): each rewrote both units for its layout, created
+> only `zeropi-web`'s enable link and answered on `:8737`. #108 is closed. ⚠ Setup's
 > done step reads *paired with `<address>` (short id …)*, not §9.5's
 > *`<name>` (`<address>`)*: only `pi.address` is stored, and every Pi
-> advertises the same name. **Takeable now: #109**, after that run.
+> advertises the same name. **Takeable now: #109.**
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
