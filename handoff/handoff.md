@@ -94,7 +94,9 @@
 > Not run: two Pis (one board). The clone is the live install.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
-> and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
+> and the two `CONTEXT.md` changes are on `dev` now. **PR #88 merged into `main`**
+> (`81736cd`, 2026-10-30): `main` carries everything on `dev`, and the Pages
+> site rebuilt from it.
 >
 > **Map #89 is DONE (closed 2026-10-30).** Its destination,
 > **`docs/spec-web-ui.md`, is written on `plan/web-ui` (`6dfeca6`)**, from all
@@ -393,8 +395,8 @@ verified on hardware in `docs/web-ui-verification.md`. Two spec gaps it left:
 - the paired line shows the address, not §9.5's name, because every Pi
   advertises the same name.
 
-Neither has a ticket. The only other open issue is #99. `dev` is ahead of
-`main`; the PR waits for the maintainer.
+Neither has a ticket. #99 is closed too, so no issues are open. PR #88
+merged into `main` (`81736cd`).
 
 ### Map #89 — the web UI spec (closed)
 
