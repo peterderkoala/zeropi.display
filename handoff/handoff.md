@@ -26,8 +26,17 @@
 > question):** `config set pi.idle_keepalive_s` pushes live, but a running
 > `zeropi-push` froze its Settings at startup (`service.py` main) and
 > re-asserts the *old* value on its next connection, so the Pi reverts.
-> `operations.pending_restart` therefore marks that key too. **Takeable
-> now: #106.** Read #105's resolution comment first.
+> `operations.pending_restart` therefore marks that key too. **#106 is done
+> too**: `web/runner.py` (single-flight `Runner`, in-memory `Operation`
+> buffers, the running one plus the previous finished one), `POST
+> /api/operations`, `GET /api/operations/current|{id}/events` (SSE),
+> the last-status slot (a check with no reply empties it; a successful
+> mutating verb sets `outdated_by`), `POST /api/config/{key}` and `POST
+> /api/service/start|restart`. Smoke-tested: a real `status` over SSE
+> against the dev Pi. ⚠ Pre-existing, not changed: `WipeResult.outcome` is
+> FAULT, not CANT_TELL, when the re-push finds no Pi (the web's `phases`
+> say `absent`). **Takeable now: #107 and #108, in parallel.** Read #106's
+> resolution comment first.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

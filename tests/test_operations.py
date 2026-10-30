@@ -437,3 +437,49 @@ def test_pending_restart_is_keys_written_after_the_service_started(tmp_path):
         assert operations.pending_restart(conn, operations.ServiceInfo("not running", None)) == []
     finally:
         conn.close()
+
+
+def test_check_wipe_is_the_wipes_own_pre_ble_refusal(tmp_path):
+    cfg = _cfg(tmp_path, **PAIRED)
+    operations.check_wipe(cfg, " ddeeff ")  # the last three octets
+    with pytest.raises(Refused) as exc:
+        operations.check_wipe(cfg, "aabbcc")
+    assert exc.value.kind == "confirm_mismatch"
+    with pytest.raises(Refused) as exc:
+        operations.check_wipe(_cfg(tmp_path / "unpaired"), "ddeeff")
+    assert exc.value.kind == "not_paired"
+
+
+class _Systemctl:
+    """Answers `systemctl --user show -p LoadState` with `load_state`, and
+    every other call with `returncode`/`stderr`; records every argv."""
+
+    def __init__(self, load_state="loaded", returncode=0, stderr=""):
+        self.load_state, self.returncode, self.stderr = load_state, returncode, stderr
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv, **kw):
+        import subprocess
+
+        self.calls.append(argv)
+        if "show" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout=f"{self.load_state}\n", stderr="")
+        return subprocess.CompletedProcess(argv, self.returncode, stdout="", stderr=self.stderr)
+
+
+def test_require_unit_refuses_a_unit_that_is_not_installed():
+    run = _Systemctl(load_state="not-found")
+    with pytest.raises(Refused) as exc:
+        operations.require_unit(run_fn=run)
+    assert exc.value.kind == "unit_missing"
+    assert "bash -s -- desktop" in exc.value.message
+    operations.require_unit(run_fn=_Systemctl())
+
+
+def test_start_service_enables_it_now_and_passes_systemctls_text_through():
+    run = _Systemctl()
+    assert asyncio.run(operations.start_service(run_fn=run)).outcome is Outcome.OK
+    assert run.calls[-1] == ["systemctl", "--user", "enable", "--now", operations.SERVICE_NAME]
+
+    r = asyncio.run(operations.start_service(run_fn=_Systemctl(returncode=1, stderr="Failed to start.\n")))
+    assert r.error == "Failed to start."

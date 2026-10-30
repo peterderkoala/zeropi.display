@@ -322,10 +322,10 @@ class RestartResult:
         return Outcome.OK if self.error is None else Outcome.REFUSED
 
 
-async def restart(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> RestartResult:
+def _systemctl(service_name: str, args: list[str], run_fn: Callable[..., Any]) -> RestartResult:
     try:
         result = run_fn(
-            ["systemctl", "--user", "restart", service_name],
+            ["systemctl", "--user", *args, service_name],
             capture_output=True,
             text=True,
             timeout=10,
@@ -335,6 +335,37 @@ async def restart(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] =
     if result.returncode != 0:
         return RestartResult(service_name, result.stderr.strip() or f"exit code {result.returncode}")
     return RestartResult(service_name, None)
+
+
+async def restart(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> RestartResult:
+    return _systemctl(service_name, ["restart"], run_fn)
+
+
+async def start_service(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> RestartResult:
+    """Setup's step 3 (web-ui §9.4): enabled only after a successful pair,
+    never by the installer, so an unpaired loop never pushes to a stranger."""
+    return _systemctl(service_name, ["enable", "--now"], run_fn)
+
+
+DESKTOP_INSTALL_ONE_LINER = (
+    "curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- desktop"
+)
+
+
+def require_unit(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> None:
+    """The `unit_missing` refusal (web-ui §4.2, §9.4): only the installer
+    knows the layout, so the web UI never writes a unit file itself."""
+    try:
+        result = run_fn(
+            ["systemctl", "--user", "show", service_name, "-p", "LoadState", "--value"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return  # can't tell: let the action itself report systemctl's text
+    if result.stdout.strip() == "not-found":
+        raise Refused("unit_missing", f"{service_name} is not installed. Re-run the installer: {DESKTOP_INSTALL_ONE_LINER}")
 
 
 def require_paired(cfg: config.Configuration) -> None:
@@ -825,6 +856,14 @@ async def redraw(
     return await _send_user_command("redraw", cfg, lock_wait_s, progress)
 
 
+def check_wipe(cfg: config.Configuration, confirmation: str) -> None:
+    """`wipe`'s refusals, all decided before BLE (§4.2), callable on their
+    own so the web layer can answer its `POST` with them (web-ui §6.6)."""
+    require_paired(cfg)
+    if confirmation.strip() != short_id(cfg.pi_address):
+        raise Refused("confirm_mismatch", "Confirmation did not match. Nothing was sent.")
+
+
 @dataclass(frozen=True)
 class WipeResult:
     command: CommandResult
@@ -849,9 +888,7 @@ async def wipe(
 ) -> WipeResult:
     """`confirmation` is the short id the human typed (§9.4); a mismatch
     refuses before anything is sent."""
-    require_paired(cfg)
-    if confirmation.strip() != short_id(cfg.pi_address):
-        raise Refused("confirm_mismatch", "Confirmation did not match. Nothing was sent.")
+    check_wipe(cfg, confirmation)
 
     command = await _send_user_command("wipe", cfg, lock_wait_s, progress)
     if command.outcome is not Outcome.OK:

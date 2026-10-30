@@ -191,3 +191,304 @@ def test_cli_web_parses_port():
 
     assert cli.build_parser().parse_args(["web"]).port == PORT
     assert cli.build_parser().parse_args(["web", "--port", "9000"]).port == 9000
+
+
+# --- §6 Operations over HTTP ------------------------------------------------
+
+import json  # noqa: E402
+import threading  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+import push  # noqa: E402
+from operations import Outcome, Refused  # noqa: E402
+
+CHECKED_AT = datetime(2026, 10, 30, 14, 4, tzinfo=timezone.utc)
+PAIRED = {"pi.address": "AA:BB:CC:DD:EE:FF"}
+
+
+@pytest.fixture
+def paired_app(tmp_path):
+    _cfg(tmp_path, **PAIRED)
+    runs = _Systemctl()
+    app = web.create_app(
+        port=PORT,
+        cfg_path=_cfg_path(tmp_path),
+        cli_store_path=str(tmp_path / "usage.db"),
+        service_info_fn=lambda: operations.ServiceInfo(state="running", uptime_s=1.0),
+        systemctl_fn=runs,
+        now_fn=lambda: CHECKED_AT,
+    )
+    app.state.systemctl = runs
+    return app
+
+
+@pytest.fixture
+def paired(paired_app):
+    return TestClient(paired_app, base_url=BASE)
+
+
+class _Systemctl:
+    def __init__(self, load_state="loaded", returncode=0, stderr=""):
+        self.load_state, self.returncode, self.stderr = load_state, returncode, stderr
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv, **kw):
+        self.calls.append(argv)
+        if "show" in argv:
+            return subprocess.CompletedProcess(argv, 0, stdout=f"{self.load_state}\n", stderr="")
+        return subprocess.CompletedProcess(argv, self.returncode, stdout="", stderr=self.stderr)
+
+
+def _fake(monkeypatch, name, result, *, gate=None, calls=None):
+    """Replaces `operations.<name>` with an async fake that reports one
+    progress line, optionally blocks on `gate`, and returns `result`."""
+
+    async def fake(*a, progress=push.print_progress, **kw):
+        if calls is not None:
+            calls.append((a, kw))
+        progress("scanning", "Scanning (up to 10s)…")
+        if gate is not None:
+            gate.wait(5)
+        return result
+
+    monkeypatch.setattr(operations, name, fake)
+
+
+def _events(client, op_id):
+    body = client.get(f"/api/operations/{op_id}/events").text
+    out = []
+    for block in body.strip().split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        out.append((fields["event"], json.loads(fields["data"])))
+    return out
+
+
+def _finish(client, op_id):
+    return _events(client, op_id)[-1][1]
+
+
+def _push_ok():
+    return operations.PushResult(push.BatchResult(sent=3), None, 3600)
+
+
+def _status_ok(monkeypatch):
+    _fake(monkeypatch, "status", SimpleNamespace(status={"uptime_s": 5}, outcome=Outcome.OK))
+    monkeypatch.setattr(operations, "status_json", lambda r, s: {"verdict": {"ok": True}})
+
+
+def test_post_returns_202_with_a_handle_that_has_already_started(paired, monkeypatch):
+    gate, calls = threading.Event(), []
+    _fake(monkeypatch, "push_batch", _push_ok(), gate=gate, calls=calls)
+
+    resp = paired.post("/api/operations", json={"verb": "push"})
+
+    assert resp.status_code == 202
+    op_id = resp.json()["id"]
+    current = paired.get("/api/operations/current").json()
+    assert current["id"] == op_id and current["running"] is True
+    gate.set()
+    assert _finish(paired, op_id)["outcome"] == "ok"
+    assert len(calls) == 1
+
+
+def test_second_post_while_one_runs_is_busy_here_and_the_fake_ran_once(paired, monkeypatch):
+    gate, calls = threading.Event(), []
+    _fake(monkeypatch, "push_batch", _push_ok(), gate=gate, calls=calls)
+    first = paired.post("/api/operations", json={"verb": "push"}).json()["id"]
+
+    resp = paired.post("/api/operations", json={"verb": "push"})
+
+    assert resp.status_code == 409
+    assert resp.json()["refusal"]["kind"] == "busy_here"
+    assert resp.json()["running"] == first
+    gate.set()
+    _finish(paired, first)
+    assert len(calls) == 1
+
+
+def test_pre_ble_refusal_is_422_and_creates_no_operation(paired, monkeypatch):
+    _fake(monkeypatch, "push_batch", _push_ok())
+    done = paired.post("/api/operations", json={"verb": "push"}).json()["id"]
+    _finish(paired, done)
+
+    resp = paired.post("/api/operations", json={"verb": "wipe", "args": {"confirm": "aabbcc"}})
+
+    assert resp.status_code == 422
+    refusal = resp.json()["refusal"]
+    assert refusal == {"kind": "confirm_mismatch", "message": "Confirmation did not match. Nothing was sent.", "rationale": None}
+    assert paired.get("/api/operations/current").json()["id"] == done
+
+
+def test_not_paired_is_refused_before_any_operation(client, monkeypatch):
+    _fake(monkeypatch, "redraw", None)
+    resp = client.post("/api/operations", json={"verb": "redraw"})
+    assert resp.status_code == 422 and resp.json()["refusal"]["kind"] == "not_paired"
+    assert client.get("/api/operations/current").status_code == 204
+
+
+def test_events_replay_the_buffer_to_a_late_subscriber_then_one_result(paired, monkeypatch):
+    _fake(monkeypatch, "push_batch", _push_ok())
+    op_id = paired.post("/api/operations", json={"verb": "push"}).json()["id"]
+    _finish(paired, op_id)
+
+    events = _events(paired, op_id)  # subscribing after it finished
+
+    assert events[0] == ("progress", {"kind": "scanning", "text": "Scanning (up to 10s)…"})
+    assert [e for e, _ in events].count("result") == 1 and events[-1][0] == "result"
+    result = events[-1][1]
+    assert result["outcome"] == "ok" and result["batch"]["sent"] == 3
+
+
+def test_unknown_operation_id_is_404(paired):
+    assert paired.get("/api/operations/nope/events").status_code == 404
+
+
+def test_wipe_reports_each_phase(paired, monkeypatch):
+    wiped = operations.WipeResult(operations.CommandResult({"status": "ok"}, None), repush_busy="link busy")
+    _fake(monkeypatch, "wipe", wiped)
+    op_id = paired.post("/api/operations", json={"verb": "wipe", "args": {"confirm": "ddeeff"}}).json()["id"]
+    result = _finish(paired, op_id)
+    assert result["phases"] == {"command": "ok", "repush": "busy"}
+    assert result["outcome"] == "cant_tell"
+
+
+def test_a_refusal_raised_inside_the_operation_is_its_result(paired, monkeypatch):
+    async def refuses(*a, **kw):
+        raise Refused("not_paired", "Not paired — no Pi address is recorded.")
+
+    monkeypatch.setattr(operations, "push_batch", refuses)
+    op_id = paired.post("/api/operations", json={"verb": "push"}).json()["id"]
+    result = _finish(paired, op_id)
+    assert result["refusal"]["kind"] == "not_paired" and result["outcome"] == "cant_tell"
+
+
+# --- §7.2 the last-status slot ----------------------------------------------
+
+
+def test_status_fills_the_slot_with_the_desktop_clock(paired, monkeypatch):
+    _status_ok(monkeypatch)
+    _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+
+    slot = paired.get("/api/status/last").json()
+    assert slot["result"] == {"verdict": {"ok": True}, "outcome": "ok"}
+    assert slot["checked_at"] == CHECKED_AT.isoformat()
+    assert slot["outdated_by"] is None
+
+
+def test_slot_survives_a_later_push_and_is_labelled_out_of_date(paired, monkeypatch):
+    _status_ok(monkeypatch)
+    _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+    _fake(monkeypatch, "push_batch", _push_ok())
+    _finish(paired, paired.post("/api/operations", json={"verb": "push"}).json()["id"])
+
+    slot = paired.get("/api/status/last").json()
+    assert slot["result"]["verdict"] == {"ok": True}
+    assert slot["outdated_by"] == {"verb": "push", "at": CHECKED_AT.isoformat()}
+
+
+def test_a_status_with_no_reply_empties_the_slot(paired, monkeypatch):
+    _status_ok(monkeypatch)
+    _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+    _fake(monkeypatch, "status", SimpleNamespace(status=None, outcome=Outcome.CANT_TELL))
+    monkeypatch.setattr(operations, "status_json", lambda r, s: {"verdict": {"ok": None}})
+    _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+    assert paired.get("/api/status/last").status_code == 204
+
+
+# --- §3.3 Configuration over HTTP -------------------------------------------
+
+
+def test_config_value_passes_through_as_a_string_with_configs_refusal(paired, tmp_path):
+    import config
+
+    conn = config.open_config_store(_cfg_path(tmp_path))
+    try:
+        with pytest.raises(Refused) as expected:
+            operations.write_config(conn, "usage.window_days", "99")
+    finally:
+        conn.close()
+
+    resp = paired.post("/api/config/usage.window_days", json={"value": "99"})
+
+    assert resp.status_code == 422
+    assert resp.json()["refusal"] == {
+        "kind": "out_of_range",
+        "message": expected.value.message,
+        "rationale": expected.value.rationale,
+    }
+    ok = paired.post("/api/config/usage.window_days", json={"value": "7"})
+    assert ok.status_code == 200 and ok.json() == {"written": 7}
+
+
+def test_config_value_must_be_a_string(paired):
+    resp = paired.post("/api/config/usage.window_days", json={"value": 7})
+    assert resp.status_code == 422 and resp.json()["refusal"]["kind"] == "bad_request"
+
+
+def test_a_to_pi_key_is_written_then_sent_as_an_operation(paired, monkeypatch, tmp_path):
+    calls = []
+    _fake(monkeypatch, "push_setting", operations.SettingPushResult(operations.PI_PROJECTED_SETTING, 7200, None), calls=calls)
+
+    resp = paired.post(f"/api/config/{operations.PI_PROJECTED_SETTING}", json={"value": "7200"})
+
+    assert resp.status_code == 202
+    result = _finish(paired, resp.json()["id"])
+    assert result["outcome"] == "ok" and calls[0][0][1] == 7200
+
+
+# --- §9.4 unit actions ------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/api/service/start", "/api/service/restart"])
+def test_unit_missing_is_refused(paired_app, path):
+    paired_app.state.systemctl.load_state = "not-found"
+    resp = TestClient(paired_app, base_url=BASE).post(path, json={})
+    assert resp.status_code == 422 and resp.json()["refusal"]["kind"] == "unit_missing"
+
+
+def test_service_start_enables_it_now(paired_app):
+    resp = TestClient(paired_app, base_url=BASE).post("/api/service/start", json={})
+    assert resp.status_code == 200
+    assert paired_app.state.systemctl.calls[-1][2:4] == ["enable", "--now"]
+
+
+def test_systemctl_error_text_is_rendered_verbatim(paired_app):
+    paired_app.state.systemctl.returncode, paired_app.state.systemctl.stderr = 1, "Job failed. See journal.\n"
+    resp = TestClient(paired_app, base_url=BASE).post("/api/service/restart", json={})
+    assert resp.status_code == 502 and resp.json() == {"systemctl": "Job failed. See journal."}
+
+
+def test_a_wipe_whose_repush_was_busy_still_outdates_the_check(paired, monkeypatch):
+    _status_ok(monkeypatch)
+    _finish(paired, paired.post("/api/operations", json={"verb": "status"}).json()["id"])
+    wiped = operations.WipeResult(operations.CommandResult({"status": "ok"}, None), repush_busy="link busy")
+    _fake(monkeypatch, "wipe", wiped)
+    _finish(paired, paired.post("/api/operations", json={"verb": "wipe", "args": {"confirm": "ddeeff"}}).json()["id"])
+    assert paired.get("/api/status/last").json()["outdated_by"]["verb"] == "wipe"
+
+
+def test_the_previous_operation_still_replays_while_the_next_runs(paired, monkeypatch):
+    _fake(monkeypatch, "push_batch", _push_ok())
+    first = paired.post("/api/operations", json={"verb": "push"}).json()["id"]
+    _finish(paired, first)
+    gate = threading.Event()
+    _fake(monkeypatch, "redraw", operations.CommandResult({"status": "ok", "drawn": True}, None), gate=gate)
+    paired.post("/api/operations", json={"verb": "redraw"})
+    try:
+        assert _finish(paired, first)["outcome"] == "ok"
+    finally:
+        gate.set()
+
+
+def test_a_non_string_pair_address_is_refused(paired, monkeypatch):
+    _fake(monkeypatch, "pair", None)
+    resp = paired.post("/api/operations", json={"verb": "pair", "args": {"address": ["x"]}})
+    assert resp.status_code == 422 and resp.json()["refusal"]["kind"] == "bad_request"
+
+
+def test_a_wipe_repush_with_no_pi_is_absent_not_fault(paired, monkeypatch):
+    repush = push.BatchResult(failed=2, unreachable="no reply from paired Pi")
+    _fake(monkeypatch, "wipe", operations.WipeResult(operations.CommandResult({"status": "ok"}, None), repush))
+    op_id = paired.post("/api/operations", json={"verb": "wipe", "args": {"confirm": "ddeeff"}}).json()["id"]
+    assert _finish(paired, op_id)["phases"] == {"command": "ok", "repush": "absent"}
