@@ -10,6 +10,7 @@ ticket's testing brief.
 from __future__ import annotations
 
 import asyncio
+import functools
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,6 +18,7 @@ import pytest
 import push
 import service
 from service import BatchScheduler, DisplayedGaugeState, GaugeGate
+from test_cli import _absent_radio, _seed_pending
 
 
 def _dt(hour, minute=0, day=5, tz=timezone.utc):
@@ -510,3 +512,99 @@ def test_parse_args_defaults():
 def test_parse_args_store_path():
     args = service.parse_args(["--store", "/tmp/custom.db"])
     assert args.store == "/tmp/custom.db"
+
+
+def test_main_binds_configuration_and_the_services_immediate_lock_failure(tmp_path, monkeypatch):
+    """#81's review found Configuration silently not reaching the loop's two
+    push seams. Same shape here: the Settings set to re-assert (§7.2) and the
+    service's *immediate* BLE-lock failure (§7.1) are bound by partial
+    application in `main()`, so nothing but this test would notice their
+    absence."""
+    monkeypatch.setenv("ZEROPI_CONFIG", str(tmp_path / "config.db"))
+    monkeypatch.setenv("ZEROPI_USAGE_STORE", str(tmp_path / "usage.db"))
+    captured: dict = {}
+
+    async def fake_run_forever(store_path, **kwargs):
+        captured["store_path"] = store_path
+        captured.update(kwargs)
+
+    monkeypatch.setattr(service, "run_forever", fake_run_forever)
+
+    assert service.main([]) == 0
+
+    for name, target in (
+        ("run_batch_pass_fn", push.run_batch_pass),
+        ("run_gauge_push_fn", push.run_gauge_push),
+    ):
+        bound = captured[name]
+        assert bound.func is target
+        assert bound.keywords["lock_wait_s"] == push.SERVICE_LOCK_WAIT_S == 0.0
+        assert bound.keywords["settings"] == {"idle_keepalive_s": 86400}
+        assert "projects_root" in bound.keywords
+
+
+def test_a_busy_link_is_dropped_quietly_not_logged_as_a_failure(caplog):
+    """§7.1: the service never waits for the lock, and a collision with a
+    human's CLI is an expected steady state — not a traceback, and not a
+    Batch success either (it is simply retried, pipeline §7.3)."""
+
+    async def busy_batch(store_path):
+        raise push.BleLinkBusy("the BLE link is busy")
+
+    async def busy_gauge(store_path):  # pragma: no cover - gate never fires here
+        raise push.BleLinkBusy("the BLE link is busy")
+
+    async def _impl():
+        with caplog.at_level("INFO", logger="zeropi.service"):
+            await service.run_forever(
+                max_iterations=1,
+                now_wall_fn=lambda: _dt(4, 30),
+                read_snapshot_fn=lambda: None,
+                run_batch_pass_fn=busy_batch,
+                run_gauge_push_fn=busy_gauge,
+                sleep_fn=_noop_sleep,
+            )
+
+    asyncio.run(_impl())
+
+    records = [r for r in caplog.records if r.name == "zeropi.service"]
+    assert any("deferred" in r.getMessage() for r in records)
+    assert all(r.levelname == "INFO" for r in records)
+    assert all(r.exc_info is None for r in records)
+
+
+async def _noop_sleep(_seconds):
+    return None
+
+
+def test_an_unreachable_batch_is_still_a_failure_so_it_is_retried(tmp_path, monkeypatch, pin_today):
+    """#104 added `BatchResult.unreachable`; `failed` and `ok` are unchanged,
+    so the service still records no success and retries (pipeline §7.3)."""
+    store = tmp_path / "store.db"
+    _seed_pending(store, [("2026-09-05", "-home-a", "claude-opus-5")])
+    _absent_radio(monkeypatch)
+    results, successes = [], []
+    real_pass = functools.partial(
+        push.run_batch_pass, projects_root=tmp_path / "no-projects", lock_wait_s=0.0
+    )
+
+    async def recording_pass(store_path):
+        results.append(await real_pass(store_path))
+        return results[-1]
+
+    monkeypatch.setattr(BatchScheduler, "note_success", lambda self, now: successes.append(now))
+
+    asyncio.run(
+        service.run_forever(
+            str(store),
+            max_iterations=1,
+            now_wall_fn=lambda: _dt(4, 30),
+            read_snapshot_fn=lambda: None,
+            run_batch_pass_fn=recording_pass,
+            run_gauge_push_fn=_noop_sleep,
+            sleep_fn=_noop_sleep,
+        )
+    )
+
+    assert results[0].unreachable is not None and results[0].failed == 1
+    assert successes == []

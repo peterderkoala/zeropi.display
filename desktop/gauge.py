@@ -18,11 +18,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+import usage
+
 # --- Constants -------------------------------------------------------------
 
 DEFAULT_RATE_LIMITS_PATH = Path.home() / ".local/state/zeropi-display/rate-limits.json"
 DEFAULT_SESSIONS_DIR = Path.home() / ".claude/sessions"
-DEFAULT_PROJECTS_ROOT = Path.home() / ".claude/projects"
+# management-surface spec §11.1 trap 1: this used to be a second expression
+# for the same path (`Path.home() / ".claude/projects"`), equal to
+# `usage.DEFAULT_PROJECTS_ROOT` today by coincidence and with nothing
+# keeping them equal. Collapsed to the one key, `paths.projects_root`
+# (spec §4.1) -- two constants would let a Gauge and a Daily read different
+# directories the moment either one became configurable.
+DEFAULT_PROJECTS_ROOT = usage.DEFAULT_PROJECTS_ROOT
 
 # A Gauge snapshot this old at push time would arrive already expired on the
 # Pi (spec §5.3, §8.4 — 300s is one redraw floor). Refuse to push it.

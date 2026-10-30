@@ -648,6 +648,53 @@ def test_pending_readings_filters_to_pending_only(tmp_path):
     assert usage.pending_readings(conn, window=["2026-09-01", "2026-09-02"]) == []
 
 
+def _entry(request_id, local_date, project_key, model, **overrides):
+    fields = dict(
+        request_id=request_id, message_id=f"msg-{request_id}", session_id="sess",
+        project_key=project_key, cwd=None, local_date=local_date, model=model,
+        input_tokens=1, output_tokens=1, cache_write_5m_tokens=0,
+        cache_write_1h_tokens=0, cache_read_tokens=0, web_search_requests=0,
+        cost_usd=0.0001, cost_complete=True,
+        rank_sidechain=1, rank_tokens=2, rank_speed=1,
+        source_file=f"/fake/{request_id}.jsonl", source_end_offset=1,
+    )
+    fields.update(overrides)
+    return usage.UsageEntry(**fields)
+
+
+def test_pushed_summary_empty_store(tmp_path):
+    conn = usage.open_store(tmp_path / "store.db")
+    summary = usage.pushed_summary(conn)
+    assert summary == usage.PushedSummary(readings=0, coverage_start=None, last_pushed_at=None)
+
+
+def test_pushed_summary_ignores_unpushed_entries(tmp_path):
+    conn = usage.open_store(tmp_path / "store.db")
+    usage.ingest_entries(conn, [_entry("r1", "2026-09-05", "proj", "claude-opus-5")])
+
+    summary = usage.pushed_summary(conn)
+    assert summary == usage.PushedSummary(readings=0, coverage_start=None, last_pushed_at=None)
+
+
+def test_pushed_summary_counts_distinct_groups_and_earliest_date(tmp_path):
+    conn = usage.open_store(tmp_path / "store.db")
+    usage.ingest_entries(
+        conn,
+        [
+            _entry("r1", "2026-09-05", "proj", "claude-opus-5"),
+            _entry("r2", "2026-09-05", "proj", "claude-opus-5"),  # same group as r1
+            _entry("r3", "2026-09-01", "proj", "claude-sonnet-5"),
+        ],
+    )
+    usage.mark_pushed(conn, "2026-09-05", "proj", "claude-opus-5", "2026-09-05T00:00:00+00:00")
+    usage.mark_pushed(conn, "2026-09-01", "proj", "claude-sonnet-5", "2026-09-06T00:00:00+00:00")
+
+    summary = usage.pushed_summary(conn)
+    assert summary.readings == 2  # two (date, project, model) groups, not three rows
+    assert summary.coverage_start == "2026-09-01"
+    assert summary.last_pushed_at == "2026-09-06T00:00:00+00:00"
+
+
 def test_window_dates_covers_seven_days_ending_today():
     import datetime as dt
 

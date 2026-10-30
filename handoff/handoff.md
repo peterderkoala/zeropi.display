@@ -2,10 +2,234 @@
 
 ## Where things stand
 
+> **#99 (2026-10-30): the Historic View's footer says when the Desktop last
+> sent.** Example: `SINCE 30 OCT   30/10 23:21   AVG $96`.
+> - The Desktop stamps `sent_label` (`%d/%m %H:%M`, local time at push) on
+>   every Daily and Gauge Payload.
+> - The Pi keeps the latest in `meta['sent_label']` and prints it verbatim,
+>   centred between SINCE and AVG.
+> - A Payload with no usable label (missing, or over 11 characters), and any
+>   wipe, clears it, so nothing is drawn.
+>
+> ADR-0014 records why this is display text, not an instant (ADR-0009), and not
+> a stale marker (ADR-0010). The glossary term is **Sent Label**. The dev Pi
+> runs it from the curl bootstrap (`ref=dev`). The Pi drew it at 23:30:53, and
+> the frame rebuilt on the Pi from its own data shows the footer laid out
+> right. ⚠ `zero` on the dev Pi has **no passwordless sudo**: the Pi's
+> bootstrap needs the maintainer's `sudo -v` or `ssh -t`.
+>
+> **Done (2026-10-30): [map #102 — implement the web
+> UI](https://github.com/peterderkoala/zeropi.display/issues/102)**, an
+> **execution-mode** map against `docs/spec-web-ui.md`. It has seven slices,
+> chained: #103 extract the operations module → #104 extend the operations
+> (`BatchResult` fields, pair by address, `discover`) → #105 web skeleton and
+> localhost guard → #106 Operations over HTTP and the last-status slot → then
+> #107 (Status and Configuration tabs) and #108 (install and Setup) in
+> parallel → #109 hardware verification. All seven are closed. **#103 is done** (`fdd2762`):
+> `desktop/operations.py` holds every action, with results carrying an
+> `outcome` and pre-BLE refusals raised as `Refused(kind, …)`; `cli.py` is a
+> renderer whose output was diffed byte-identical; `push.py` takes
+> `progress(kind, text)`. **#104 is done too**: `BatchResult` has
+> `settings_ok`/`unreachable`, so `push`/`pair` against an absent Pi exit 2
+> as Unreachable (#86's gap closed); `operations.pair(address=…)`;
+> `operations.discover` → `DiscoverResult(devices: FoundPi…)` over
+> `push.scan_for_pis`. **#105 is done too**: `desktop/web/` (the only
+> `fastapi` importer; `cli.py web [--port]` imports it lazily), the guard in
+> `web/guard.py`, Preact 10.29.8 + htm 3.1.1 vendored with a sha256
+> `README.md`, `GET /api/desktop|config|status/last` and the page shell.
+> Handlers are plain `def` (thread pool) rather than §3.1's "async"; #106's
+> SSE will need async ones. ⚠ **Found, not fixed (pre-existing, a spec
+> question):** `config set pi.idle_keepalive_s` pushes live, but a running
+> `zeropi-push` froze its Settings at startup (`service.py` main) and
+> re-asserts the *old* value on its next connection, so the Pi reverts.
+> `operations.pending_restart` therefore marks that key too. **#106 is done
+> too**: `web/runner.py` (single-flight `Runner`, in-memory `Operation`
+> buffers, the running one plus the previous finished one), `POST
+> /api/operations`, `GET /api/operations/current|{id}/events` (SSE),
+> the last-status slot (a check with no reply empties it; a successful
+> mutating verb sets `outdated_by`), `POST /api/config/{key}` and `POST
+> /api/service/start|restart`. Smoke-tested: a real `status` over SSE
+> against the dev Pi. ⚠ Pre-existing, not changed: `WipeResult.outcome` is
+> FAULT, not CANT_TELL, when the re-push finds no Pi (the web's `phases`
+> say `absent`). **#107 is done too**: `desktop/web/static/app.js` builds
+> the Status and Configuration tabs, the Operation modal and indicator, and
+> the banner. Every result carries a Python-built `summary` in the CLI's
+> words. The fog item *checking the pages by hand* is settled in
+> `docs/web-ui-page-checks.md`, with `tests/web_demo.py` (the real app over
+> fake BLE, one scenario per §10.7 state). ⚠ `zeropi-web` now shuts down
+> with `timeout_graceful_shutdown=1`: an open events stream used to hold
+> shutdown until the Operation ended (§5.3). **#108 is done too**:
+> `desktop/zeropi-web.service`, `install-desktop.sh` (standalone now deploys
+> all of `desktop/`, writes both units for the layout, enables and restarts
+> `zeropi-web` only, `try-restart`s a running `zeropi-push`, waits for the URL
+> and `xdg-open`s it; the old end-of-install BLE scan is gone, since Setup
+> discovers) and the Setup tab (§9.5 checklist, scenarios `setup_none`,
+> `setup_two`, `setup_missing` in `tests/web_demo.py`). The installer ran end
+> to end on this Desktop on 2026-10-30, both layouts (standalone, then
+> in-place last; the maintainer ran it, since the agent's sandbox refuses to
+> write systemd user units): each rewrote both units for its layout, created
+> only `zeropi-web`'s enable link and answered on `:8737`. #108 is closed. ⚠ Setup's
+> done step reads *paired with `<address>` (short id …)*, not §9.5's
+> *`<name>` (`<address>`)*: only `pi.address` is stored, and every Pi
+> advertises the same name. **#109 is done** (`docs/web-ui-verification.md`,
+> 2026-10-30). On the dev Pi, through the installed `zeropi-web` and a real
+> browser, these pass: the guard; `busy`; `busy_here`; the second tab attaching; the
+> restart mid-`push` (*outcome unknown*, stop in 1.18 s); the banner and
+> Setup's Start; the two-phase partial `wipe`; `absent` (the Pi's receiver
+> stopped); a `→ Pi` Setting, read back from `meta` on the Pi; and real
+> discover and pair. Two defects were fixed:
+> - re-pairing the same Pi left Setup stuck in *choosing*;
+> - pages had no `Cache-Control`, so browsers ran an old `app.js` after an
+>   upgrade. They are now `no-cache`. ⚠ A browser that cached a pre-fix copy
+>   needs one hard reload.
+>
+> ⚠ Found, not fixed: Setup's step 4 after a re-pair shows the previous,
+> out-of-date Verdict (§9.5 covers only the first pair). Also passed:
+> - from scratch: the curl bootstrap with no units and no `pi.address`, then
+>   Setup's pair, *Start zeropi-push* (enabled only after the pair) and the
+>   first Verdict;
+> - reboot survival: both units back, and both journals show `print()`
+>   output.
+>
+> Not run: two Pis (one board). The clone is the live install.
+>
+> **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
+> and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
+>
+> **Map #89 is DONE (closed 2026-10-30).** Its destination,
+> **`docs/spec-web-ui.md`, is written on `plan/web-ui` (`6dfeca6`)**, from all
+> ten tickets. It is binding for the web UI: FastAPI + vendored Preact/htm; the
+> operations extracted from `cli.py`; a resident `zeropi-web` on
+> `127.0.0.1:8737`; Operations over SSE, one at a time; no status polling; the
+> localhost guard; installer + `/setup`; variant B's three tabs; a 20-point gap
+> check. Its implementation is map #102 (above). **#101 is fixed**
+> (`wipe`'s short id is now the last three octets, `7c970f` on the dev Pi).
+>
+> **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
+> `B8:27:EB:7C:97:0F`): user **`zero`**, not `pi`, SSH key only. It is
+> re-provisioned and verified end to end — see [Environment
+> notes](#environment-notes). Doing so found two `install-pi.sh` bugs, fixed
+> in `cf83d61`. **#99** (standalone, not on a map) asks for a "last heard from
+> the Desktop" timestamp in the Historic View footer.
+>
+> **The management surface is DONE and hardware-verified (2026-09-11).** Map
+> #80's last ticket, **#87, ran every §10.6 scenario on the dev Pi** —
+> Settings surviving a reboot, all three verbs, a cross-checked `status`,
+> both Unreachable cases, `btmon` (status Ack **229 B** on the wire, request
+> 71 B) — and **found five Desktop-side defects, all fixed during the run**;
+> the Pi-side code needed no change. Write-up:
+> `docs/management-surface-verification.md`. ⚠ Three design questions it
+> raised are on #87, not decided (see [For the next session](#for-the-next-session)).
+>
 > **Rendering is DONE.** Map #59 reached its destination on 2026-09-10; the
-> panel draws, verified on real glass. There is no live map. See
-> [For the next session](#for-the-next-session) below for what is actually
-> left.
+> panel draws, verified on real glass. **Map #70 is DONE too, closed the same
+> day** — `docs/spec-management-surface.md` is on `dev` (`b4ec9b5`), written by
+> #77 from all eight of its decision tickets. **Map #80 implemented it, all
+> seven tickets**: #81 (`ef129e3`) built `desktop/config.py` —
+> the Configuration store and the 18-key Tier 1/2 schema, resolved once at
+> `push.py`/`service.py`'s entry points. #82 (`0eb9393`, both 2026-09-10)
+> built the Pi's configuration seam — `apply_settings`/`get_setting` persist
+> `setting.*` rows in `meta`, the ADR-0006 wipe clears them, and
+> `RedrawGate._idle_elapsed` now reads a live-looked-up getter instead of a
+> module constant, so a Setting applies without a restart. **#83 (the wire,
+> `568ef47`, 2026-09-10) is also done**: `settings`/`command` Payloads now
+> cross the wire, all three verbs (`redraw`/`wipe`/`status`) dispatch, and
+> `MAX_ACK_BYTES` is enforced on every Ack before notifying. **#84 (the
+> Desktop's BLE lock + Settings re-assertion, `e5c02b2`, 2026-09-10) is done
+> too**: an advisory `flock(2)` on `~/.local/state/zeropi-display/ble.lock`
+> and the complete Settings set are both taken *inside*
+> `_with_ble_connection`, so the CLI (waits 15 s) and the resident service
+> (`SERVICE_LOCK_WAIT_S = 0`, fails immediately) get them by construction.
+> **#85 (the Verdict, `0d61808`, 2026-09-10) is done too**: `desktop/verdict.py`
+> is §8 as one pure function over Desktop facts and the Pi's status reply —
+> four states, three severities, six comparisons, one precedence order, and
+> `ok` nullable so *can't tell* cannot be read as *broken*. **#86
+> (`desktop/cli.py`, 2026-09-11) is done too**: `status`/`config`/`pair`/
+> `push`/`redraw`/`wipe`/`restart`, `--json`/`--brief`, and the §9.6 exit-code
+> table. It also closed spec §11.1 (`DEFAULT_PROJECTS_ROOT` defined twice) and
+> wired `pi.address` into `find_pi()`, both of which #81-#85 had left latent.
+> #87 then verified the whole surface on hardware (above).
+>
+> ⚠ **`/code-review` caught a real gap in each of #81 and #82's first
+> passes** — worth noting as a pattern, not just their specific fixes:
+> - **#81**: `paths.store`/`paths.projects_root` reached `push.py`'s own CLI
+>   entry, but the resident `service.py` loop's
+>   `run_batch_pass_fn`/`run_gauge_push_fn` only ever receive `store_path`
+>   (their contract — existing tests pass single-arg fakes), so a configured
+>   `paths.projects_root` silently didn't reach the service. Fixed via
+>   `functools.partial` rather than widening that call. **If a later ticket
+>   adds another Configuration value that only those two functions consume,
+>   thread it the same way** — partial application at `service.py`'s
+>   `main()`, never a new positional/required parameter on the
+>   `RunBatchPassFn`/`RunGaugePushFn` call inside `run_forever`.
+> - **#82**: `apply_settings` coerced a value inside the same loop that
+>   wrote to `meta`, so a bad value on a later key could leave an earlier
+>   key's write sitting in the uncommitted transaction, and raised a bare
+>   `ValueError` instead of a typed one. Fixed by coercing every value into
+>   a separate dict before any write (mirrors #81's own
+>   `write_config_value` discipline — this project's fail-closed convention
+>   is now established on both ends, replicate it rather than re-deriving
+>   it for #83's wire-level validation).
+> - **#83**: the `wipe` Command verb reused `_wipe_readings` wholesale, which
+>   also clears every Setting back to its code default — correct for the
+>   Desktop Id hand-off wipe (ADR-0006), wrong for this verb's same-Desktop
+>   *repair* (spec §5.3 only documents "drop and recreate `readings`, delete
+>   `coverage_start`"). Fixed with a `clear_settings` flag, defaulting True
+>   for the hand-off path. Also: the shared `sqlite3.Error` handler in
+>   `on_write` built the generic (daily/gauge-shaped) Ack for every kind,
+>   which broke `settings`' documented no-`drawn` shape and dropped
+>   `command`'s `verb` on a DB failure — both new kinds needed their own
+>   branch there too, not just on the success path.
+> - **#84**: the busy/absent discriminator was built correctly and then
+>   **destroyed one frame up** — both `run_batch_pass` and `run_gauge_push`
+>   swallowed `BleLinkBusy` under their broad handlers, and the Gauge one
+>   printed literally the `no Pi / connection failed` sentence §7.1 says must
+>   never appear for a busy link. *Both* review axes found it independently.
+>   ⚠ **The lesson generalises: a distinction is only as good as the seam it
+>   is raised through.** `BleLinkBusy` now propagates out of both entry
+>   points; the CLI turns it into §9.6's exit code 2 (*can't tell*) for
+>   `status`/`push`/`pair` — **3** for a refused `redraw`/`wipe` since #87,
+>   which is what §9.6 says for a Command — and the service logs INFO and
+>   drops the pass. Also fixed there: `flock`'s
+>   `OSError` was reported as *busy* for **every** errno (ENOLCK is this
+>   Desktop's own problem, not an occupied link).
+> - **#85**: `EXPECTED_PI_SCHEMA_VERSION` was defined, drift-tested against
+>   the Pi's constant, and **never actually compared against** — the guard
+>   protected a constant no code path read. And `_coupled` read a *missing*
+>   `wiped` as "not wiped", the one check that silently passed on a malformed
+>   reply. ⚠ **Both are the same shape: a safeguard that looks present and is
+>   inert.** Worth grepping for when reviewing anything else here.
+> - **#86**: `cmd_wipe`'s post-wipe archive re-push called `run_batch_pass`
+>   with no exception handling, unlike every other BLE call in `cli.py` —
+>   a busy link *after* a successful wipe would have propagated as an
+>   unhandled traceback instead of §9.6's exit code 2, with the store's
+>   `pushed_at` marks already cleared and no report of the dangling state.
+>   Fixed with the same `BleLinkBusy` handling every other command has.
+>   Also: `find_pi`'s new `pi.address`-preferred path trusted a stored MAC
+>   without checking the device still advertises the zeropi service — a
+>   reused/rotated address would have surfaced as a confusing GATT failure
+>   instead of a clean *absent* Unreachable. Fixed by folding the address
+>   check into the same service-UUID filter rather than a separate
+>   `find_device_by_address` call. **A third finding is a real, accepted
+>   gap, not a fix**: `push`/`pair` route through `run_batch_pass`, which
+>   swallows a scan/connect failure into a failed `BatchResult` (pipeline
+>   §7.3's original design) rather than raising it — so unlike
+>   `status`/`redraw`/`wipe` (built on `_send_command`'s direct
+>   `_with_ble_connection` call), they cannot yet tell *the Pi is absent*
+>   from *the Pi answered and rejected every row*, and report exit code 1
+>   for both. Fixing it means `run_batch_pass` propagating connect
+>   failures too, which also touches `service.py`'s retry semantics —
+>   real work, left for a later ticket rather than expanded into this one.
+> - **#87** (hardware, not review, found these — then review found one more
+>   in the fixes): an error Ack to `status` rendered as *unreachable*; `pair`
+>   cleared push marks outside the Window, so a re-pair with the same Pi read
+>   as *not working* permanently; `status` read the Desktop's marks *before*
+>   waiting out a Batch holding the lock, so the collision §7.1 designed the
+>   wait for produced a false *not working*. ⚠ **All three are a correct
+>   `verdict.py` fed the wrong input** — stale, over-cleared, or mislabelled
+>   on the way in. The pure function is what made them quick to pin, and why
+>   no test inside it could see them. Review then caught the in-lock store
+>   read sitting inside the BLE `try`, whose catch-all means *absent*.
 
 **E-ink RENDERING is DONE and hardware-verified (2026-09-10).** Map #59's
 destination is reached: `docs/spec-eink-rendering.md` is implemented,
@@ -27,7 +251,10 @@ Three things from that run you would otherwise rediscover the hard way:
   Historic View while a Gauge Payload that arrived seconds ago sits in memory.
   That is ADR-0010 working, not a bug — and it is the clearest argument for
   #65's throttle drop. It looks like an off-by-300s error in the journal; it
-  is not.
+  is not. ⚠ **`CONTEXT.md` defined this wrongly until #74** (it said "time since
+  the Payload arrived", which is only the second term), so a reader who checked
+  the binding glossary was actively misled toward the wrong reading. Fixed, with
+  the trap written into the entry.
 - ⚠ **`receive.py` now owns the panel.** Running `pi/epd-selftest.py` against a
   live `zeropi-display` is a GPIO collision. The self-test refuses to run when
   the service is active, but stop the service first rather than relying on it.
@@ -80,9 +307,10 @@ floor.
 ⚠ **Weather, calendar and the One-liner were dropped from the project**
 (maintainer's call, 2026-09-09, `c3aa086`). zeropi.display is a Claude Code
 usage display and nothing else. `CONTEXT.md` no longer defines **One-liner**;
-`pi-eink-ble-concept.md` and `CLAUDE.md` are rewritten, with the concept
-document's milestone-1 sections kept as the historical record they are. Do not
-reintroduce them from an old document.
+`CLAUDE.md` is rewritten, and the original concept document
+(`pi-eink-ble-concept.md`) was **deleted on 2026-09-11** (maintainer's call) —
+its milestone-1 design lives on in the specs, the code and git history. Do not
+reintroduce the dropped ideas from an old document.
 
 **The Pi's fonts are `fonts-dejavu-core`**, installed by `install-pi.sh` since
 #64, at `/usr/share/fonts/truetype/dejavu/`. (Before that the Pi had no fonts
@@ -136,8 +364,11 @@ of the panel. The `PWR_PIN`-on-BCM-18 caveat in `pi/waveshare_epd/README.md`
 does still stand — it is out of scope by the maintainer's call, and blocks no
 frame from drawing.
 
-- Design/concept: `pi-eink-ble-concept.md` (repo root) — settled BLE service
-  shape, Payload/Ack format, SQLite schema, UUIDs, deployment path.
+- Design: the three binding specs in `docs/` (`spec-usage-pipeline.md`,
+  `spec-eink-rendering.md`, `spec-management-surface.md`) — BLE service shape,
+  Payload/Ack format, SQLite schema, deployment path; UUIDs are in
+  `pi/receive.py` and `desktop/push.py`. `README.md` is the overview. (The
+  original `pi-eink-ble-concept.md` was deleted 2026-09-11.)
 - Domain glossary: `CONTEXT.md` — **rewritten by #19 and now binding.**
   Desktop, Desktop Id, Pi, Payload (Daily/Gauge), Batch, Ack, Reading,
   Coverage Start, Usage, Gauge, Project Key, Project Label, Window, **Limit
@@ -154,13 +385,541 @@ frame from drawing.
 
 ## For the next session
 
-**There is no live map, and no ticket is blocked on a decision.** Map #59
-closed the rendering milestone on 2026-09-10; the panel draws and the whole
-product — real Claude Code usage, on real glass — works end to end.
+### Map #102 — implement the web UI (closed)
 
-**Open items:** only the two spec-prose omissions raised on #66 (§4's `sh`
-pair, §5.4's `5H` label). Cosmetic; whether `docs/spec-eink-rendering.md` gains
-the lines is the maintainer's call.
+✅ **Done 2026-10-30.** All seven slices (#103–#109) are closed, and §13 is
+verified on hardware in `docs/web-ui-verification.md`. Two spec gaps it left:
+- Setup's step 4 after a re-pair (§9.5 covers only the first pair);
+- the paired line shows the address, not §9.5's name, because every Pi
+  advertises the same name.
+
+Neither has a ticket. The only other open issue is #99. `dev` is ahead of
+`main`; the PR waits for the maintainer.
+
+### Map #89 — the web UI spec (closed)
+
+✅ **Done 2026-10-30**: `docs/spec-web-ui.md` on `plan/web-ui` (`6dfeca6`); #98 closed the map. The two fog items (push marks not per-Pi, pushed status) were ruled out of scope and are named in spec §14. Next is an implementation map against the spec (chart it with `/mattpocock-skills:wayfinder <idea>`).
+
+Historical: it was worked with `/mattpocock-skills:wayfinder continue`. The map body has the
+standing constraints. ⚠ **Read its Notes before anything else**, especially:
+localhost only, no JS build step, the web UI is a skin over the same substrate
+as `cli.py`, and the Pi is absent.
+
+- ✅ **#90 Candidate stacks** (research): `docs/research/web-ui-stack.md` on
+  `research/web-ui-stack`.
+- ✅ **#91 Pick the stack**: FastAPI + uvicorn, with Preact 10 + htm vendored,
+  in a separate `desktop/requirements-web.txt`. ⚠ Pydantic describes the HTTP
+  shape only; `config.py` stays the single validation authority.
+- ✅ **#92 The seam**: operations are extracted from `cli.py`, return structured
+  results and never print. Configuration is read **per operation** in a
+  long-lived surface. `BatchResult` gains `settings_ok` and `unreachable`.
+- ✅ **#93 Process model** (2026-09-15): a resident `zeropi-web` `systemd --user`
+  unit running `cli.py web`, **independent of `zeropi-push`**. It binds
+  `127.0.0.1:8737`. It ships as a unit file that nothing installs yet, and
+  nothing installs `zeropi-push` either.
+- ✅ **#94 Long BLE actions over HTTP** (2026-09-16): a `POST` returns an
+  **Operation** handle that is followed over SSE. One BLE Operation runs per
+  process, and it runs to completion with no cancel. ⚠ The handle names an
+  Operation that has already started, never a queue (ADR-0011).
+- ✅ **#95 When the page asks for status** (2026-10-30): **no polling, ever**
+  — a Gauge push that hits a busy link is *lost*, not retried
+  (`service.py:148-150`). An in-memory last-status slot, separate from the
+  current Operation; the check time (Desktop wall clock) on the headline, Pi
+  durations shown as at the check; one automatic check on load only when the
+  slot is empty; a result that a later mutating Operation or Batch makes out of
+  date is labelled, never recomputed.
+- ✅ **#96 The localhost guard** (2026-10-30): browser-borne attacks only.
+  `TrustedHostMiddleware` (hardcoded `127.0.0.1`/`localhost`); every state
+  change is a JSON `POST`, `Origin` must match when present, no CORS;
+  `frame-ancestors 'none'` + `X-Frame-Options: DENY`; **no token**. It found
+  **#101**: `wipe`'s short id was the manufacturer prefix `b827eb`. **Fixed
+  2026-10-30**: it is now the last three octets (`7c970f` on the dev Pi).
+- ✅ **#100 First-run setup** (2026-10-30): `install-desktop.sh` is the one
+  terminal step: venv + `requirements-web.txt`, writes **both** units, enables
+  **only** `zeropi-web`, opens `127.0.0.1:8737`. Standalone deploys all of
+  `desktop/` (closes #47's gap), no `pyproject.toml`. `/setup` is a checklist
+  derived from real state; a new `discover` Operation lists every Pi; setup
+  enables `zeropi-push` only **after** a successful pair. This resolved the
+  map's "Install and packaging" fog.
+- ✅ **#97 The pages** (2026-10-30): **variant B** of the prototype on
+  `prototype/web-ui` (`5deb9bf`, throwaway; `?variant=B&scenario=…`). It has
+  three tabs (Status, Configuration, Setup) on their own routes; the Operation
+  is a modal opened from a nav indicator, hideable, no cancel; a Status hero
+  with the Verdict and the actions; the six checks as tiles; refusals inline.
+  ⚠ The differences from the CLI are listed on #97 on purpose. Narrow screens
+  are not covered.
+- ✅ **#98 Write `docs/spec-web-ui.md`** (2026-10-30): on `plan/web-ui`
+  (`6dfeca6`). It overrides the prototype on one point: a `→ Pi` key's
+  `config set` is an Operation (#94). No new ADR. The fog was ruled out of
+  scope and is named in spec §14.
+
+**Branches for this map:**
+- `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
+  carries two changes: *Configuration* is read once per run, and a web
+  operation counts as a run (#92); and the new term **Operation** (#94).
+  **`dev`'s `CONTEXT.md` has neither yet.**
+- Prototypes go on `prototype/*` branches and research on `research/*`.
+
+### Map #80 — the management surface implementation (closed)
+
+**Map #70 is CLOSED**; its destination,
+[`docs/spec-management-surface.md`](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-management-surface.md)
+(`b4ec9b5`), is binding. **[Map #80](https://github.com/peterderkoala/zeropi.display/issues/80)
+implements it**, execution-mode (no grilling by default — §13 already closed
+the judgment calls), tickets in dependency order:
+
+1. ✅ **#81 Configuration store + Tier schema** — done, `ef129e3`.
+2. ✅ **#82 The Pi's configuration seam** — done, `0eb9393`.
+3. ✅ **#83 The wire (Settings/Command Payloads, three verbs, `MAX_ACK_BYTES`)**
+   — done, `568ef47`. `settings`/`command` are new `kind` values on the
+   existing write characteristic; `redraw`/`wipe`/`status` all dispatch;
+   `MAX_ACK_BYTES = min(512, ATT_MTU - 5)` is enforced on every Ack in
+   `ReceiveState.send_ack` before notifying. 360 tests passing (was 319).
+   No BLE/hardware verification of this yet — that is still #87's job.
+4. ✅ **#84 The Desktop's BLE lock + Settings re-assertion** — done,
+   `e5c02b2`. The lock and the re-assertion both live *inside*
+   `_with_ble_connection`; `BleLinkBusy` propagates out of
+   `run_batch_pass`/`run_gauge_push` so *busy* never reads as *absent*.
+   378 tests passing (was 360). No BLE/hardware verification — #87's job.
+   ⚠ **Two things a later ticket will want:**
+   - **`SettingsOutcome.wiped` is load-bearing and is spec drift.** The
+     re-assertion is the FIRST write of every connection, so it is the write
+     a Desktop Id hand-off wipes on, and `receive.py:check_desktop_id` flags
+     that wipe on **that Ack and only that Ack**. §7.2 never mentions the
+     interaction; without `run_batch_with_connection(wiped_already=…)` the
+     wipe is silently lost. Fold it back into the spec if §7 is ever revised.
+   - **The CLI-initiated settings write already exists**: pass
+     `settings_required=True` (and `coro_fn=None`) to `_with_ble_connection`
+     — #86 should call that, not re-derive it.
+5. ✅ **#85 The Verdict (pure function)** — done, `0d61808`. 412 tests
+   passing (was 378). What #86 consumes:
+   `build_verdict(facts, status, reach) -> Verdict(state, ok, glyph,
+   headline, advice, reachable, checks)`; `ok` is `True`/`False`/**`None`**,
+   `checks` is always the six of §8.3 in precedence order (with `ok: None`
+   when nothing was learned), and each `Check` carries both `detail` (the
+   evidence row) and `story` (the same fact phrased to headline).
+   `Reach.BUSY`/`Reach.ABSENT` is what #84's lock produces.
+6. ✅ **#86 `desktop/cli.py`** — done, 2026-09-11. 462 tests passing (was
+   412; three pre-existing, unrelated `test_push.py` failures around the
+   wiped-Ack extra-pass row count were already failing on `dev` before this
+   ticket and were left alone — not investigated, worth a look before #87).
+   `status`/`config`/`pair`/`push`/`redraw`/`wipe`/`restart`, `--json`,
+   `--brief`, and §9.6's exit codes, all built directly on #81-#85's seams
+   per the handoff note above — `config set pi.idle_keepalive_s` calls
+   `_with_ble_connection(None, settings_required=True, …)` exactly as
+   flagged, rather than re-deriving it. Also closed spec §11.1
+   (`DEFAULT_PROJECTS_ROOT` defined twice: collapsed to `usage.py`'s
+   definition, and `projects_root` now threads through
+   `build_gauge_wire_payload`/`print_dry_run`) and wired §4.6's `pi.address`
+   into `find_pi()` (address-preferred, service-UUID-verified either way) —
+   neither had been done despite the key existing in `config.py` since #81.
+   ⚠ **Known, accepted gap, not a bug**: `push`/`pair` cannot yet tell
+   *absent* from *the Pi rejected every row* — see the review-findings bullet
+   above for why, and what fixing it would touch.
+7. ✅ **#87 End-to-end hardware verification** — done, 2026-09-11.
+   `docs/management-surface-verification.md`. Five defects fixed (table in
+   the doc); 474 tests passing (was 462 + 3 date-rot failures, which were
+   fixture dates sliding out of the Window, not a product bug —
+   `conftest.pin_today`). The dev Pi runs `10876a5` and its `data.db` was
+   restored to the pre-run backup (`/home/pi/data.db.bak-87`).
+   ⚠ **Raised on #87, not decided — the next real work on this surface:**
+   - **Push marks are not per-Pi.** `pair` now clears only the Window's marks,
+     right for re-pairing the same Pi; a *replacement* Pi (adopts the Desktop
+     Id without a wipe) then shows *missing N Readings* until a `wipe`. And
+     `push.py --resend-all` still clears **every** mark, because pipeline
+     §4.6/§7.6 bind that wording — so it still produces the false *not
+     working*. Fixing either properly means amending the pipeline spec.
+   - **§5.1 defers to a field §5.4 lacks**: "what the Pi now holds" is said
+     to belong to the status verb, which reports no Setting.
+   - **The Pi's journal logs no Command and no Setting** — a `wipe` leaves
+     nothing on the Pi. And `--json` is only clean when no progress line
+     precedes it (`Scanning…` etc. are on stdout, pre-existing).
+
+⚠ **Read the spec, not this file, for anything it covers.** It is deliberately
+complete: §4 is the full Tier inventory of every constant in this project, §5
+the wire, §8 the Verdict model, §9 the CLI down to exit codes, §10 how all of it
+is tested with no panel, no BLE and no `~/.claude`.
+
+**What the implementation map inherits, and should be charted around:**
+
+- **§13 lists eight judgment calls the spec took that no ticket had.** The
+  load-bearing one is **`pi.address`, an 18th Configuration key amending #72's
+  17** — `find_pi()` takes the first advertiser, so without it a Desktop cannot
+  know *which* Pi it is coupled to.
+- **Five known defects, four now fixed** (spec §11 plus the map's closing
+  comment): `DEFAULT_PROJECTS_ROOT` defined twice with nothing keeping the two
+  equal — **still open, and now folded into [#86](https://github.com/peterderkoala/zeropi.display/issues/86)
+  as explicit scope**. ⚠ #81 turned it from latent debt into a *live*
+  divergence: `push.py:239`'s `build_gauge_wire_payload` calls
+  `gauge.build_gauge_payload()` with no arguments, so a configured
+  `paths.projects_root` reaches every Daily path and **never reaches the
+  Gauge's context read**, which falls back to `gauge.DEFAULT_PROJECTS_ROOT`.
+  One key, two roots. #87 will not see it unless that run deliberately sets a
+  non-default root. Fix and its trap are written out on #86; ✅ a named constant for the notify budget (`MAX_ACK_BYTES`,
+  #83); ✅ the Pi echoing unbounded input into an Ack's `reason` (the exact path
+  #78 used to overflow it — #83's `_truncate_echo`, applied at every echo
+  point); `RedrawGate._idle_elapsed` reading its one Setting as a module
+  global — fixed by #82, not #83; and ✅ `PanelWorker.unavailable` plus the
+  watchdog now have a route off the Pi (#83's `status` verb reports Panel
+  Health as `never`/`ok`/`unavailable`/`stuck`).
+- ⚠ **The Pi has no configuration seam at all** (spec §6). The Desktop's is
+  nearly free — every policy value is already an injected default argument — so
+  the effort is lopsided in a way that is easy to underestimate.
+- ⚠ **A hardware verification run is part of "done"** (spec §10.6), in the shape
+  of `docs/usage-pipeline-verification.md`: a Settings Payload surviving a
+  reboot, all three verbs, a real `status` reply, both Unreachable cases
+  produced deliberately, and `btmon` confirming the status Ack's size.
+- **Two new ADRs bind it**:
+  [0012](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/adr/0012-status-is-requested-not-carried.md)
+  (status requested, not carried) and
+  [0013](https://github.com/peterderkoala/zeropi.display/blob/dev/docs/adr/0013-no-command-overrides-a-verified-invariant.md)
+  (no Command overrides a verified invariant).
+
+**One question the spec left open on purpose, and it is not fog**: whether
+`status` should ever be **pushed** rather than requested, for a fault the Pi
+notices while nobody is asking — a panel that goes stuck at 03:00 is invisible
+until someone runs `status`. ADR-0012 settles the current direction on a
+measured byte budget and explicitly declines to close that. **Re-ask it during
+implementation**, when its cost is known.
+
+**The CLI prototype is still the reference for §9's renderings.** It runs, with
+fake data and no dependencies, on
+[`prototype/cli`](https://github.com/peterderkoala/zeropi.display/tree/prototype/cli)
+(`desktop/prototype-cli.py`) — **throwaway, never merge it to `dev`**:
+
+```bash
+git checkout prototype/cli
+python3 desktop/prototype-cli.py            # the whole tour, 3 variants x 5 scenarios
+python3 desktop/prototype-cli.py config     # all three Tiers + both refusal shapes
+python3 desktop/prototype-cli.py verbs      # #75's verbs, pair, and the 2 failure surfaces
+```
+
+⚠ **Where the prototype and the spec disagree, the spec wins.** It prints
+`zeropi <cmd>`; the invocation is `python desktop/cli.py <cmd>` (§9.1). Its
+Tier 3 table also predates `MAX_ACK_BYTES` being required as a named constant
+(§5.5).
+
+**Closed so far:** [What the Pi can send back: the notify-direction
+budget](https://github.com/peterderkoala/zeropi.display/issues/73) (research,
+fired as a subagent at charting time; graduated #78), [Where configuration
+lives, and who wins](https://github.com/peterderkoala/zeropi.display/issues/71),
+[Which constants are settings, and in which
+tier](https://github.com/peterderkoala/zeropi.display/issues/72), [The Pi's
+settings and command
+vocabulary](https://github.com/peterderkoala/zeropi.display/issues/75),
+[Confirm the notify budget on hardware
+(btmon)](https://github.com/peterderkoala/zeropi.display/issues/78), [What
+the Pi reports about
+itself](https://github.com/peterderkoala/zeropi.display/issues/74), and [What an
+action means when the Pi is
+unreachable](https://github.com/peterderkoala/zeropi.display/issues/79), and
+[What the CLI looks
+like](https://github.com/peterderkoala/zeropi.display/issues/76), and [Write
+docs/spec-management-surface.md](https://github.com/peterderkoala/zeropi.display/issues/77)
+— **all nine, all 2026-09-10. The map is closed.** Each ticket's resolution
+comment holds detail the spec compressed; go there when the spec says *why* and
+you want the argument.
+
+**What #76 settled** — the CLI design, against a *running* prototype:
+
+- **`status` is a headline verdict plus all six comparisons, always shown**;
+  the one-line form survives as `--brief`. A two-column Desktop-vs-Pi ledger was
+  rejected — only two of six comparisons have a real Desktop-side value.
+- **Four verdict states, not two**: `working` / `not working` / **`can't tell`**
+  / `not paired`. Collapsing Unreachable into a failure is the "must not look
+  like broken" trap the ticket named.
+- **A third severity (a note, `·`), shown but never headlining.** Forced by the
+  prototype rendering a Pi that rebooted four minutes ago and was drawing
+  perfectly as `✗ Not working`. ⚠ This is the finding that justifies the ticket
+  having been a prototype rather than a grilling — it was invisible on paper.
+- **Name the story, do not count the checks.** `2 checks failed` was the first
+  render of a lost Batch, which is *one* fact; a precedence order plus a
+  Readings/Coverage coupling replaced it.
+- **Invocation is `python desktop/cli.py`, not a `zeropi` console script** — no
+  packaging. That closed the map's last fog entry.
+- **`--json` exists now**, carrying `severity` beside a **nullable** `ok`.
+
+**What #79 settled** — **no queue exists, and "queued" is not a state the
+surface holds** ([ADR-0011](../docs/adr/0011-management-actions-are-never-deferred.md)):
+
+- **Settings need no queue and no mark.** The Payload is declarative, so the
+  current Configuration *is* the pending state; the Desktop **re-asserts the
+  complete set at the head of every connection**. That is what makes "not
+  applied yet — it will be applied on the next successful connection" true with
+  nothing stored, and it dodges #71's "the service never writes Configuration"
+  entirely. Re-assertion is **best-effort**: a failed Settings write must never
+  fail the Batch or Gauge its connection was opened for.
+- **Every Command is refused at the moment it is typed**; the human is the only
+  retrier. `wipe` decided it — not time-bound, so queueable in principle, but
+  **the reason the Pi is Unreachable may be the reason not to wipe it**.
+- ⚠ **The ticket text undercounts.** It says "three things the Desktop can
+  send"; it predates #74, so there are **four** — `status` is a Command too, and
+  the same rule covers it.
+- **Absent vs busy must be tellable apart**, and today nothing on the Desktop
+  can: `push.py` connects per push and there is **no lock, PID file or IPC of
+  any kind**. The decision is an advisory **`flock(2)` inside
+  `_with_ble_connection`** (so the CLI and the service both take it by
+  construction, and a crashed holder leaves no stale lock), with the **CLI
+  waiting ~15 s and the service failing immediately**.
+- Checked and recorded as a **non-finding**: "the Desktop is off" needs nothing
+  added — ADR-0010's expiry plus #74's *requested* status already answer it.
+
+**What #71 settled**, in one line each — the full reasoning is its resolution
+comment, and the gist is on the map:
+
+- **Configuration is a dedicated SQLite store**, `~/.config/zeropi-display/config.db`
+  — deliberately **not** a section in the archive store, because `open_store`
+  refuses on a version mismatch, ADR-0005 makes store backups the only backups
+  that matter (so restoring old history would restore old Configuration), and
+  the store is 0644.
+- **Resolved once at startup** into a frozen object, filling parameters that
+  already exist. Never module-level globals populated at import — the suite
+  imports these modules with no `~/.claude`, no panel and no `bluezero`.
+- **Changing a setting requires a restart**, with an explicit restart action
+  rather than an auto-bounce. "Pending restart" needs no new state:
+  `config.updated_at` vs `systemctl --user show zeropi-push -p ActiveEnterTimestamp`.
+  **The resident service never writes Configuration** — do not add a
+  service-side write path.
+- **Unknown keys: rejected on write, warned-and-ignored on read.** The flat
+  "reject" settled in round 1 would have turned retiring a setting into an
+  outage on data the previous version wrote itself.
+- Coined **Configuration**, **Settings** and **Tier** in `CONTEXT.md`
+  (`ed11166`). Configuration and Settings are **not synonyms** and the
+  distinction is load-bearing.
+
+**What #72 settled** — the full inventory is its resolution comment, and that
+table is what #77 lifts into the spec verbatim. **17 Configuration keys** (9
+Tier 1, 8 Tier 2), **10 Tier 3 invariants that are not stored at all**, 8
+constants outside the Tier system:
+
+- **Tier 3 never enters the Configuration store.** It stays a code constant,
+  read from there to display read-only. A row is writable by anyone with
+  `sqlite3`, which is the one thing the Tier exists to prevent. **The schema's
+  tier field only ever reads 1 or 2.** Sharpened into `CONTEXT.md` (`bc1e515`).
+- **Cross-machine invariants are static bounds derived from the Tier 3
+  constant**, written as expressions (`GAUGE_EXPIRY_S/2`) and evaluated where
+  the schema is defined — not cross-key validators, not hand-copied numbers. So
+  amending ADR-0008 or ADR-0010 moves the ranges by itself. This is what carries
+  #55's finding forward.
+- **The pricing table and `CONTEXT_WINDOW` become Tier 1 JSON overlays**, never
+  replacements: a missing entry degrades gracefully via **Cost Complete**, a
+  wrong one silently corrupts every cost the panel draws.
+- **Exactly one Pi constant is a Setting**, `pi.idle_keepalive_s`. `DB_PATH` and
+  `FONT_DIR` are install-time facts owned by `install-pi.sh`.
+- **`FONT_DIR` is Tier 3, not Tier 1** — the 13 px floor was verified on glass
+  with DejaVu specifically, so the typeface carries the evidence.
+- **`usage.window_days` is floored by panel geometry** (five rows at 20 px in
+  `render.py:148`), *not* by `MAX_PAYLOAD_BYTES`. ADR-0003 sends one write per
+  Reading, so the Window scales the write **count**, not one Payload's size.
+- The suspected `BATCH_SCHEDULED_HOUR` ↔ `IDLE_KEEPALIVE_S` coupling **does not
+  exist**. Recorded as looked-at, so nobody re-derives it.
+- **No key is retired**, so the first `user_version` needs no deletion step.
+
+**What #75 settled** — the full wire shapes are in its resolution comment:
+
+- **Two new Payload kinds, `settings` and `command`.** Not a second
+  characteristic: that would give the Pi the second input channel Settled #3
+  ruled out an HTTP service for. `parse_payload` already branches on `kind`, so
+  this extends a discriminator rather than adding a channel.
+- **Settings are declarative — the Payload names the complete set**, not a
+  patch, which is what makes a resend free. **Commands are imperative**, and
+  **natural idempotency is a membership rule**: a verb that cannot be made
+  idempotent does not join the list. That rule, not the list's shortness, is
+  what stops a vocabulary becoming an RPC surface.
+- **No Command may override a verified invariant.** `redraw` **queues behind**
+  `REDRAW_FLOOR_S` — the mechanism already exists as
+  `try_draw_historic_now()`. ADR-0008's floor is a hardware wear limit; a verb
+  that overrode it would relocate enforcement to whoever types the command,
+  where a loop is invisible and cumulative.
+- **Two verbs: `redraw` and `wipe`.** `selftest` rejected (GPIO collision, and
+  it answers nothing with nobody at the glass); `re-pair` rejected (already
+  automatic). **`wipe` kept as repair** — this does *not* contradict ADR-0006,
+  which rejected a manual wipe as a *replacement* for the automatic one;
+  `upsert_reading` never deletes, so a Reading the archive no longer holds is
+  otherwise unremovable except by re-coupling.
+- **The Pi persists Settings in `meta` under a `setting.` prefix**, so a reboot
+  cannot silently revert one; a hand-off wipe **clears them to the compiled
+  default**, because they were the previous Desktop's policy. Both new kinds run
+  the Desktop Id wipe check unchanged.
+- `resend status` was **deliberately not decided** — it belongs to #74, which
+  may add exactly one verb inside these rules.
+- Coined **Settings Payload**, **Command Payload** and **Command** in
+  `CONTEXT.md` (`af5f9e9`); **Payload** no longer says "two shapes".
+
+**What #78 settled** — the bench run; full detail in its resolution comment and
+`docs/research/notify-direction-budget.md` §6 on `research/notify-budget`
+(`6483c00`):
+
+- **The notify budget is 512 bytes, measured.** Bisected: a 512 B Ack arrives
+  whole, **513 B arrives as 512** and fails to parse. `bluetoothd` returns
+  success, `bluezero` raises nothing — **silent truncation confirmed**. The
+  Desktop reports `malformed ack from Pi: … column 513 (char 512)`.
+- **The MTU exchange is real and settles at 517**, captured on the wire. That
+  was the specific doubt #73 raised about its own derivation.
+- ⚠ **The overhead is `ATT_MTU − 5`, not `− 3`.** BlueZ notifies with
+  **`Handle Multiple Value Notification (0x23)`**, which carries a per-value
+  length field. On this link both terms of the `min()` are 512, so the answer
+  did not change **and the two-byte error was invisible** — at a smaller MTU it
+  bites. **This is the third two-byte MTU derivation error in this project**
+  (#32's trap, #67's 514, this). Write budgets as the `min()`, never as a
+  literal.
+- **The two candidate bounds cannot be distinguished on this hardware** — both
+  evaluate to 512 and 517 is the maximum MTU. The *number* is measured; the
+  *mechanism* is still one of two. Recorded rather than re-derived, which is the
+  whole point of the ticket.
+- **Headroom for the status surface: ~150 B** (194 B measured max Ack, ~360 B
+  worst case, against 512).
+
+💡 **Technique worth reusing: `receive.py` echoes a rejected `kind` into the
+Ack's `reason`, so any small Payload amplifies into an arbitrarily large Ack.**
+That is how #78 tested the notify direction with **no Pi-side code change**, and
+safely against a **live** service — an unknown `kind` is rejected before any DB
+write or panel draw, so it does not collide with the panel the way
+`pi/epd-selftest.py` does. `data.db` was md5-identical afterwards. Generally:
+**any field the Pi echoes into an error Ack is an amplifier.**
+`bench/notify-budget-probe.py` (same branch) re-runs the whole measurement in
+about a minute.
+
+**What #74 settled** — the status surface; full detail in its resolution:
+
+- **Status is a requested `status` Command, not a widened Ack.** ⚠ This
+  **amends the map's Settled #3**, which sketched a widened Ack — #75 had
+  explicitly deferred the choice to #74, so it is the deferred decision, not a
+  re-litigation. **The ordinary Daily and Gauge Acks are unchanged.** Reason: a
+  Batch is ~12 writes and #78 measured ~150 B of worst-case Ack headroom, so
+  paying status bytes on every write to learn one answer is waste.
+- **Seven fields**: `frame`, `since_redraw_s`, **`panel`**, `readings`,
+  `coverage_start`, `uptime_s`, `schema_version`. 234 B typical, 253 B worst
+  case, against 512.
+- **Every field is a duration or a count, never a timestamp** — ADR-0009 in
+  reverse. The Pi is given durations because it has no wall clock, and for the
+  same reason can only report them.
+- 💡 **`panel` is the field that earns the ticket.** A stuck or failed panel is
+  invisible today: BLE keeps serving, Acks keep saying `ok`, Readings keep
+  persisting, and only the glass is frozen. `PanelWorker.unavailable`
+  (`render.py:407`) and the watchdog already know, and discard it into the Pi's
+  own log. The existing `drawn` flag cannot cover this — its docstring is
+  explicit that it means "the floor accepted this for drawing", not "pixels
+  moved".
+- **The rule for what may be asked: report what can disagree, derive what
+  cannot.** `pushed_at` already tells the Desktop what it sent, so a Pi-reported
+  "last push time" could only confirm; `readings` and `coverage_start` earn their
+  bytes precisely *because* they can diverge, which is what a lost Batch or a
+  wipe desync looks like. **A field that can never disagree is decoration.**
+- **The Pi reports facts; the Desktop renders the verdict** — only it can
+  compare. Six comparisons, tabulated in the resolution, and #76 owns showing
+  one answer with six comparisons behind it.
+- **No lifetime refresh counter.** That is a panel-life question map #59 left
+  for calendar time; adding it here would settle it by accident. The fog stays.
+- ⚠ **`CONTEXT.md` defined Gauge Age wrongly** — as time since arrival, omitting
+  the snapshot's own age that `receive.py:359` adds on top. That *is* the #66
+  trap, sitting in the binding glossary. Corrected, and **Panel Health** coined
+  (`f84ef76`).
+
+⚠ **Four defects found for the implementation map** (two by #72, one each by #75
+and #74):
+
+1. **`DEFAULT_PROJECTS_ROOT` is defined twice** — `usage.py:43` as
+   `Path("~/.claude/projects").expanduser()`, `gauge.py:25` as `Path.home() /
+   ".claude/projects"`. Equal today by coincidence, with nothing enforcing it.
+   The moment it becomes configurable, two keys would let a Gauge and a Daily
+   read different directories. Collapse to one key, `paths.projects_root`.
+2. **The notify budget has no named constant anywhere in the code.** #78 has now
+   measured it at **512**, but unlike `MAX_PAYLOAD_BYTES` nothing expresses it —
+   and this is the direction that truncates **silently**, corrupting the whole
+   Ack including correlation fields that were fine. Add one, symmetric with
+   `MAX_PAYLOAD_BYTES`, and **write it as `min(512, ATT_MTU - 5)` rather than
+   the literal** — see #78 on why the `-5` and why a literal would rot silently.
+3. **`RedrawGate._idle_elapsed` (`receive.py:418`) reads `IDLE_KEEPALIVE_S` as a
+   module constant.** That is the single place the one Setting binds. It must
+   become a looked-up value, or **"Settings apply live" is false** — the Pi
+   would accept and persist a Setting that changes nothing until a restart, and
+   `CONTEXT.md` promises the opposite precisely because the Pi cannot be
+   restarted without dropping the connection that delivered it.
+4. **`PanelWorker.unavailable` and the watchdog have no route off the Pi.**
+   Both are computed (`render.py:388`, `:407`) and discarded into the log. #74's
+   `panel` field is the route; until it exists, a dead panel is undetectable
+   from the Desktop.
+
+⚠ **The Pi has no configuration seam at all, and the implementation map has to
+build one — but a much smaller one than this once looked.** The Desktop is
+already injectable everywhere: every policy value is a default argument the
+tests override. `receive.py` is the opposite, reading `GAUGE_EXPIRY_S`,
+`REDRAW_FLOOR_S` and `IDLE_KEEPALIVE_S` as **module globals from inside
+methods** (`:366`, `:415`, `:418`) and binding `DB_PATH` to class attributes at
+module scope (`:562`, `:704`).
+
+**#72 and #75 shrank this.** `GAUGE_EXPIRY_S` and `REDRAW_FLOOR_S` are **Tier
+3** and never become Settings, so they need no seam at all — they stay module
+globals, correctly. `DB_PATH` is an install-time fact owned by `install-pi.sh`
+and was ruled out of Settings, so **spec §8.1 stands as written** and does not
+need revisiting after all. That leaves **`:418` alone** (defect 3 above) as the
+one place a seam is actually required, and Pi Settings must apply **live**
+there, because a Settings Payload cannot restart the service without dropping
+the connection that delivered it.
+
+⚠ **Five decisions were settled while charting #70 and must not be
+re-litigated** — they are written out in the map's Notes. In short: one
+surface, on the Desktop; this map ends at the spec (the SPA is a later map);
+management reaches the Pi over **BLE only**, with the Pi holding no independent
+config; constants are tiered, and verified invariants are shown read-only with
+their ADR rather than being made editable; the eventual UI is LAN-bound behind
+a single shared token, which is why the config surface must be able to hold a
+secret.
+
+⚠ **Several constants this map will touch are *findings*, not preferences** —
+`REDRAW_FLOOR_S` is ADR-0008, `GAUGE_EXPIRY_S` is ADR-0010, the 120 s throttle
+came from #55, the 512-byte budget is ADR-0001. A settings form that treats
+them as knobs can silently invalidate a hardware verification run. That is the
+single biggest risk on the map.
+
+**Also open, outside the map:** the two spec-prose omissions raised on #66
+(§4's `sh` pair, §5.4's `5H` label). Cosmetic; whether
+`docs/spec-eink-rendering.md` gains the lines is the maintainer's call. And
+`desktop/install-desktop.sh`'s standalone mode is still broken (it deploys only
+`push.py`) — **ruled out of scope for #70** as installer debt, so it needs its
+own home.
+
+⚠ **The Pi→Desktop notify budget is also 512 — but it fails SILENTLY** (#73,
+closed 2026-09-10). `min(512, ATT_MTU − 3)`, 512 on this link because both ends
+default to `ExchangeMTU = 517`. Same number as the write direction, **weaker
+guarantee**: the write direction has prepare/execute long writes underneath it,
+notifications have **no fragmentation procedure at all**, and indications buy
+reliability rather than bytes. `bluetoothd` truncates at 512 in
+`gatt-database.c`, the ATT server truncates again at `ATT_MTU − 3` in
+`gatt-server.c`, both return success, and `bluezero` adds no check — so an
+over-long Ack surfaces on the Desktop as `malformed ack from Pi`, **blaming the
+JSON rather than the length**. Do not go hunting the parser. Full working:
+`docs/research/notify-direction-budget.md` §6 on `research/notify-budget`
+(`6483c00`). Headroom today: measured max Ack 194 B, worst case ~360 B.
+
+> ✅ **Measured on hardware by #78 (2026-09-10). 512 confirmed exactly**, and
+> bisected: a 512 B Ack arrives whole, **513 arrives as 512** and fails to
+> parse, with `bluetoothd` returning success and `bluezero` raising nothing.
+> The MTU exchange was captured settling at **517** on the wire.
+>
+> ⚠ **The overhead term above is wrong: it is `ATT_MTU − 5`, not `− 3`.** BlueZ
+> notifies with `Handle Multiple Value Notification` (**opcode `0x23`**), which
+> carries a per-value length field, not the classic `0x1b`. On this link both
+> terms of the `min()` land on 512, so **the answer is unchanged and the
+> two-byte error is invisible** — at a smaller MTU it bites. That is the **third
+> two-byte MTU derivation error** in this project (#32's trap, #67's 514, this
+> one). **Write budgets as the `min()`, never as a literal.**
+>
+> The two candidate bounds (`gatt-database.c`'s clamp vs `ATT_MTU − 5`) **cannot
+> be told apart on this hardware** — both are 512, and 517 is the maximum
+> reachable MTU. The number is measured; the mechanism is still one of two.
+
+💡 **To test the notify direction, use the Pi's own error echo — no Pi-side code
+change, and safe against a LIVE service.** `parse_payload` echoes a rejected
+`kind` straight into the Ack's `reason`, so a ~500-char `kind` inside a
+≤512-byte Payload amplifies into an over-budget Ack coming back. An unknown
+`kind` is rejected **before any DB write or panel draw**, so unlike
+`epd-selftest.py` this does not collide with the panel; #78 ran it against a
+live `zeropi-display` and `data.db` was md5-identical afterwards. Generally:
+**any field the Pi echoes into an error Ack is an amplifier.**
+`bench/notify-budget-probe.py` (same branch) re-runs the whole measurement in
+about a minute.
 
 ⚠ **The single-write budget is 512 bytes, not 514** (#67, closed 2026-09-10) —
 and this is worth knowing because both the spec and ADR-0003 had it wrong.
@@ -246,10 +1005,32 @@ them in the spec's own voice:
 
 ## Maps
 
-**No live map.** #59 was the last one; its destination is reached and its log
-is archived at [`archive/map-59.md`](archive/map-59.md). The next map gets
-charted when there is a next milestone — see
-[For the next session](#for-the-next-session) for what is actually open.
+**Live map: [#89 — A lightweight web UI for the Management Surface
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, charted
+2026-09-15. It is a planning map with tickets #90–#98 plus #100 (added
+2026-10-30), and five are closed. See
+[For the next session](#for-the-next-session). The two maps below it, #70 (the
+spec) and #80 (its implementation), are **closed but not yet archived** into
+`handoff/archive/`.
+
+*Previous live map:* [#70 — One management surface for both ends
+(spec)](https://github.com/peterderkoala/zeropi.display/issues/70), charted
+2026-09-10 with seven tickets (#71–#77); **#78 and #79 were graduated from the
+fog** as the frontier advanced, making eight. **All eight are closed** — only
+#77 (write the spec) remains, and it is the map's destination rather than
+another decision. It is a
+**planning** map: tickets resolve decisions; nothing on it builds the management
+surface, the one exception being #76, which prototypes a CLI so the design has
+something concrete to argue with. See
+[For the next session](#for-the-next-session) for what is takeable.
+
+⚠ **The map's Settled #3 has been amended** — status is a **requested `status`
+verb**, not the "widened Ack" the charting session sketched (#74, with #75
+having deferred the choice there). The amendment is on the map itself; do not
+read the original wording as current.
+
+#59 was the previous map; its destination is reached and its log is archived at
+[`archive/map-59.md`](archive/map-59.md).
 
 ### Closed maps — archived
 
@@ -275,6 +1056,22 @@ mode deploys only `push.py`.
 
 ## Hard-won facts — do not relearn these
 
+- ⚠ **A fresh Imager-provisioned Pi broke `install-pi.sh` twice** (found
+  reimaging the dev Pi on 2026-10-30, fixed in `cf83d61`):
+  - **The service user is not necessarily `pi`.** Imager lets the user pick
+    any name; `RUN_AS_USER` was hardcoded and `chown pi:pi` failed mid-install.
+    It is now `${ZEROPI_USER:-${SUDO_USER:-pi}}`, checked up front, and
+    stamped into the installed unit's `User=` (the repo's
+    `pi/zeropi-display.service` still says `User=pi`; the installer seds it).
+  - **The Bluetooth radio can ship rfkill soft-blocked** (Imager unblocks only
+    wlan). `bluezero` then dies with `org.bluez.Error.Failed: Not Powered`
+    in a restart loop, and the installer's self-check reports only *no
+    active LE advertisement after 20s*. The installer now runs
+    `rfkill unblock bluetooth`; systemd-rfkill persists it across reboots.
+- ⚠ **A reimaged Pi meets the not-per-Pi push marks.** `pair` against the
+  real store sent 1 Reading and `status` said *missing 11 Readings*;
+  `push.py --resend-all --batch-only` cleared it (2026-10-30). Same
+  mechanism as #87's open question; #100 asks whether setup should do it.
 - ⚠ **`install-desktop.sh`'s standalone mode is incomplete, and it is the
   common non-maintainer path.** It deploys only `push.py` into
   `~/.local/share/zeropi-display/` — not `gauge.py`, `usage.py` or
@@ -374,6 +1171,15 @@ Hand-off facts, established 2026-09-05 by
   two *concurrent* Desktops would clobber each other's Ack channel. Moot under
   the sequential shape settled by #36, but it is why concurrent multi-Desktop
   would have cost far more than a schema change.
+- **⚠ A dead or stuck panel is currently INVISIBLE from the Desktop** (found by
+  #74). BLE keeps serving, Acks keep saying `ok`, Readings keep persisting —
+  only the glass is frozen. The Pi already knows: `PanelWorker.unavailable`
+  (`render.py:407`) and the watchdog (`render.py:388`) compute it and then
+  **discard it into the journal**. **The Ack's `drawn` flag does not cover
+  this** and never did — its own docstring says it means "the redraw floor
+  accepted this for drawing", *not* "pixels moved". #74's `panel` field is the
+  designed route out; until it is built, do not read a successful Ack as
+  evidence the panel is alive.
 
 Live-gauge facts, MEASURED 2026-09-05 by
 [#26](https://github.com/peterderkoala/zeropi.display/issues/26) — these
@@ -401,8 +1207,9 @@ correct earlier entries in this file, so prefer them:
   use (27% -> 36% in 8.2 min), so a full 5-hour window is ~91 minutes of
   continuous work. **The trigger therefore fires ~5.5x per 300 s floor** — the
   Desktop-side throttle #25 called a courtesy is doing real work.
-- **The Gauge Payload is 279 bytes against the 514 budget**, verbose keys and
-  all.
+- **The Gauge Payload is 279 bytes against the 512 budget**, verbose keys and
+  all. *(Was written here as 514 until #78; the real ceiling is 512, see
+  §"Both directions are capped at 512" below.)*
 - **⚠ Context-as-a-percentage is a dead readout.** Against #31's 1,000,000
   window, 42 real sessions peaked at **589,408 (59%)**, median peak **15.8%**,
   and **0 of 42** ever passed 900K. The bar is a permanent stub. (The 589,408
@@ -599,9 +1406,33 @@ in `docs/research/`):
 
 ## Environment notes
 
-- Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
+- ~~Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
   `sshpass` is installed in this dev environment for non-interactive SSH;
-  the sudo password is the same as the SSH password.
+  the sudo password is the same as the SSH password.~~ Superseded by the
+  reimage below; `infrastructure.md` still describes the old image.
+- **Dev Pi, reimaged 2026-10-30** (Raspberry Pi OS trixie, via Imager +
+  cloud-init): `ssh zero@pi-zero.local` (Wi-Fi, currently `192.168.4.108`).
+  User **`zero`**, **SSH key auth only** (`ssh_pwauth: false`) — `sshpass` no
+  longer applies. **`sudo` needs the maintainer's password**: ask them to run
+  `sudo -v` in their own SSH session; it is cached ~15 min, and then
+  `sudo -n` works from yours. Same board, same BT address
+  `B8:27:EB:7C:97:0F`. Provisioned from the patched `pi/` via standalone
+  `install-pi.sh` (equivalent to `cf83d61`); `receive.py`/`bluezero` run from
+  `/opt/zeropi-display/venv` as user `zero`. Old `/home/pi/*` backups are gone.
+- **USB gadget on the dev Pi** (added 2026-10-30, boot partition only, originals
+  kept as `cmdline.txt.orig`/`config.txt.orig`): `dtoverlay=dwc2,dr_mode=peripheral`
+  + `modules-load=dwc2,g_cdc systemd.wants=serial-getty@ttyGS0.service`. The
+  inner "USB" port gives the laptop **`/dev/ttyACM0`, a login console**
+  (`picocom -b 115200 /dev/ttyACM0`; the laptop user is not in `dialout`, so
+  `sudo`), plus a CDC-ECM link (`usb0` / `enx…`) that has **no IPv4 on either
+  side** — SSH still goes over Wi-Fi. Image's own `rpi-usb-gadget` does
+  networking only (`g_ether`), which is why it wasn't used.
+- **Maintainer's Desktop, 2026-10-30:** paired with the reimaged Pi (real
+  Configuration), `push.py --resend-all --batch-only` run, `status` green.
+  `zeropi-push` is **installed by hand** in `~/.config/systemd/user/`
+  (in-place layout: `ExecStart=<repo>/.venv/bin/python3 <repo>/desktop/service.py`,
+  `WorkingDirectory=<repo>`), enabled and running — no installer does this
+  yet (#100).
 - **⚠ The dev Pi is shared with other concurrent sessions/jobs.** Before
   touching `/opt`, systemd units, `config.txt`, or rebooting, check for a
   live collision (`who`/`w` over SSH, recent `/var/log/dpkg.log`) — a
@@ -622,7 +1453,7 @@ in `docs/research/`):
   during #48 on 2026-09-09; the reset is at most an hour out and
   `curl -i https://api.github.com/rate_limit` from the Pi says when.
 - Pi: Debian 13 (trixie), Python 3.13.5, aarch64, BlueZ `5.82-1.1+rpt2`,
-  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
+  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` ~~in `~pi/.local`~~ in `/opt/zeropi-display/venv` (2026-10-30 reimage).
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
   `uv venv .venv && uv pip install -r desktop/requirements.txt`.
 - Labels `wayfinder:map`, `wayfinder:task`, `wayfinder:grilling`,
@@ -635,32 +1466,66 @@ in `docs/research/`):
 
 ## Suggested skills for the next session
 
-- **`mattpocock-skills:wayfinder`** only when there is a next milestone to
-  chart. **There is no live map**: #59 closed on 2026-09-10 and #32 is a single
-  decision-shaped question, not a map's worth of work.
+- **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
+  Invoke it with `continue` or the map, not with a fresh idea, because
+  charting is done. It picks the next frontier ticket for you if you do not
+  name one. #98 is a task (writing the spec); for any grilling one:
+  - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
+  - Ask in numbered rounds, with a recommendation per question.
+  - Glossary edits go to `plan/web-ui`, never to `dev`.
+- **#99 (Historic View timestamp) is not on a map.** Its open question is
+  footer fit, which needs a mock **on glass** (#57's lesson) — so it wants
+  `mattpocock-skills:prototype`, then spec + ADR-0009/0010 edits, then
+  `mattpocock-skills:tdd` on `render.py`. Unlike #89 it needs the Pi; the
+  maintainer has to run `sudo -v` there first (Environment notes).
+- **`mattpocock-skills:prototype` for #97 The pages**, on fake data. The
+  Unreachable, *busy* and Operation states (listed in #97's input comment) must
+  all render.
+- **`mattpocock-skills:writing-for-agents`** is worth loading for #98, the
+  spec write-up. Model it on `docs/spec-management-surface.md`'s shape: the
+  gap check, the ⚠ traps, and an out-of-scope section.
 - **`mattpocock-skills:tdd`** for anything touching `render.py` — spec §12
   names the assertions, and frame builders are unusually easy to test (render,
-  assert on pixels). The suite is **243 passing** and must stay green with no
-  panel, no SPI, no bluezero and no `~/.claude`.
-- **Bench work now needs the service stopped.** `receive.py` owns the panel, so
-  `epd-selftest.py` against a live `zeropi-display` is a GPIO collision. #66's
-  run is the template for a hardware session: back up the Pi's `data.db`, drive
-  each scenario from `push.py`, read the journal for the `render:` line, and
-  put a human in front of the glass for what a log cannot show.
+  assert on pixels). The suite is **474 passing** and must stay green with no
+  panel, no SPI, no bluezero, no `~/.claude` — and, since #84, without taking
+  the real BLE lock either (`tests/conftest.py` redirects `BLE_LOCK_PATH` to
+  `tmp_path` for every test; a test that took it for real would contend with a
+  live `zeropi-push` on the same machine).
+- **Bench work needs the service stopped — *if it touches the panel*.**
+  `receive.py` owns the panel, so `epd-selftest.py` against a live
+  `zeropi-display` is a GPIO collision. #66's run is the template for a
+  *rendering* session: back up the Pi's `data.db`, drive each scenario from
+  `push.py`, read the journal for the `render:` line, and put a human in front
+  of the glass for what a log cannot show. **But not every bench ticket is a
+  panel ticket** — #78 measured the notify budget against a **live** service by
+  driving it with Payloads that are rejected before any draw, and needed no
+  human at the glass. Check what you are actually touching before stopping
+  anything; `bench/README.md` on `research/notify-budget` says which probes are
+  safe live.
 - **Every closed map's log is in `handoff/archive/`** — #1, #7, #13, #41, #51,
   #59.
   Nothing there is takeable; read one when you want the reasoning behind a
   decision, or what was tried and rejected.
 - *(historic, for map #41's tickets — all closed)* `mattpocock-skills:tdd`
   against `docs/spec-usage-pipeline.md` §11's synthetic fixture.
-- **`mattpocock-skills:grilling` suits #32 and little else right now** — it is
-  a genuine open question with three candidate answers. It was *not* the tool
-  for map #59, and the reason generalises: on an execution map a question means
-  you have found a **gap in the spec**, so say so on the ticket rather than
-  grilling your way to a private answer. #66 found two and did exactly that.
-- **`mattpocock-skills:domain-modeling`** only if a ticket coins a term the
-  glossary lacks. `CONTEXT.md` is current as of **Active Day** (#52); the
-  One-liner was deleted from it when the feature was dropped.
+- *(historic, map #70 — closed; the same holds for #89)* **`mattpocock-skills:grilling` is the default tool on map #70** — most of its
+  tickets are grilling tickets, because #70 is a **planning** map. Note
+  the contrast with map #59: on an *execution* map a question means you have
+  found a **gap in the spec**, so you say so on the ticket rather than grilling
+  your way to a private answer (#66 found two and did exactly that). #70 is the
+  opposite case — the whole point is to have the argument now.
+- *(historic, closed)* **`mattpocock-skills:prototype` for [#76 What the CLI looks
+  like](https://github.com/peterderkoala/zeropi.display/issues/76)**, the map's
+  one non-planning ticket. It exists because this repo has twice had a paper
+  decision overturned the moment something was rendered (#26, #38).
+- **`mattpocock-skills:domain-modeling` is load-bearing on #70**, not optional,
+  and it has now earned that twice over. The map has coined **Configuration**,
+  **Settings**, **Tier** (#71/#72), **Settings Payload**, **Command Payload**,
+  **Command** (#75) and **Panel Health** (#74) — and **`Payload` went from two
+  shapes to four**. It also caught a *wrong* definition: **Gauge Age** described
+  only half of what the code computes, which is the #66 trap living in the
+  binding glossary. Cross-checking a glossary entry against the source is worth
+  doing, not just reading it.
 - **The `PWR_PIN`-on-BCM-18 question is out of scope, by the maintainer's
   call**, not fog waiting for a home. It needs a multimeter at the bench and
   blocks no frame from drawing. Do not re-adopt it into a map.

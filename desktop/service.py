@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import functools
 import logging
 import sys
 import time
@@ -36,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable, Optional
 
+import config
 import gauge
 import push
 
@@ -230,6 +232,9 @@ async def run_forever(
     store_path: Optional[str] = None,
     poll_interval_s: float = POLL_INTERVAL_S,
     *,
+    gauge_throttle_s: float = GAUGE_THROTTLE_S,
+    batch_catchup_threshold_s: float = BATCH_CATCHUP_THRESHOLD_S,
+    batch_scheduled_hour: int = BATCH_SCHEDULED_HOUR,
     max_iterations: Optional[int] = None,
     now_wall_fn: WallClockFn = lambda: datetime.now().astimezone(),
     now_mono_fn: MonoClockFn = time.monotonic,
@@ -254,8 +259,11 @@ async def run_forever(
     itself is what a test drives directly, with fakes, rather than testing
     only the pure `GaugeGate`/`BatchScheduler` pieces in isolation.
     """
-    gate = GaugeGate()
-    scheduler = BatchScheduler()
+    gate = GaugeGate(throttle_s=gauge_throttle_s)
+    scheduler = BatchScheduler(
+        catchup_threshold_s=batch_catchup_threshold_s,
+        scheduled_hour=batch_scheduled_hour,
+    )
 
     iterations = 0
     while max_iterations is None or iterations < max_iterations:
@@ -277,6 +285,11 @@ async def run_forever(
                 result = await run_batch_pass_fn(store_path)
                 if result.ok:
                     scheduler.note_success(now_wall)
+            except push.BleLinkBusy as exc:
+                # An expected steady state, not a fault: a human's CLI holds
+                # the link (§7.1). No traceback, no success recorded — the
+                # Batch is simply retried (pipeline §7.3).
+                logger.info("Batch pass deferred: %s", exc)
             except Exception:  # noqa: BLE001 - a bad Batch must not kill the loop
                 logger.exception("Batch pass failed")
 
@@ -286,6 +299,10 @@ async def run_forever(
         if gate.observe(state, now_mono, batch_in_progress=batch_in_progress):
             try:
                 await run_gauge_push_fn(store_path)
+            except push.BleLinkBusy as exc:
+                # Dropped, not retried (pipeline §7.4) — and dropped quietly,
+                # because a busy link is this Desktop being used, not a fault.
+                logger.info("Gauge push dropped: %s", exc)
             except Exception:  # noqa: BLE001 - a bad Gauge push must not kill the loop
                 logger.exception("Gauge push failed")
 
@@ -308,8 +325,43 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Configuration is resolved once, here, into a frozen object (spec
+    # §3.3) — never lazily inside the loop itself.
     try:
-        asyncio.run(run_forever(args.store))
+        cfg = config.resolve(cli_store_path=args.store)
+    except config.ConfigVersionError as exc:
+        print(f"Refusing to run: {exc}", file=sys.stderr)
+        return 1
+    # `run_forever` calls `run_batch_pass_fn`/`run_gauge_push_fn` with just
+    # `store_path` (its contract, relied on by tests that pass single-arg
+    # fakes) — `paths.projects_root`, the Settings set to re-assert
+    # (management-surface §7.2) and the service's *immediate* BLE-lock
+    # failure (§7.1) are all bound in here via partial application rather
+    # than by widening that call.
+    common = {
+        "projects_root": cfg.paths_projects_root,
+        "settings": push.settings_from_config(cfg),
+        "pi_address": cfg.pi_address,
+        # ⚠ Asymmetric on purpose: the service never waits for the lock. Both
+        # its jobs are droppable (pipeline §7.3 retries the Batch, §7.4 drops
+        # the Gauge), and a resident loop blocking on a link a human is using
+        # is how the two ends deadlock each other's cadence.
+        "lock_wait_s": push.SERVICE_LOCK_WAIT_S,
+    }
+    run_batch_pass_fn = functools.partial(push.run_batch_pass, **common)
+    run_gauge_push_fn = functools.partial(push.run_gauge_push, **common)
+    try:
+        asyncio.run(
+            run_forever(
+                str(cfg.paths_store),
+                poll_interval_s=cfg.service_poll_interval_s,
+                gauge_throttle_s=cfg.service_gauge_throttle_s,
+                batch_catchup_threshold_s=cfg.batch_catchup_threshold_s,
+                batch_scheduled_hour=cfg.batch_scheduled_hour,
+                run_batch_pass_fn=run_batch_pass_fn,
+                run_gauge_push_fn=run_gauge_push_fn,
+            )
+        )
     except KeyboardInterrupt:
         pass
     return 0

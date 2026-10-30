@@ -109,3 +109,8 @@ historic view is *then*.
 - **Keep showing the Gauge indefinitely, unmarked.** Rejected outright: the
   percentage is a floor that only rises within a window, so a stale Gauge
   under-reports the one number the display exists to warn you about.
+
+> **Amended 2026-10-30 by
+> [ADR-0014](./0014-the-pi-prints-when-the-desktop-sent.md) (#99):** the Historic
+> View's footer now says when the Desktop last sent (`30/10 04:00`). That is not
+> a stale marker: it marks no number and asks no one to distrust one.

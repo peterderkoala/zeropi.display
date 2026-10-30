@@ -539,9 +539,23 @@ def ingest_projects_root(
         ingest_entries(conn, entries)
 
 
-def clear_pushed_marks(conn: sqlite3.Connection) -> None:
-    """`--resend-all`: clear every `pushed_at` so the whole Window is pushed."""
-    conn.execute("UPDATE entries SET pushed_at = NULL")
+def clear_pushed_marks(conn: sqlite3.Connection, window: Iterable[str] | None = None) -> None:
+    """Clears `pushed_at` so the next Batch re-sends what it covers.
+
+    `window=None` clears every mark — right after a wipe (§7.2, the `wipe`
+    verb), when the Pi holds nothing — and `--resend-all`, whose "clear every
+    `pushed_at`" is binding pipeline text. Pass the Window instead when the
+    Pi keeps what it has (`pair`): a Batch only ever re-sends
+    the Window, so clearing a mark outside it would leave a Reading on the
+    Pi that the Desktop no longer records sending — and since #85 the
+    Verdict's Readings check compares exactly those marks (found by #87).
+    """
+    if window is None:
+        conn.execute("UPDATE entries SET pushed_at = NULL")
+    else:
+        dates = list(window)
+        placeholders = ",".join("?" * len(dates))
+        conn.execute(f"UPDATE entries SET pushed_at = NULL WHERE local_date IN ({placeholders})", dates)
     conn.commit()
 
 
@@ -552,6 +566,43 @@ def mark_pushed(conn: sqlite3.Connection, date_: str, project_key: str, model: s
         (pushed_at, date_, project_key, model),
     )
     conn.commit()
+
+
+@dataclass(frozen=True)
+class PushedSummary:
+    """The Desktop's half of management-surface spec §8.3's comparisons —
+    gathered here because it is a pure store query, and consumed by
+    `cli.py`'s `verdict.DesktopFacts` (verdict.py itself takes no I/O)."""
+
+    readings: int
+    coverage_start: str | None
+    last_pushed_at: str | None
+
+
+def pushed_summary(conn: sqlite3.Connection) -> PushedSummary:
+    """`readings`: the count of distinct `(local_date, project_key, model)`
+    groups with `pushed_at IS NOT NULL` (spec §8.3's Readings check).
+    `coverage_start`: `MIN(local_date)` over those same pushed entries (the
+    Coverage check). `last_pushed_at`: `MAX(pushed_at)`, this Desktop's own
+    record of when it last successfully pushed anything -- what the
+    Restarted check compares the Pi's `uptime_s` against.
+    """
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS readings, MIN(local_date) AS coverage_start, MAX(pushed_at) AS last_pushed_at
+        FROM (
+            SELECT local_date, MAX(pushed_at) AS pushed_at
+            FROM entries
+            WHERE pushed_at IS NOT NULL
+            GROUP BY local_date, project_key, model
+        )
+        """
+    ).fetchone()
+    return PushedSummary(
+        readings=row["readings"],
+        coverage_start=row["coverage_start"],
+        last_pushed_at=row["last_pushed_at"],
+    )
 
 
 # ---------------------------------------------------------------------------

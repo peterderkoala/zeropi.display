@@ -143,10 +143,13 @@ def _bar(d: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, pct) -> None:
         d.rectangle([x + 1, y + 1, x + 1 + fill, y + h - 1], fill=0)
 
 
-def historic_frame(rows: List[HistoricRow], coverage_start: Optional[str], average: Optional[float]) -> Image.Image:
+def historic_frame(
+    rows: List[HistoricRow], coverage_start: Optional[str], average: Optional[float], sent_label: Optional[str] = None
+) -> Image.Image:
     """The Historic View (spec §5.1): the most recent Active Days, newest
     first, five rows at pitch 20px starting at y=1. `rows`, `coverage_start`
-    and `average` come straight from this module's data-layer functions.
+    and `average` come straight from this module's data-layer functions;
+    `sent_label` is the Desktop's own text, printed verbatim (ADR-0014).
     """
     img, d = _blank_frame()
 
@@ -169,10 +172,17 @@ def historic_frame(rows: List[HistoricRow], coverage_start: Optional[str], avera
 
     d.line([0, 101, PANEL_W, 101], fill=0)
 
-    since_label = date.fromisoformat(coverage_start).strftime("%d %b").upper() if coverage_start else "?"
-    d.text((3, 106), f"SINCE {since_label}", font=_font(12), fill=0)
+    footer = _font(12)
+    since_date = date.fromisoformat(coverage_start).strftime("%d %b").upper() if coverage_start else "?"
+    since_label = f"SINCE {since_date}"
+    d.text((3, 106), since_label, font=footer, fill=0)
     avg_label = f"AVG ${average:.0f}" if average is not None else "AVG $0"
-    d.text((PANEL_W - 3 - d.textlength(avg_label, font=_font(12)), 106), avg_label, font=_font(12), fill=0)
+    avg_x = PANEL_W - 3 - d.textlength(avg_label, font=footer)
+    d.text((avg_x, 106), avg_label, font=footer, fill=0)
+    if sent_label:
+        # Centred in the space between SINCE and AVG, not on the panel, so both gaps match.
+        since_end = 3 + d.textlength(since_label, font=footer)
+        d.text(((since_end + avg_x - d.textlength(sent_label, font=footer)) / 2, 106), sent_label, font=footer, fill=0)
 
     return img
 
@@ -294,6 +304,10 @@ class _WorkerState:
         self.pending = None
         self.job_started_at: Optional[float] = None
         self.unavailable = False
+        # True from the first take_job() onward -- distinguishes "never
+        # attempted a draw" from "ok" for status() below, both of which
+        # otherwise look identical (unavailable=False, job_started_at=None).
+        self._attempted = False
 
     def submit(self, image) -> None:
         """A frame arriving mid-refresh replaces the pending slot -- newest
@@ -306,6 +320,7 @@ class _WorkerState:
             return None
         image, self.pending = self.pending, None
         self.job_started_at = now
+        self._attempted = True
         return image
 
     def on_success(self) -> None:
@@ -333,6 +348,22 @@ class _WorkerState:
             return False
         self.unavailable = True
         return True
+
+    def status(self) -> str:
+        """Panel Health (management-surface spec §5.4): "never" (nothing
+        attempted yet), "stuck" (the watchdog fired and the job is still
+        in flight -- `on_failure()` always clears `job_started_at`, so a
+        stuck episode is the one way `unavailable` and a live
+        `job_started_at` coincide), "unavailable" (a render raised and
+        returned), or "ok".
+        """
+        if not self._attempted:
+            return "never"
+        if self.unavailable and self.job_started_at is not None:
+            return "stuck"
+        if self.unavailable:
+            return "unavailable"
+        return "ok"
 
 
 class PanelWorker:
@@ -407,3 +438,8 @@ class PanelWorker:
     def unavailable(self) -> bool:
         with self._lock:
             return self._state.unavailable
+
+    @property
+    def status(self) -> str:
+        with self._lock:
+            return self._state.status()

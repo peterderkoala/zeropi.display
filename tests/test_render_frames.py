@@ -132,6 +132,30 @@ def test_historic_frame_fewer_than_five_rows_still_draws_rule_and_footer():
     assert _has_ink(img, 0, 106, PANEL_W, 118)  # the footer
 
 
+def _footer_columns(img: Image.Image) -> list[int]:
+    return sorted({x for y in range(104, PANEL_H) for x in range(PANEL_W) if img.getpixel((x, y)) == 0})
+
+
+def test_historic_frame_draws_the_sent_label_centred_between_since_and_avg():
+    # #99. SINCE 01 SEP ends near x=85 and AVG $1234 starts near x=180; the label sits between them.
+    img = render.historic_frame([_row("2026-09-05", 1234.0)], "2026-09-01", 1234.0, sent_label="30/10 14:05")
+    cols = _footer_columns(img)
+    since_right = max(x for x in cols if x < 95)
+    avg_left = min(x for x in cols if x > 175)
+    label = [x for x in cols if 95 <= x <= 175]
+    assert label, "no label ink between SINCE and AVG"
+    left_gap, right_gap = min(label) - since_right, avg_left - max(label)
+    assert left_gap >= 6 and right_gap >= 6
+    assert abs(left_gap - right_gap) <= 2
+
+
+def test_historic_frame_without_a_sent_label_is_unchanged():
+    # #99: an older Desktop sends no label, and the frame stays exactly the pre-#99 one.
+    args = ([_row("2026-09-05", 40.0)], "2026-09-01", 40.0)
+    assert render.historic_frame(*args, sent_label=None).tobytes() == render.historic_frame(*args).tobytes()
+    assert not _has_ink(render.historic_frame(*args), 95, 104, 175, PANEL_H)
+
+
 # ---------------------------------------------------------------------------
 # 5.2 The empty frame
 # ---------------------------------------------------------------------------
