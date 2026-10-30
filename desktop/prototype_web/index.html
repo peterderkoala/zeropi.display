@@ -1,0 +1,461 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway, fake data only (map #89, ticket #97). Never merged.
+  Question: what do the Management Surface's web pages look like, and how do
+  they behave? Three structurally different variants (?variant=A|B|C) over the
+  same fake state; ?scenario= picks the state. Run:
+      python3 -m http.server 8737 -d desktop/prototype_web
+  Stack per #91 (Preact 10 + htm, three ES modules + an import map), but loaded
+  from unpkg instead of vendored — prototype shortcut. No FastAPI: nothing
+  here talks to a server.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zeropi.display — Management Surface (PROTOTYPE)</title>
+<script type="importmap">
+{ "imports": {
+  "preact": "https://unpkg.com/preact@10.24.3/dist/preact.module.js",
+  "preact/hooks": "https://unpkg.com/preact@10.24.3/hooks/dist/hooks.module.js",
+  "htm": "https://unpkg.com/htm@3.1.1/dist/htm.module.js"
+} }
+</script>
+<style>
+  :root { --fg:#1d1d1f; --mute:#6b6b70; --bg:#fbfbfa; --card:#fff; --line:#e3e3e0;
+          --ok:#1f7a3a; --fail:#b3261e; --note:#6b6b70; --unk:#8a5a00; --accent:#2c4bd6; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; color:var(--fg); background:var(--bg); padding-bottom:90px; }
+  code, .mono { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 13px; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.danger { color:var(--fail); border-color:#e7b7b3; }
+  button:disabled { opacity:.45; cursor:default; }
+  input { font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:5px; }
+  h1,h2,h3 { margin:0; }
+  .ok{color:var(--ok)} .fail{color:var(--fail)} .note{color:var(--note)} .unk{color:var(--unk)}
+  .mute { color:var(--mute); } .small { font-size:13px; }
+  .banner { padding:8px 16px; background:#fff4d6; border-bottom:1px solid #f0d98a; }
+  .refusal { border-left:3px solid var(--fail); background:#fdf3f2; padding:10px 14px; margin:10px 0; white-space:pre-line; }
+  .info { border-left:3px solid var(--accent); background:#f1f4fd; padding:10px 14px; margin:10px 0; white-space:pre-line; }
+  .stale { display:inline-block; font-size:12px; padding:1px 7px; border-radius:10px; background:#eee; color:var(--mute); }
+  table { border-collapse: collapse; width:100%; }
+  td, th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-weight:600; font-size:13px; color:var(--mute); }
+  .log { background:#16161a; color:#e6e6e6; padding:10px 12px; border-radius:6px; max-height:260px; overflow:auto; }
+  .log div { white-space:pre-wrap; }
+  .log .k { color:#8a8a95; display:inline-block; width:120px; }
+  /* prototype chrome — deliberately unlike the design */
+  #proto { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); background:#111; color:#fff;
+           border-radius:999px; padding:6px 10px; display:flex; gap:8px; align-items:center; box-shadow:0 6px 24px #0005; z-index:99; font-size:13px; }
+  #proto button { background:#333; color:#fff; border:0; padding:3px 10px; border-radius:999px; }
+  #proto select { background:#333; color:#fff; border:0; border-radius:999px; padding:3px 6px; }
+  #protostate { position:fixed; right:10px; bottom:64px; width:380px; max-height:55vh; overflow:auto; background:#111; color:#cfe;
+                font:11px ui-monospace,monospace; padding:8px; border-radius:8px; z-index:98; white-space:pre; }
+  /* A */
+  .A { max-width:760px; margin:0 auto; padding:24px 16px; }
+  .A section { margin:26px 0; }
+  .A .headline { font-size:26px; font-weight:650; }
+  .A section.mono > div { white-space:pre; }
+  #proto b { white-space:nowrap; }
+  /* B */
+  .B nav { display:flex; gap:2px; border-bottom:1px solid var(--line); padding:0 20px; background:var(--card); }
+  .B nav a { padding:12px 16px; text-decoration:none; color:var(--mute); border-bottom:2px solid transparent; cursor:pointer; }
+  .B nav a.on { color:var(--fg); border-color:var(--accent); }
+  .B main { max-width:980px; margin:0 auto; padding:24px 20px; }
+  .B .hero { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .B .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px; }
+  .B .tile { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .B .modal-bg { position:fixed; inset:0; background:#0006; display:flex; align-items:center; justify-content:center; z-index:50; }
+  .B .modal { background:var(--card); width:min(620px,92vw); border-radius:10px; padding:20px; }
+  /* C */
+  .C { display:grid; grid-template-columns: 1fr 420px; min-height:100vh; }
+  .C .left { padding:20px 24px; }
+  .C .right { background:#f1f1ee; border-left:1px solid var(--line); padding:20px; position:sticky; top:0; height:100vh; overflow:auto; }
+  .C .bar { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .C .drawer { position:fixed; top:0; right:0; width:min(720px,96vw); height:100vh; background:var(--card); box-shadow:-10px 0 30px #0002; overflow:auto; padding:20px; z-index:60; }
+  .C .row { display:flex; gap:14px; align-items:baseline; padding:3px 0; }
+  .C .row .lbl { width:90px; color:var(--mute); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+import { h, render } from 'preact';
+import { useState, useEffect } from 'preact/hooks';
+import htm from 'htm';
+const html = htm.bind(h);
+
+// ---------------------------------------------------------------- fake data
+const PI = { name: 'zeropi-display', address: 'B8:27:EB:7C:97:0F' };
+const SHORT_ID = '7c970f'; // last three octets — assumes #101's fix lands
+const CHECKS_OK = [
+  ['Coupled',   'OK',  'replied, not wiped'],
+  ['Readings',  'OK',  '312'],
+  ['Coverage',  'OK',  '2026-08-01'],
+  ['Panel',     'OK',  'historic frame, drew 2m 23s ago'],
+  ['Restarted', 'OK',  'up 1d 6h'],
+  ['Image',     'OK',  'schema 1'],
+];
+const CHECKS_FAULT = [
+  ['Coupled',   'OK',   'replied, not wiped'],
+  ['Readings',  'FAIL', '265  (47 missing)'],
+  ['Coverage',  'NOTE', '2026-08-08  (short)'],
+  ['Panel',     'OK',   'historic frame, drew 4m 02s ago'],
+  ['Restarted', 'NOTE', 'up 4m — restarted since the last push'],
+  ['Image',     'OK',   'schema 1'],
+];
+const T = (h, m) => { const d = new Date(); d.setHours(h, m, 0, 0); return d; };
+const statusOk = () => ({ state: 'working', headline: 'Working.', checkedAt: T(14,4), pi: 'replied in 1.2s, up 1d 6h', checks: CHECKS_OK });
+const statusFault = () => ({ state: 'not_working', headline: 'Not working — the Pi is missing 47 Readings.', checkedAt: T(14,4), pi: 'replied in 1.4s, up 4m', checks: CHECKS_FAULT });
+const statusAbsent = () => ({ state: 'cant_tell', headline: "Can't tell — the Pi is unreachable.", checkedAt: T(14,4),
+  unreachable: { kind: 'absent', text: 'no Pi advertising 6e400001-… within 10.0s.\nNormal when it is powered off or out of range. Not a fault.' },
+  lastSeen: 'last seen 09:04 today (5h 0m ago), holding 312 Readings then' });
+const statusBusy = () => ({ state: 'cant_tell', headline: "Can't tell — the BLE link is busy.", checkedAt: T(14,4),
+  unreachable: { kind: 'busy', text: 'another zeropi-display process held the BLE lock for 15s (probably the CLI or a Batch).\nNot a fault. Nothing was queued.' },
+  lastSeen: 'last seen 09:04 today (5h 0m ago), holding 312 Readings then' });
+
+const SCENARIOS = {
+  working:        { label: 'Working', s: () => ({ status: statusOk() }) },
+  fault:          { label: 'Not working (47 missing)', s: () => ({ status: statusFault() }) },
+  absent:         { label: 'Unreachable — absent', s: () => ({ status: statusAbsent() }) },
+  busy:           { label: 'Unreachable — link busy', s: () => ({ status: statusBusy() }) },
+  never_checked:  { label: 'Slot empty → auto check on load', s: () => ({ status: null, autoCheck: true }) },
+  superseded:     { label: 'Status out of date (wipe after it)', s: () => ({ status: { ...statusOk(), supersededBy: 'the wipe at 14:10' } }) },
+  push_stopped:   { label: 'zeropi-push stopped', s: () => ({ status: statusOk(), service: 'failed' }) },
+  op_running:     { label: 'push running', s: () => ({ status: statusOk(), op: runningPush() }) },
+  op_unknown:     { label: 'web restarted mid-wipe', s: () => ({ status: statusOk(), op: { verb: 'wipe', state: 'unknown', log: [], result: null } }) },
+  wipe_partial:   { label: 'wipe: wiped, re-push busy', s: () => ({ status: { ...statusOk(), supersededBy: 'the wipe at 14:10' }, op: wipePartial() }) },
+  unpaired:       { label: 'Not paired → /setup', s: () => ({ status: null, paired: null, service: 'inactive', discover: 'one' }) },
+  setup_none:     { label: 'Setup: no Pi found', s: () => ({ status: null, paired: null, service: 'inactive', discover: 'none' }) },
+  setup_two:      { label: 'Setup: two Pis found', s: () => ({ status: null, paired: null, service: 'inactive', discover: 'two' }) },
+  setup_nounit:   { label: 'Setup: paired, unit missing', s: () => ({ status: null, service: 'not-installed', discover: 'one' }) },
+};
+function runningPush() {
+  return { verb: 'push', state: 'running', startedAt: T(14,12), log: [
+    { kind: 'lock_wait', text: 'Waiting for the BLE link (up to 15s)…' },
+    { kind: 'scanning', text: 'Scanning (up to 10s)…' },
+    { kind: 'found', text: 'Found zeropi-display (B8:27:EB:7C:97:0F)' },
+    { kind: 'connected', text: 'Connected. Sending 7 Readings…' },
+  ], result: null };
+}
+function wipePartial() {
+  return { verb: 'wipe', state: 'done', startedAt: T(14,10), log: [
+    { kind: 'scanning', text: 'Scanning (up to 10s)…' }, { kind: 'connected', text: 'Connected.' },
+    { kind: 'phase', text: 'Wiped. 0 Readings on the Pi.' }, { kind: 'phase', text: 'Re-push: BLE link busy.' },
+  ], result: { outcome: 'partial', sev: 'NOTE', text: "Wiped. The re-push hasn't happened yet: the link was busy. Run push." } };
+}
+const OUTCOMES = {
+  push:   { outcome: 'ok', sev: 'OK', text: 'Pushed 7 Readings, 0 failed. Coverage 2026-08-01 .. today. Settings re-asserted.' },
+  redraw: { outcome: 'queued', sev: 'OK', text: 'Queued on the Pi. It will draw in 3m 22s.\n\nADR-0008 gates every draw at 300 s and the last one was 98 s ago, so the Pi holds this rather than overriding the floor. Nothing further to do.' },
+  wipe:   { outcome: 'ok', sev: 'OK', text: 'Wiped, then re-pushed 7 Readings from this Desktop’s archive.' },
+  pair:   { outcome: 'ok', sev: 'OK', text: 'Coupled. This Desktop is 3f9a12c0…  Pushed 7 Readings.' },
+  status: { outcome: 'ok', sev: 'OK', text: 'Status received.' },
+  discover: { outcome: 'ok', sev: 'OK', text: 'Scan finished.' },
+};
+
+const CONFIG = [
+  ['paths.projects_root',1,'path','~/.claude/projects'], ['paths.store',1,'path','~/.local/share/zeropi-display/usage-archive.db'],
+  ['paths.rate_limits',1,'path','~/.local/state/zeropi-display/rate-limits.json'], ['paths.sessions_dir',1,'path','~/.claude/sessions'],
+  ['pricing.overlay',1,'json','{}'], ['pricing.free_models',1,'json','[]'], ['pricing.web_search_usd_per_request',1,'real','0.01',0,null],
+  ['context_window.overlay',1,'json','{}'], ['batch.scheduled_hour',1,'int','4',0,23], ['pi.address',1,'address','B8:27:EB:7C:97:0F'],
+  ['service.poll_interval_s',2,'real','30.0',5,150], ['service.gauge_throttle_s',2,'real','120.0',30,150],
+  ['gauge.stale_threshold_s',2,'int','300',60,300], ['batch.catchup_threshold_s',2,'int','86400',3600,604800],
+  ['usage.window_days',2,'int','7',5,30], ['push.scan_timeout_s',2,'real','10.0',1,60], ['push.ack_timeout_s',2,'real','10.0',1,60],
+  ['pi.idle_keepalive_s',2,'int','86400',3600,604800,'pi'],
+];
+const TIER3 = [
+  ['REDRAW_FLOOR_S','300','ADR-0008','the panel is rated for one update per 180s; 300s is the operating point established on hardware'],
+  ['GAUGE_EXPIRY_S','300','ADR-0009/ADR-0010','amended 2026-09-09 on measurement (#55)'],
+  ['MAX_PAYLOAD_BYTES','512','ADR-0001','512 is Acked, 513 raises INVALID_ATTRIBUTE_VALUE_LENGTH (#67) — not the MTU'],
+  ['MAX_ACK_BYTES','512','#73/#78','an over-budget notification is truncated silently, twice'],
+  ['SERVICE_UUID + 2 characteristics','abbac370-…','hardware fact',"must match pi/receive.py's copy exactly"],
+  ['text floor','13px','spec-eink-rendering §4','NOT monotone — it re-collides at 14px'],
+  ['PANEL_W, PANEL_H','250, 122','hardware fact',"the Waveshare V4 panel's fixed resolution"],
+  ['WATCHDOG_TIMEOUT_S','30.0','spec-eink-rendering §8','stops the Pi caring about a stuck render thread; it cannot recover it'],
+  ['FONT_DIR','/usr/share/fonts/truetype/dejavu','#66','the 13px floor was verified on glass with DejaVu'],
+  ['historic pitch','5 rows @ 20px','render.py',"floors usage.window_days's minimum of 5"],
+];
+const DERIVED = { 'service.gauge_throttle_s': 'The ceiling is GAUGE_EXPIRY_S / 2 — derived from a verified invariant (ADR-0008, amended by #55), not typed in here. A replacement Gauge must land well before expiry.',
+  'usage.window_days': 'The floor is panel geometry: the Historic View draws five rows, so a Window under 5 starves it.' };
+
+// ---------------------------------------------------------------- fake "server"
+function useSurface() {
+  const params = new URLSearchParams(location.search);
+  const scen = SCENARIOS[params.get('scenario')] ? params.get('scenario') : 'working';
+  const base = { paired: PI, service: 'active', status: null, op: null, refusal: null, notice: null, discover: 'one', found: null, pending: [], config: {}, ...SCENARIOS[scen].s() };
+  const [st, setSt] = useState(base);
+  const set = (patch) => setSt(s => ({ ...s, ...(typeof patch === 'function' ? patch(s) : patch) }));
+
+  function start(verb, extra = {}) {
+    // pre-BLE refusals return directly, no Operation (#94)
+    if (verb !== 'discover' && !st.paired && verb !== 'pair') return set({ refusal: { kind: 'not_paired', text: 'Refused — this Desktop is not paired with a Pi.\nPair first. Nothing was sent.' } });
+    if (verb === 'wipe' && extra.typed !== SHORT_ID) return set({ refusal: { kind: 'confirm_mismatch', text: '✗ Confirmation did not match. Nothing was sent.' } });
+    if (st.op && st.op.state === 'running') return set({ refusal: { kind: 'busy_here', text: `Already running: ${st.op.verb}, started ${fmt(st.op.startedAt)}. Following it instead — nothing was queued.` } });
+    const op = { verb, state: 'running', startedAt: new Date(), log: [{ kind: 'lock_wait', text: 'Waiting for the BLE link (up to 15s)…' }], result: null };
+    set({ op, refusal: null, notice: null });
+    const steps = [
+      { kind: 'scanning', text: 'Scanning (up to 10s)…' },
+      verb === 'discover' ? null : { kind: 'found', text: `Found ${PI.name} (${PI.address})` },
+      verb === 'discover' ? null : { kind: 'connected', text: 'Connected.' },
+      verb === 'wipe' ? { kind: 'phase', text: 'Wiped. Re-pushing the Window…' } : null,
+      verb === 'pair' ? { kind: 'phase', text: 'Coupled. Pushing the archive…' } : null,
+    ].filter(Boolean);
+    steps.forEach((s, i) => setTimeout(() => set(x => ({ op: { ...x.op, log: [...x.op.log, s] } })), 500 * (i + 1)));
+    setTimeout(() => set(x => {
+      const done = { ...x.op, state: 'done', result: OUTCOMES[verb] };
+      const patch = { op: done };
+      if (verb === 'status') patch.status = scen === 'absent' ? statusAbsent() : scen === 'fault' ? statusFault() : statusOk();
+      else if (x.status && ['wipe','push','redraw','pair'].includes(verb)) patch.status = { ...x.status, supersededBy: `the ${verb} at ${fmt(new Date())}` };
+      if (verb === 'pair') patch.paired = x.found || PI;
+      if (verb === 'discover') patch.found = null, patch.discovered = x.discover;
+      return patch;
+    }), 500 * (steps.length + 2));
+  }
+  function startService() {
+    if (st.service === 'not-installed') return set({ refusal: { kind: 'unit_missing', text: '✗ zeropi-push.service is not installed.\nRe-run the installer:  curl -fsSL …/install.sh | bash -s -- desktop' } });
+    set({ service: 'active', refusal: null, notice: 'systemctl --user enable --now zeropi-push — ok' });
+  }
+  function configSet(key, value) {
+    const row = CONFIG.find(r => r[0] === key);
+    const t3 = TIER3.find(r => r[0] === key);
+    if (t3) return { ok: false, kind: 'not_a_setting', text: `✗ ${key} is not a setting.\n\nIt is a verified invariant fixed by ${t3[2]}: ${t3[3]}. Lowering it here would invalidate that run, so it is a constant in the code, shown read-only.` };
+    if (!row) return { ok: false, kind: 'unknown_key', text: `✗ Unknown key ${key}.` };
+    if (key === 'pi.address') return { ok: false, kind: 'pair_only', text: '✗ pi.address is set by pairing only.\nUse Pair — it scans, records the address and pushes the archive in one step.' };
+    const [, , kind, , lo, hi] = row;
+    if (kind === 'int' || kind === 'real') {
+      const n = Number(value);
+      if (Number.isNaN(n) || (kind === 'int' && !Number.isInteger(n))) return { ok: false, kind: 'out_of_range', text: `✗ Refused. ${value} is not a ${kind}. Nothing was written.` };
+      if ((lo != null && n < lo) || (hi != null && n > hi)) return { ok: false, kind: 'out_of_range', text: `✗ Refused. ${value} is outside ${lo} .. ${hi ?? '∞'}.\n\n${DERIVED[key] || ''}\n\nNothing was written.` };
+    }
+    set(s => ({ config: { ...s.config, [key]: value }, pending: row[6] === 'pi' ? s.pending : [...new Set([...s.pending, key])] }));
+    return { ok: true, text: row[6] === 'pi' ? `✓ Saved. → Pi: sent with the next connection (every push re-asserts Settings).` : `✓ Saved. Pending restart — zeropi-push reads Configuration when it starts.` };
+  }
+  function restart() { set({ pending: [], notice: 'systemctl --user restart zeropi-push — ok. Pending changes are now live.' }); }
+
+  // #95: one automatic check, only when the slot is empty and we're paired
+  useEffect(() => { if (base.autoCheck) start('status'); }, []);
+  return { st, set, start, startService, configSet, restart, scen };
+}
+
+// ---------------------------------------------------------------- shared bits (small, not layout)
+const fmt = d => d.toTimeString().slice(0, 5);
+const ago = d => { const m = Math.max(0, Math.round((Date.now() - d) / 60000)); return m < 60 ? `${m}m ago` : `${Math.floor(m/60)}h ${m%60}m ago`; };
+const SEV = { OK: ['✓','ok'], FAIL: ['✗','fail'], NOTE: ['·','note'] };
+const HEAD = { working: ['✓','ok'], not_working: ['✗','fail'], cant_tell: ['?','unk'] };
+function useTick() { const [, t] = useState(0); useEffect(() => { const i = setInterval(() => t(x => x + 1), 15000); return () => clearInterval(i); }, []); }
+function CheckedAt({ s }) {
+  useTick(); // only the relative part ticks; Pi durations never do (#95)
+  return html`<span class="mute small">checked ${fmt(s.checkedAt)} (${ago(s.checkedAt)})</span>
+    ${s.supersededBy && html` <span class="stale">before ${s.supersededBy}</span>`}`;
+}
+function ServiceBanner({ st, onSetup }) {
+  if (st.service === 'active' || !st.paired) return null;
+  const what = st.service === 'not-installed' ? 'is not installed' : st.service === 'failed' ? 'has failed' : 'is not running';
+  return html`<div class="banner">⚠ zeropi-push ${what} — nothing is pushing usage to the Pi. This is a Desktop fact, not part of the Verdict. <a href="#" onClick=${e => { e.preventDefault(); onSetup(); }}>Fix in setup →</a></div>`;
+}
+function Refusal({ st, set }) {
+  return html`${st.refusal && html`<div class="refusal">${st.refusal.text}<div class="small mute" style="margin-top:6px">refusal kind: <code>${st.refusal.kind}</code> <a href="#" onClick=${e => { e.preventDefault(); set({ refusal: null }); }}>dismiss</a></div></div>`}
+    ${st.notice && html`<div class="info">${st.notice}</div>`}`;
+}
+function OpLog({ op }) {
+  if (!op) return html`<p class="mute">No Operation since zeropi-web started.</p>`;
+  if (op.state === 'unknown') return html`<div class="refusal">The web service restarted while <b>${op.verb}</b> was running. Outcome unknown — check status to see what the Pi holds now.</div>`;
+  return html`<div>
+    <div style="margin-bottom:6px"><b>${op.verb}</b> ${op.state === 'running' ? html`<span class="unk">● running</span> <span class="mute small">— runs to completion, no cancel</span>` : html`<span class="mute">finished</span>`}</div>
+    <div class="log mono">${op.log.map(l => html`<div><span class="k">${l.kind}</span>${l.text}</div>`)}</div>
+    ${op.result && html`<div class=${op.result.sev === 'OK' ? 'info' : 'refusal'}><span class=${SEV[op.result.sev][1]}>${SEV[op.result.sev][0]}</span> ${op.result.text}<div class="small mute">outcome: <code>${op.result.outcome}</code></div></div>`}
+  </div>`;
+}
+function WipeConfirm({ onWipe, onCancel }) {
+  const [v, setV] = useState('');
+  return html`<div class="refusal" style="border-color:var(--fail)">
+    <b>Wipe the Pi's Readings?</b> It is the one destructive verb. This Desktop re-sends only the Window afterwards.
+    <div style="margin-top:8px">Type the Pi's short id <code>${SHORT_ID}</code>: <input value=${v} onInput=${e => setV(e.target.value)} size="8"/>
+    <button class="danger" onClick=${() => onWipe(v)}>Wipe</button> <button onClick=${onCancel}>Cancel</button></div></div>`;
+}
+function ConfigTables({ sv }) {
+  const { st, configSet, restart } = sv;
+  const [edit, setEdit] = useState(null); const [val, setVal] = useState(''); const [res, setRes] = useState(null);
+  const row = r => {
+    const [key, tier, kind, def, lo, hi, pi] = r; const cur = st.config[key] ?? def;
+    return html`<tr><td class="mono">${key}${st.pending.includes(key) && html` <span class="stale">pending restart</span>`}</td>
+      <td class="mono">${edit === key ? html`<input value=${val} onInput=${e => setVal(e.target.value)} size="14"/>` : cur}</td>
+      <td class="mono mute">${tier === 2 ? `${lo} .. ${hi}` : (lo != null ? `≥ ${lo}${hi != null ? ` .. ${hi}` : ''}` : kind)}</td>
+      <td>${pi && html`<b>→ Pi</b>`}</td>
+      <td>${edit === key ? html`<button class="primary" onClick=${() => { const r = configSet(key, val); setRes({ key, ...r }); if (r.ok) setEdit(null); }}>Save</button> <button onClick=${() => { setEdit(null); setRes(null); }}>×</button>`
+          : html`<button onClick=${() => { setEdit(key); setVal(cur); setRes(null); }}>${key === 'pi.address' ? 'Change…' : 'Edit'}</button>`}</td></tr>
+      ${res && res.key === key && html`<tr><td colspan="5"><div class=${res.ok ? 'info' : 'refusal'}>${res.text}${res.kind && html`<div class="small mute">refusal kind: <code>${res.kind}</code></div>`}</div></td></tr>`}`;
+  };
+  return html`<div>
+    ${st.pending.length > 0 && html`<div class="info">${st.pending.length} change(s) pending restart: ${st.pending.join(', ')}. <button class="primary" onClick=${restart}>Restart zeropi-push</button></div>`}
+    <h3 style="margin:14px 0 4px">Tier 1 — this Desktop</h3>
+    <table><tbody>${CONFIG.filter(r => r[1] === 1).map(row)}</tbody></table>
+    <h3 style="margin:18px 0 4px">Tier 2 — policy (editable within a validated range)</h3>
+    <table><tbody>${CONFIG.filter(r => r[1] === 2).map(row)}</tbody></table>
+    <h3 style="margin:18px 0 4px">Tier 3 — verified invariants. Not settings; shown so you can see them.</h3>
+    <table><tbody>${TIER3.map(([k, v, by, why]) => html`<tr><td class="mono">${k}</td><td class="mono">${v}</td><td class="mono">${by}</td><td class="small mute">${why}</td>
+      <td><button onClick=${() => setRes({ key: k, ...configSet(k, '1') })}>Try edit</button></td></tr>
+      ${res && res.key === k && html`<tr><td colspan="5"><div class="refusal">${res.text}<div class="small mute">refusal kind: <code>${res.kind}</code></div></div></td></tr>`}`)}</tbody></table>
+  </div>`;
+}
+function Setup({ sv, onDone }) {
+  const { st, set, start, startService } = sv;
+  const running = st.op && st.op.state === 'running';
+  const found = st.discovered ?? (st.paired ? 'one' : null);
+  useEffect(() => { if (!st.paired && !st.discovered && !running) start('discover'); }, []); // once, on open
+  // step 4: the last-status slot is empty, so #95's on-load rule starts the first check
+  useEffect(() => { if (st.paired && st.service === 'active' && !st.status && !running) start('status'); }, [st.paired, st.service]);
+  const list = found === 'two' ? [PI, { name: 'zeropi-display', address: 'DC:A6:32:11:4E:02' }] : found === 'one' ? [PI] : [];
+  const Step = ({ n, done, title, children }) => html`<li style="margin:14px 0"><b>${done ? html`<span class="ok">✓</span>` : html`<span class="mute">${n}</span>`} ${title}</b><div style="margin:6px 0 0 22px">${children}</div></li>`;
+  const [repair, setRepair] = useState(false);
+  return html`<div>
+    <h2>Set up this Desktop</h2><p class="mute">Each step shows what is true now. Re-open this page any time — after a reimage or on a new laptop.</p>
+    <ol style="list-style:none;padding:0">
+      <${Step} n="1" done=${!!st.paired} title="Find the Pi">
+        ${st.paired ? html`<span class="mute">done</span>` : running && st.op.verb === 'discover' ? html`<span class="unk">Scanning (up to 10s)…</span>`
+          : list.length === 0 && found ? html`<div class="refusal">No Pi advertising zeropi-display was found within 10s.
+Is it set up? Run this <b>on the Pi</b> (over SSH):
+<code>curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- pi</code></div><button onClick=${() => start('discover')}>Scan again</button>`
+          : html`<div>${list.length > 1 && html`<p><b>${list.length} Pis are in range.</b> Pick yours — setup never pairs with the first one it hears.</p>`}
+              ${list.map(p => html`<label style="display:block;margin:4px 0"><input type="radio" name="pi" checked=${list.length === 1 || st.found === p} onChange=${() => set({ found: p })}/> ${p.name} <code>${p.address}</code> <span class="mute small">−${50 + list.indexOf(p) * 21} dBm</span></label>`)}
+              <button onClick=${() => start('discover')}>Scan again</button></div>`}
+      <//>
+      <${Step} n="2" done=${!!st.paired} title="Pair">
+        ${st.paired && !repair ? html`<span>paired with ${st.paired.name} <code>${st.paired.address}</code></span> <button onClick=${() => setRepair(true)}>Pair a different Pi…</button>`
+          : repair ? html`<div class="refusal">This Desktop is paired with <code>${st.paired.address}</code>. Pairing a different Pi replaces it. <button onClick=${() => { set({ paired: null, discovered: null }); setRepair(false); start('discover'); }}>Yes, pair a different Pi</button> <button onClick=${() => setRepair(false)}>Cancel</button></div>`
+          : html`<p class="small mute">If this Pi was paired with another computer, it clears its history and takes this computer's (ADR-0006).</p>
+              <button class="primary" disabled=${!list.length || (list.length > 1 && !st.found) || running} onClick=${() => start('pair')}>Pair</button>`}
+      <//>
+      <${Step} n="3" done=${st.service === 'active'} title="Start zeropi-push">
+        ${st.service === 'active' ? html`<span class="mute">running</span>` : html`<p class="small mute">The resident loop that pushes usage. Started only after pairing, so it never pushes to a Pi you didn't choose.</p>
+          <button class="primary" disabled=${!st.paired} onClick=${startService}>Start zeropi-push</button>`}
+      <//>
+      <${Step} n="4" done=${!!st.status} title="First status">
+        ${st.status ? html`<span class=${HEAD[st.status.state][1]}>${HEAD[st.status.state][0]} ${st.status.headline}</span> <button class="primary" onClick=${onDone}>Go to the Management Surface →</button>`
+          : running && st.op.verb === 'status' ? html`<span class="unk">Checking…</span>`
+          : html`<button disabled=${!st.paired || st.service !== 'active'} onClick=${() => start('status')}>Check status</button>`}
+      <//>
+    </ol>
+    <${Refusal} st=${st} set=${set}/>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Variant A: one page, CLI-shaped
+function VariantA({ sv }) {
+  const { st, set, start } = sv; const [view, setView] = useState(st.paired ? 'main' : 'setup'); const [wipe, setWipe] = useState(false);
+  const busy = st.op && st.op.state === 'running'; const s = st.status;
+  if (view === 'setup') return html`<div class="A"><${Setup} sv=${sv} onDone=${() => setView('main')}/></div>`;
+  return html`<${ServiceBanner} st=${st} onSetup=${() => setView('setup')}/><div class="A">
+    <div class="mute small">zeropi.display · Management Surface · <a href="#" onClick=${e => { e.preventDefault(); setView('setup'); }}>setup</a></div>
+    <section>
+      ${s ? html`<div class="headline"><span class=${HEAD[s.state][1]}>${HEAD[s.state][0]}</span>  ${s.headline}</div><${CheckedAt} s=${s}/>`
+          : html`<div class="headline mute">No status yet.</div>`}
+      <div style="margin-top:10px"><button class="primary" disabled=${busy} onClick=${() => start('status')}>Check now</button></div>
+    </section>
+    ${s && html`<section class="mono">
+      <div>Desktop   zeropi-push ${st.service === 'active' ? 'running, up 3d 4h' : st.service}</div>
+      <div>          last Batch 09:04 today, 312 Readings sent</div>
+      <div>Pi        ${s.unreachable ? s.lastSeen : s.pi}</div>
+      ${s.unreachable ? html`<div class="refusal" style="font-family:inherit">${s.unreachable.text}<div class="small mute">unreachable: <code>${s.unreachable.kind}</code></div></div>`
+        : html`<table style="margin-top:10px"><tbody>${s.checks.map(([n, sev, d]) => html`<tr><td style="width:110px">${n}</td><td class=${SEV[sev][1]} style="width:20px">${SEV[sev][0]}</td><td>${d}</td></tr>`)}</tbody></table>`}
+    </section>`}
+    <section><h3>Actions</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
+        <button onClick=${() => start('push')}>Push now</button><button onClick=${() => start('redraw')}>Redraw</button>
+        <button class="danger" onClick=${() => setWipe(true)}>Wipe…</button><button onClick=${() => sv.restart()}>Restart zeropi-push</button>
+      </div>
+      ${wipe && html`<${WipeConfirm} onWipe=${v => { setWipe(false); start('wipe', { typed: v }); }} onCancel=${() => setWipe(false)}/>`}
+      <${Refusal} st=${st} set=${set}/>
+      <${OpLog} op=${st.op}/>
+    </section>
+    <section><h3>Configuration</h3><${ConfigTables} sv=${sv}/></section>
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Variant B: tabs + hero tiles + modal Operation
+function VariantB({ sv }) {
+  const { st, set, start } = sv; const [tab, setTab] = useState(st.paired ? 'status' : 'setup'); const [wipe, setWipe] = useState(false); const [showOp, setShowOp] = useState(!!st.op);
+  const s = st.status; const busy = st.op && st.op.state === 'running';
+  const go = (verb, extra) => { start(verb, extra); setShowOp(true); };
+  return html`<div class="B"><${ServiceBanner} st=${st} onSetup=${() => setTab('setup')}/>
+    <nav>${[['status','Status'],['config','Configuration'],['setup','Setup']].map(([k, l]) => html`<a class=${tab === k ? 'on' : ''} onClick=${() => setTab(k)}>${l}</a>`)}
+      <span style="flex:1"></span>${st.op && html`<a onClick=${() => setShowOp(true)}>${busy ? html`<span class="unk">● ${st.op.verb} running</span>` : `last: ${st.op.verb}`}</a>`}</nav>
+    <main>
+    ${tab === 'setup' && html`<${Setup} sv=${sv} onDone=${() => setTab('status')}/>`}
+    ${tab === 'config' && html`<${ConfigTables} sv=${sv}/>`}
+    ${tab === 'status' && html`<div>
+      <div class="hero"><div>
+          ${s ? html`<h1 style="font-size:30px"><span class=${HEAD[s.state][1]}>${HEAD[s.state][0]}</span> ${s.headline}</h1><${CheckedAt} s=${s}/>` : html`<h1 class="mute">No status yet</h1>`}
+          ${s && html`<div class="small mute" style="margin-top:6px">Pi ${s.unreachable ? s.lastSeen : s.pi} · Desktop: zeropi-push ${st.service}, last Batch 09:04, 312 sent</div>`}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:150px">
+          <button class="primary" disabled=${busy} onClick=${() => go('status')}>Check now</button>
+          <button onClick=${() => go('push')}>Push now</button><button onClick=${() => go('redraw')}>Redraw</button>
+          <button class="danger" onClick=${() => setWipe(true)}>Wipe…</button>
+        </div></div>
+      ${wipe && html`<${WipeConfirm} onWipe=${v => { setWipe(false); go('wipe', { typed: v }); }} onCancel=${() => setWipe(false)}/>`}
+      <${Refusal} st=${st} set=${set}/>
+      ${s && s.unreachable && html`<div class="refusal">${s.unreachable.text}\nNothing was queued. Check again when the Pi is back.</div>`}
+      ${s && !s.unreachable && html`<div class="grid">${s.checks.map(([n, sev, d]) => html`<div class="tile"><div class=${SEV[sev][1]} style="font-size:20px">${SEV[sev][0]} ${n}</div><div class="small">${d}</div></div>`)}</div>`}
+    </div>`}
+    </main>
+    ${showOp && st.op && html`<div class="modal-bg" onClick=${e => e.target === e.currentTarget && setShowOp(false)}><div class="modal">
+      <${OpLog} op=${st.op}/><div style="text-align:right;margin-top:10px"><button onClick=${() => setShowOp(false)}>${busy ? 'Hide (keeps running)' : 'Close'}</button></div></div></div>`}
+  </div>`;
+}
+
+// ---------------------------------------------------------------- Variant C: split — Verdict left, Operation console right, config drawer
+function VariantC({ sv }) {
+  const { st, set, start } = sv; const [drawer, setDrawer] = useState(null); const [wipe, setWipe] = useState(false);
+  const s = st.status; const busy = st.op && st.op.state === 'running';
+  if (!st.paired && drawer !== 'setup') setTimeout(() => setDrawer('setup'));
+  return html`<div><${ServiceBanner} st=${st} onSetup=${() => setDrawer('setup')}/><div class="C">
+    <div class="left">
+      <div class="bar"><b style="margin-right:auto">zeropi.display</b><button onClick=${() => setDrawer('config')}>Configuration</button><button onClick=${() => setDrawer('setup')}>Setup</button></div>
+      ${s ? html`<div style="font-size:22px;font-weight:650"><span class=${HEAD[s.state][1]}>${HEAD[s.state][0]}</span> ${s.headline}</div><${CheckedAt} s=${s}/>` : html`<div class="mute" style="font-size:22px">No status yet</div>`}
+      ${s && html`<div style="margin-top:16px">
+        <div class="row"><span class="lbl">Desktop</span><span>zeropi-push ${st.service}, up 3d 4h · last Batch 09:04, 312 Readings sent</span></div>
+        <div class="row"><span class="lbl">Pi</span><span>${s.unreachable ? s.lastSeen : s.pi}</span></div>
+        ${s.unreachable ? html`<div class="refusal">${s.unreachable.text}</div>`
+          : s.checks.map(([n, sev, d]) => html`<div class="row"><span class="lbl">${n}</span><span class=${SEV[sev][1]}>${SEV[sev][0]}</span><span>${d}</span></div>`)}
+      </div>`}
+    </div>
+    <div class="right">
+      <h3>Operation</h3>
+      <div class="bar" style="margin-top:8px">
+        <button class="primary" disabled=${busy} onClick=${() => start('status')}>Check now</button><button disabled=${busy} onClick=${() => start('push')}>Push</button>
+        <button disabled=${busy} onClick=${() => start('redraw')}>Redraw</button><button class="danger" disabled=${busy} onClick=${() => setWipe(true)}>Wipe…</button>
+      </div>
+      ${busy && html`<p class="small mute">Buttons are disabled while an Operation runs — one at a time, nothing is queued.</p>`}
+      ${wipe && html`<${WipeConfirm} onWipe=${v => { setWipe(false); start('wipe', { typed: v }); }} onCancel=${() => setWipe(false)}/>`}
+      <${Refusal} st=${st} set=${set}/>
+      <${OpLog} op=${st.op}/>
+    </div></div>
+    ${drawer && html`<div class="drawer"><div style="text-align:right"><button onClick=${() => setDrawer(null)} disabled=${!st.paired}>Close</button></div>
+      ${drawer === 'config' ? html`<${ConfigTables} sv=${sv}/>` : html`<${Setup} sv=${sv} onDone=${() => setDrawer(null)}/>`}</div>`}
+  </div>`;
+}
+
+// ---------------------------------------------------------------- prototype chrome
+const VARIANTS = [['A','One page, CLI-shaped', VariantA], ['B','Tabs + tiles + modal Operation', VariantB], ['C','Split: Verdict | Operation console', VariantC]];
+function App() {
+  const p = new URLSearchParams(location.search);
+  const vi = Math.max(0, VARIANTS.findIndex(v => v[0] === p.get('variant')));
+  const sv = useSurface();
+  const nav = (k, v) => { p.set(k, v); location.search = p.toString(); };
+  const cyc = d => nav('variant', VARIANTS[(vi + d + VARIANTS.length) % VARIANTS.length][0]);
+  useEffect(() => { const f = e => { if (e.target.closest('input,textarea,select,[contenteditable]')) return;
+    if (e.key === 'ArrowLeft') cyc(-1); if (e.key === 'ArrowRight') cyc(1); }; addEventListener('keydown', f); return () => removeEventListener('keydown', f); }, [vi]);
+  const [showState, setShowState] = useState(false);
+  const V = VARIANTS[vi][2];
+  return html`<${V} key=${vi} sv=${sv}/>
+    ${showState && html`<div id="protostate">${JSON.stringify(sv.st, (k, v) => k === 'checks' ? `[${v.length} checks]` : v, 2)}</div>`}
+    <div id="proto">PROTOTYPE <button onClick=${() => cyc(-1)}>←</button><b>${VARIANTS[vi][0]} (${VARIANTS[vi][1]})</b><button onClick=${() => cyc(1)}>→</button>
+      <select onChange=${e => nav('scenario', e.target.value)}>${Object.entries(SCENARIOS).map(([k, v]) => html`<option value=${k} selected=${k === sv.scen}>${v.label}</option>`)}</select>
+      <button onClick=${() => setShowState(x => !x)}>state</button></div>`;
+}
+render(html`<${App}/>`, document.getElementById('app'));
+</script>
+</body>
+</html>
