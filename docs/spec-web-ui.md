@@ -462,12 +462,11 @@ The page sends the typed short id in the `wipe` request's `args`; the operation
 checks it (`confirm_mismatch`), with the same refusal path as the CLI. It is not
 a security control in either surface.
 
-⚠ **Today's short id cannot tell two Pis apart**: it is the first three octets
-of the BLE address, i.e. the Raspberry Pi manufacturer prefix (`b827eb` on
-essentially every Pi). That is filed as
-[#101](https://github.com/peterderkoala/zeropi.display/issues/101) (use the
-last three octets) and fixed in the shared operation, so the web UI inherits it.
-This spec says only "the typed short id, as the CLI defines it".
+The short id is the **last three octets** of the Pi's BLE address (`7c970f` on
+the dev Pi). It used to be the first three, the Raspberry Pi manufacturer
+prefix that every Pi shares, until
+[#101](https://github.com/peterderkoala/zeropi.display/issues/101) fixed it in
+the shared code. This spec says only "the typed short id, as the CLI defines it".
 
 ---
 
