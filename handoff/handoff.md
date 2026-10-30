@@ -2,18 +2,17 @@
 
 ## Where things stand
 
-> **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
-> Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
-> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Nine
-> of its **ten** tickets are closed: stack research (#90), the stack (#91), the
-> in-process seam (#92), the process model (#93), how a long BLE action
-> appears over HTTP (#94), when the page asks for status (#95), the
-> localhost guard (#96), first-run setup (#100) and the pages prototype
-> (#97, variant B). Only #98, writing the spec, remains. **#100 (graphical first-run setup) was added on
-> 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
-> [For the next session](#for-the-next-session) for what can be taken next.
-> **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
-> (`dev` → `main`) is still open.
+> **Map #89 is DONE (closed 2026-10-30).** Its destination,
+> **`docs/spec-web-ui.md`, is written on `plan/web-ui` (`6dfeca6`)**, from all
+> ten tickets. It is binding for the web UI: FastAPI + vendored Preact/htm; the
+> operations extracted from `cli.py`; a resident `zeropi-web` on
+> `127.0.0.1:8737`; Operations over SSE, one at a time; no status polling; the
+> localhost guard; installer + `/setup`; variant B's three tabs; a 20-point gap
+> check. ⚠ **`plan/web-ui` is not on `dev` yet.** It carries the spec and two
+> `CONTEXT.md` changes (*Configuration* read per run; **Operation**), and goes
+> in once PR #88 (`dev` → `main`) merges. **Next: an implementation map
+> opened against the spec**, not yet charted. Standalone bug **#101** (wipe's
+> short id is the manufacturer prefix) is a prerequisite the spec leans on.
 >
 > **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
 > `B8:27:EB:7C:97:0F`): user **`zero`**, not `pi`, SSH key only. It is
@@ -295,9 +294,11 @@ frame from drawing.
 
 ## For the next session
 
-### Map #89 — the web UI spec (live)
+### Map #89 — the web UI spec (closed)
 
-Work it with `/mattpocock-skills:wayfinder continue`. The map body has the
+✅ **Done 2026-10-30**: `docs/spec-web-ui.md` on `plan/web-ui` (`6dfeca6`); #98 closed the map. The two fog items (push marks not per-Pi, pushed status) were ruled out of scope and are named in spec §14. Next is an implementation map against the spec (chart it with `/mattpocock-skills:wayfinder <idea>`).
+
+Historical: it was worked with `/mattpocock-skills:wayfinder continue`. The map body has the
 standing constraints. ⚠ **Read its Notes before anything else**, especially:
 localhost only, no JS build step, the web UI is a skin over the same substrate
 as `cli.py`, and the Pi is absent.
