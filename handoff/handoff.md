@@ -4,11 +4,11 @@
 
 > **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
 > Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
-> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Seven
+> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Eight
 > of its **ten** tickets are closed: stack research (#90), the stack (#91), the
 > in-process seam (#92), the process model (#93), how a long BLE action
-> appears over HTTP (#94), when the page asks for status (#95) and the
-> localhost guard (#96). **#100 (graphical first-run setup) was added on
+> appears over HTTP (#94), when the page asks for status (#95), the
+> localhost guard (#96) and first-run setup (#100). **#100 (graphical first-run setup) was added on
 > 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
 > [For the next session](#for-the-next-session) for what can be taken next.
 > **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
@@ -331,20 +331,21 @@ as `cli.py`, and the Pi is absent.
   **#101** (standalone bug, not on a map): `wipe`'s short id is the first three
   octets, i.e. the Raspberry Pi manufacturer prefix `b827eb`, so it can't tell
   two Pis apart.
-- ⏭ **Takeable now (grilling):** **#100 First-run setup: discover a Pi, pair,
-  install and start the Desktop services** (added 2026-10-30, maintainer's
-  request).
-  - #100 is **Desktop services only** (`zeropi-push`, `zeropi-web`); Pi
-    provisioning stays the curl bootstrap — decided by the maintainer. Its
-    hardest question is the bootstrap: the UI is served by `zeropi-web`, so
-    it can't install `zeropi-web` before running. It is where the map's
-    "install and packaging" fog is expected to resolve.
-- 🔒 **#97 The pages (prototype, fake data)** is blocked by #100 only. **#98
-  Write `docs/spec-web-ui.md`** is blocked by #97 and #100. Each
+- ✅ **#100 First-run setup** (2026-10-30): `install-desktop.sh` is the one
+  terminal step: venv + `requirements-web.txt`, writes **both** units, enables
+  **only** `zeropi-web`, opens `127.0.0.1:8737`. Standalone deploys all of
+  `desktop/` (closes #47's gap), no `pyproject.toml`. `/setup` is a checklist
+  derived from real state; a new `discover` Operation lists every Pi; setup
+  enables `zeropi-push` only **after** a successful pair. This resolved the
+  map's "Install and packaging" fog.
+- ⏭ **Takeable now: #97 The pages (prototype, fake data)**, which is HITL and
+  uses `mattpocock-skills:prototype` on a `prototype/*` branch. Its input
+  comments (#95, #96, #100) list what the pages must show. **#98 Write
+  `docs/spec-web-ui.md`** is blocked by #97 only. Each
   resolution comment carries a *Consequences for the spec* list, which is
   #98's gap check.
 - **Fog on the map:** install and packaging (two units, neither installed by
-  any installer — now owned by #100), push marks not per-Pi, pushed status.
+  push marks not per-Pi, pushed status. (Install and packaging was resolved by #100.)
 
 **Branches for this map:**
 - `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
@@ -1362,7 +1363,7 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
   Invoke it with `continue` or the map, not with a fresh idea, because
   charting is done. It picks the next frontier ticket for you if you do not
-  name one. #100 is a grilling ticket:
+  name one. #97 is a prototype ticket; for any grilling one:
   - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
   - Ask in numbered rounds, with a recommendation per question.
   - Glossary edits go to `plan/web-ui`, never to `dev`.
