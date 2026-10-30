@@ -2,16 +2,27 @@
 
 ## Where things stand
 
+> **Live work (2026-10-30): [map #102 — implement the web
+> UI](https://github.com/peterderkoala/zeropi.display/issues/102)**, an
+> **execution-mode** map against `docs/spec-web-ui.md`. It has seven slices,
+> chained: #103 extract the operations module → #104 extend the operations
+> (`BatchResult` fields, pair by address, `discover`) → #105 web skeleton and
+> localhost guard → #106 Operations over HTTP and the last-status slot → then
+> #107 (Status and Configuration tabs) and #108 (install and Setup) in
+> parallel → #109 hardware verification. **Takeable now: #103.** Work it with
+> `/mattpocock-skills:wayfinder continue` (plus `tdd`). ⚠ `test_cli.py`'s
+> rendering tests must pass **unchanged** through #103.
+>
+> **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
+> and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
+>
 > **Map #89 is DONE (closed 2026-10-30).** Its destination,
 > **`docs/spec-web-ui.md`, is written on `plan/web-ui` (`6dfeca6`)**, from all
 > ten tickets. It is binding for the web UI: FastAPI + vendored Preact/htm; the
 > operations extracted from `cli.py`; a resident `zeropi-web` on
 > `127.0.0.1:8737`; Operations over SSE, one at a time; no status polling; the
 > localhost guard; installer + `/setup`; variant B's three tabs; a 20-point gap
-> check. ⚠ **`plan/web-ui` is not on `dev` yet.** It carries the spec and two
-> `CONTEXT.md` changes (*Configuration* read per run; **Operation**), and goes
-> in once PR #88 (`dev` → `main`) merges. **Next: an implementation map
-> opened against the spec**, not yet charted. **#101 is fixed**
+> check. Its implementation is map #102 (above). **#101 is fixed**
 > (`wipe`'s short id is now the last three octets, `7c970f` on the dev Pi).
 >
 > **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
