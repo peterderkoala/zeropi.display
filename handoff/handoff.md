@@ -2,15 +2,23 @@
 
 ## Where things stand
 
-> **Live work (2026-09-16): [map #89 — a lightweight web UI for the Management
+> **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
 > Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
 > **planning** map whose destination is a binding `docs/spec-web-ui.md`. Five
-> of its nine tickets are closed: stack research (#90), the stack (#91), the
+> of its **ten** tickets are closed: stack research (#90), the stack (#91), the
 > in-process seam (#92), the process model (#93) and how a long BLE action
-> appears over HTTP (#94). The detail is on the map's Decisions-so-far; see
+> appears over HTTP (#94). **#100 (graphical first-run setup) was added on
+> 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
 > [For the next session](#for-the-next-session) for what can be taken next.
 > **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
 > (`dev` → `main`) is still open.
+>
+> **⚠ The dev Pi was reimaged on 2026-10-30** (same board, same BT address
+> `B8:27:EB:7C:97:0F`): user **`zero`**, not `pi`, SSH key only. It is
+> re-provisioned and verified end to end — see [Environment
+> notes](#environment-notes). Doing so found two `install-pi.sh` bugs, fixed
+> in `cf83d61`. **#99** (standalone, not on a map) asks for a "last heard from
+> the Desktop" timestamp in the Historic View footer.
 >
 > **The management surface is DONE and hardware-verified (2026-09-11).** Map
 > #80's last ticket, **#87, ran every §10.6 scenario on the dev Pi** —
@@ -308,14 +316,22 @@ as `cli.py`, and the Pi is absent.
   **Operation** handle that is followed over SSE. One BLE Operation runs per
   process, and it runs to completion with no cancel. ⚠ The handle names an
   Operation that has already started, never a queue (ADR-0011).
-- ⏭ **Takeable now, both grilling:** **#95 When the page asks for status** and
-  **#96 What stops another website from driving the localhost service**. Both
-  carry input comments from #93/#94; read the comments, not just the bodies.
-- 🔒 **#97 The pages (prototype, fake data)** is blocked by #95. **#98 Write
-  `docs/spec-web-ui.md`** is blocked by #95–#97. Each resolution comment
-  carries a *Consequences for the spec* list, which is #98's gap check.
-- **Fog on the map:** install and packaging (two units, neither installed),
-  push marks not per-Pi, pushed status.
+- ⏭ **Takeable now, all grilling:** **#95 When the page asks for status**,
+  **#96 What stops another website from driving the localhost service**, and
+  **#100 First-run setup: discover a Pi, pair, install and start the Desktop
+  services** (added 2026-10-30, maintainer's request). #95/#96 carry input
+  comments from #93/#94; read the comments, not just the bodies.
+  - #100 is **Desktop services only** (`zeropi-push`, `zeropi-web`); Pi
+    provisioning stays the curl bootstrap — decided by the maintainer. Its
+    hardest question is the bootstrap: the UI is served by `zeropi-web`, so
+    it can't install `zeropi-web` before running. It is where the map's
+    "install and packaging" fog is expected to resolve.
+- 🔒 **#97 The pages (prototype, fake data)** is blocked by #95 and #100. **#98
+  Write `docs/spec-web-ui.md`** is blocked by #95–#97 and #100. Each
+  resolution comment carries a *Consequences for the spec* list, which is
+  #98's gap check.
+- **Fog on the map:** install and packaging (two units, neither installed by
+  any installer — now owned by #100), push marks not per-Pi, pushed status.
 
 **Branches for this map:**
 - `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
@@ -871,7 +887,8 @@ them in the spec's own voice:
 
 **Live map: [#89 — A lightweight web UI for the Management Surface
 (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, charted
-2026-09-15. It is a planning map with tickets #90–#98, and five are closed. See
+2026-09-15. It is a planning map with tickets #90–#98 plus #100 (added
+2026-10-30), and five are closed. See
 [For the next session](#for-the-next-session). The two maps below it, #70 (the
 spec) and #80 (its implementation), are **closed but not yet archived** into
 `handoff/archive/`.
@@ -919,6 +936,22 @@ mode deploys only `push.py`.
 
 ## Hard-won facts — do not relearn these
 
+- ⚠ **A fresh Imager-provisioned Pi broke `install-pi.sh` twice** (found
+  reimaging the dev Pi on 2026-10-30, fixed in `cf83d61`):
+  - **The service user is not necessarily `pi`.** Imager lets the user pick
+    any name; `RUN_AS_USER` was hardcoded and `chown pi:pi` failed mid-install.
+    It is now `${ZEROPI_USER:-${SUDO_USER:-pi}}`, checked up front, and
+    stamped into the installed unit's `User=` (the repo's
+    `pi/zeropi-display.service` still says `User=pi`; the installer seds it).
+  - **The Bluetooth radio can ship rfkill soft-blocked** (Imager unblocks only
+    wlan). `bluezero` then dies with `org.bluez.Error.Failed: Not Powered`
+    in a restart loop, and the installer's self-check reports only *no
+    active LE advertisement after 20s*. The installer now runs
+    `rfkill unblock bluetooth`; systemd-rfkill persists it across reboots.
+- ⚠ **A reimaged Pi meets the not-per-Pi push marks.** `pair` against the
+  real store sent 1 Reading and `status` said *missing 11 Readings*;
+  `push.py --resend-all --batch-only` cleared it (2026-10-30). Same
+  mechanism as #87's open question; #100 asks whether setup should do it.
 - ⚠ **`install-desktop.sh`'s standalone mode is incomplete, and it is the
   common non-maintainer path.** It deploys only `push.py` into
   `~/.local/share/zeropi-display/` — not `gauge.py`, `usage.py` or
@@ -1253,9 +1286,33 @@ in `docs/research/`):
 
 ## Environment notes
 
-- Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
+- ~~Dev Pi: `192.168.4.108`, creds in `infrastructure.md` (gitignored).
   `sshpass` is installed in this dev environment for non-interactive SSH;
-  the sudo password is the same as the SSH password.
+  the sudo password is the same as the SSH password.~~ Superseded by the
+  reimage below; `infrastructure.md` still describes the old image.
+- **Dev Pi, reimaged 2026-10-30** (Raspberry Pi OS trixie, via Imager +
+  cloud-init): `ssh zero@pi-zero.local` (Wi-Fi, currently `192.168.4.108`).
+  User **`zero`**, **SSH key auth only** (`ssh_pwauth: false`) — `sshpass` no
+  longer applies. **`sudo` needs the maintainer's password**: ask them to run
+  `sudo -v` in their own SSH session; it is cached ~15 min, and then
+  `sudo -n` works from yours. Same board, same BT address
+  `B8:27:EB:7C:97:0F`. Provisioned from the patched `pi/` via standalone
+  `install-pi.sh` (equivalent to `cf83d61`); `receive.py`/`bluezero` run from
+  `/opt/zeropi-display/venv` as user `zero`. Old `/home/pi/*` backups are gone.
+- **USB gadget on the dev Pi** (added 2026-10-30, boot partition only, originals
+  kept as `cmdline.txt.orig`/`config.txt.orig`): `dtoverlay=dwc2,dr_mode=peripheral`
+  + `modules-load=dwc2,g_cdc systemd.wants=serial-getty@ttyGS0.service`. The
+  inner "USB" port gives the laptop **`/dev/ttyACM0`, a login console**
+  (`picocom -b 115200 /dev/ttyACM0`; the laptop user is not in `dialout`, so
+  `sudo`), plus a CDC-ECM link (`usb0` / `enx…`) that has **no IPv4 on either
+  side** — SSH still goes over Wi-Fi. Image's own `rpi-usb-gadget` does
+  networking only (`g_ether`), which is why it wasn't used.
+- **Maintainer's Desktop, 2026-10-30:** paired with the reimaged Pi (real
+  Configuration), `push.py --resend-all --batch-only` run, `status` green.
+  `zeropi-push` is **installed by hand** in `~/.config/systemd/user/`
+  (in-place layout: `ExecStart=<repo>/.venv/bin/python3 <repo>/desktop/service.py`,
+  `WorkingDirectory=<repo>`), enabled and running — no installer does this
+  yet (#100).
 - **⚠ The dev Pi is shared with other concurrent sessions/jobs.** Before
   touching `/opt`, systemd units, `config.txt`, or rebooting, check for a
   live collision (`who`/`w` over SSH, recent `/var/log/dpkg.log`) — a
@@ -1276,7 +1333,7 @@ in `docs/research/`):
   during #48 on 2026-09-09; the reset is at most an hour out and
   `curl -i https://api.github.com/rate_limit` from the Pi says when.
 - Pi: Debian 13 (trixie), Python 3.13.5, aarch64, BlueZ `5.82-1.1+rpt2`,
-  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` in `~pi/.local`.
+  `python3-dbus` `1.4.0-1`, `bluezero` `0.9.1` ~~in `~pi/.local`~~ in `/opt/zeropi-display/venv` (2026-10-30 reimage).
 - Desktop: `bleak` 3.0.2 in a local `.venv/` (gitignored, not committed) —
   `uv venv .venv && uv pip install -r desktop/requirements.txt`.
 - Labels `wayfinder:map`, `wayfinder:task`, `wayfinder:grilling`,
@@ -1292,10 +1349,15 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
   Invoke it with `continue` or the map, not with a fresh idea, because
   charting is done. It picks the next frontier ticket for you if you do not
-  name one. #95 and #96 are grilling tickets:
+  name one. #95, #96 and #100 are grilling tickets:
   - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
   - Ask in numbered rounds, with a recommendation per question.
   - Glossary edits go to `plan/web-ui`, never to `dev`.
+- **#99 (Historic View timestamp) is not on a map.** Its open question is
+  footer fit, which needs a mock **on glass** (#57's lesson) — so it wants
+  `mattpocock-skills:prototype`, then spec + ADR-0009/0010 edits, then
+  `mattpocock-skills:tdd` on `render.py`. Unlike #89 it needs the Pi; the
+  maintainer has to run `sudo -v` there first (Environment notes).
 - **`mattpocock-skills:prototype` for #97 The pages**, on fake data. The
   Unreachable, *busy* and Operation states (listed in #97's input comment) must
   all render.
