@@ -17,9 +17,17 @@
 > `settings_ok`/`unreachable`, so `push`/`pair` against an absent Pi exit 2
 > as Unreachable (#86's gap closed); `operations.pair(address=…)`;
 > `operations.discover` → `DiscoverResult(devices: FoundPi…)` over
-> `push.scan_for_pis`. **Takeable now: #105.** Work it with
-> `/mattpocock-skills:wayfinder continue` (plus `tdd`); read #104's
-> resolution comment first.
+> `push.scan_for_pis`. **#105 is done too**: `desktop/web/` (the only
+> `fastapi` importer; `cli.py web [--port]` imports it lazily), the guard in
+> `web/guard.py`, Preact 10.29.8 + htm 3.1.1 vendored with a sha256
+> `README.md`, `GET /api/desktop|config|status/last` and the page shell.
+> Handlers are plain `def` (thread pool) rather than §3.1's "async"; #106's
+> SSE will need async ones. ⚠ **Found, not fixed (pre-existing, a spec
+> question):** `config set pi.idle_keepalive_s` pushes live, but a running
+> `zeropi-push` froze its Settings at startup (`service.py` main) and
+> re-asserts the *old* value on its next connection, so the Pi reverts.
+> `operations.pending_restart` therefore marks that key too. **Takeable
+> now: #106.** Read #105's resolution comment first.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

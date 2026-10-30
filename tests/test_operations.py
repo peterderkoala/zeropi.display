@@ -407,3 +407,33 @@ def test_discover_with_no_adapter_is_unreachable_not_a_crash(monkeypatch):
 
     assert r.devices == () and r.unreachable.reason == "absent"
     assert r.outcome is Outcome.CANT_TELL
+
+
+def _written(tmp_path, key, value):
+    conn = config.open_config_store(_cfg_path(tmp_path))
+    try:
+        config.write_config_value(conn, key, value)
+        return conn.execute("SELECT updated_at FROM config WHERE key = ?", (key,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_pending_restart_is_keys_written_after_the_service_started(tmp_path):
+    from datetime import datetime, timedelta
+
+    _cfg(tmp_path)
+    at = datetime.fromisoformat(_written(tmp_path, "usage.window_days", 5))
+    # Applies live on the Pi, but the running service would re-assert its old value.
+    _written(tmp_path, operations.PI_PROJECTED_SETTING, 7200)
+    conn = config.open_config_store(_cfg_path(tmp_path))
+    try:
+        started_before = operations.ServiceInfo("running", 3600.0)
+        pending = operations.pending_restart(conn, started_before, now=at + timedelta(seconds=1))
+        assert "usage.window_days" in pending
+        assert operations.PI_PROJECTED_SETTING in pending
+        started_after = operations.ServiceInfo("running", 1.0)
+        assert operations.pending_restart(conn, started_after, now=at + timedelta(seconds=10)) == []
+        # §5.3: not shown while the service is inactive
+        assert operations.pending_restart(conn, operations.ServiceInfo("not running", None)) == []
+    finally:
+        conn.close()

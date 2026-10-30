@@ -28,7 +28,7 @@ import sqlite3
 import subprocess
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 import config
@@ -506,6 +506,21 @@ def status_json(r: StatusResult, service: ServiceInfo) -> dict:
 # ---------------------------------------------------------------------------
 # §9.3 `config`
 # ---------------------------------------------------------------------------
+
+
+def pending_restart(conn, service: ServiceInfo, now: Optional[datetime] = None) -> list[str]:
+    """Keys written since `zeropi-push` started (management surface §3.7:
+    `config.updated_at > ActiveEnterTimestamp`, no new state). Empty while
+    the service is inactive (web-ui §5.3).
+
+    ⚠ The `→ Pi` Setting is included: the Pi applies it live, but the
+    running service froze its Settings at startup (`service.py` main) and
+    re-asserts the old value at the head of its next connection."""
+    if service.state != "running" or service.uptime_s is None:
+        return []
+    started = (now or _now_utc()) - timedelta(seconds=service.uptime_s)
+    rows = conn.execute("SELECT key, updated_at FROM config ORDER BY key")
+    return [key for key, updated_at in rows if datetime.fromisoformat(updated_at) > started]
 
 
 @dataclass(frozen=True)

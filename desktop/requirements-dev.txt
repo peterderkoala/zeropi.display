@@ -1,2 +1,4 @@
+-r requirements-web.txt
 pytest
 Pillow
+httpx2

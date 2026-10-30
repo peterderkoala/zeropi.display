@@ -429,6 +429,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("redraw", help="Send the redraw verb (spec §9.4).")
     sub.add_parser("wipe", help="Send the wipe verb, after typed confirmation (spec §9.4).")
     sub.add_parser("restart", help=f"systemctl --user restart {SERVICE_NAME} (spec §9.4).")
+    web_p = sub.add_parser("web", help="Serve the web UI on 127.0.0.1 (web-ui spec §5.1).")
+    web_p.add_argument("--port", type=int, default=8737, help="Port to bind (default 8737); no fallback if taken.")
 
     return parser
 
@@ -446,6 +448,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.command == "restart":
         return cmd_restart()
+    if args.command == "web":
+        import web  # lazily: nothing outside the web module imports fastapi (web-ui §3.1)
+
+        return web.serve(port=args.port, cfg_path=cfg_path, cli_store_path=args.store)
 
     dispatch: dict[str, Callable[[], Any]] = {
         "config": lambda: cmd_config(cfg, cfg_path, args),
