@@ -8,6 +8,7 @@ these tests exercise only what changed: what render() actually builds and
 hands off, and that nothing here needs bluezero, a panel, or SPI.
 """
 
+import json
 import sqlite3
 
 import pytest
@@ -262,3 +263,69 @@ def test_periodic_tick_does_not_crash_with_no_worker_configured(db_path, monkeyp
     monkeypatch.setattr(receive.ReceiveState, "_gauge_was_shown", False)
 
     receive.ReceiveState.periodic_tick()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# #99: the Desktop's sent label reaches the Historic View's footer
+# ---------------------------------------------------------------------------
+
+
+def _write(payload, monkeypatch):
+    monkeypatch.setattr(receive.ReceiveState, "send_ack", classmethod(lambda cls, ack: None))
+    receive.ReceiveState.on_write(list(json.dumps(payload).encode("utf-8")), {})
+
+
+def _historic_frame_drawn(db_path, monkeypatch):
+    worker = FakeWorker()
+    monkeypatch.setattr(receive.ReceiveState, "_panel_worker", worker)
+    receive.render({"historic": True})
+    monkeypatch.setattr(receive.ReceiveState, "_panel_worker", None)
+    return worker.submitted[0]
+
+
+def _expected(db_path, sent_label):
+    conn = sqlite3.connect(db_path)
+    try:
+        return render.historic_frame(
+            render.historic_rows(conn), render.coverage_start(conn), render.historic_average(conn), sent_label
+        )
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def pi(db_path, monkeypatch):
+    receive.init_db(db_path)
+    monkeypatch.setattr(receive.ReceiveState, "db_path", db_path)
+    monkeypatch.setattr(receive.ReceiveState, "gauge", receive.GaugeState())
+    monkeypatch.setattr(receive.ReceiveState, "redraw_gate", receive.RedrawGate())
+    return db_path
+
+
+GAUGE = {
+    "kind": "gauge",
+    "desktop_id": "desktop-a",
+    "snapshot_age_s": 0,
+    "five_hour": {"pct": 32, "resets_in_s": 9000},
+    "seven_day": {"pct": 18, "resets_in_s": 400000},
+    "context": None,
+}
+
+
+def test_the_latest_sent_label_of_any_data_kind_is_drawn_in_the_historic_footer(pi, monkeypatch):
+    _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
+    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, "30/10 04:00"))
+
+    _write({**GAUGE, "sent_label": "30/10 14:05"}, monkeypatch)  # a Gauge is "heard from" too
+    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, "30/10 14:05"))
+
+
+def test_a_payload_without_a_usable_sent_label_clears_it(pi, monkeypatch):
+    # An older Desktop (no label), or a label the footer has no room for: draw nothing, never a stale one.
+    _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
+    _write(daily_payload(), monkeypatch)
+    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, None))
+
+    _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
+    _write(daily_payload(sent_label="a label far too long for the footer"), monkeypatch)
+    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, None))

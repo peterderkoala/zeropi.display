@@ -125,7 +125,13 @@ first row at `y=1`:
   never invisible.
 - **Rule** across the full width at `y=101`.
 - **Footer** at `y=106`, 12 px: `SINCE <coverage start, %d %b upper>` at
-  `x=3`, and `AVG $<mean>` right-aligned to `x=247`.
+  `x=3`, and `AVG $<mean>` right-aligned to `x=247`. Between them, centred in
+  the space they leave rather than on the panel, is **`<sent label>`**: when
+  the Desktop last sent, as the Desktop's own text (`30/10 04:00`), printed
+  verbatim ([ADR-0014](./adr/0014-the-pi-prints-when-the-desktop-sent.md),
+  #99). With no label, nothing is drawn there. Measured: 216 px of the 244
+  between the margins, or 231 px at `AVG $1234`, which leaves gaps of about
+  14 px, and 6 px at worst.
 
 **Fewer than five Active Days draws fewer rows**, leaving white above the rule.
 Verified as reading intentional, not broken.
@@ -193,10 +199,14 @@ or inversion. All four were considered and rejected (ADR-0010): the panel has
 no grey, and a marked-stale number is one you are asking a viewer not to trust
 on a display read in about a second.
 
+The footer's `<sent label>` (§5.1) is not a stale marker. It marks no number
+and asks no one to distrust one; it says when the data came (ADR-0014).
+
 ## 6. Where the data comes from
 
-**The Pi queries its own `readings` table.** The wire is untouched by this
-milestone — no new Payload shape, no new field, no new Ack semantics.
+**The Pi queries its own `readings` table.** The wire was untouched by this
+milestone — no new Payload shape, no new field, no new Ack semantics. #99
+later added one optional field, `sent_label` (below).
 
 Measured on the Pi against a synthetic year of Readings (2,190 rows, 188 KiB):
 **0.25 ms** for the rows, **4.66 ms** for the average. Bounded by the 300 s
@@ -213,6 +223,10 @@ table no longer agrees with".
   average $40*. Pairing a since-date with an average over a different window is
   quietly wrong.
 - **Coverage Start**: `meta['coverage_start']`, verbatim.
+- **Sent label**: `meta['sent_label']`, verbatim. Every Daily and Gauge
+  Payload replaces it with its own `sent_label`, or clears it when the Payload
+  has no usable one (missing, not a string, empty, or over 12 characters).
+  The Pi never parses it (ADR-0014).
 - **Incomplete**: a day is `~` when **any** Reading that day has
   `cost_complete = 0` (`MIN(cost_complete) = 0`). One unpriced model makes the
   day's total a floor, not a fact.

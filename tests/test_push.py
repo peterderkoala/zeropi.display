@@ -194,6 +194,18 @@ def test_build_daily_batch_sets_batch_size_and_index_in_order():
     assert all(p["desktop_id"] == "deadbeefcafebabe" for p in payloads)
 
 
+def test_daily_and_gauge_payloads_carry_the_desktops_sent_label(monkeypatch):
+    # #99: formatted here, at push time, and printed verbatim by the Pi (ADR-0014).
+    import gauge
+    from datetime import datetime
+
+    monkeypatch.setattr(gauge, "build_gauge_payload", lambda **kw: {"snapshot_age_s": 1, "five_hour": {}, "seven_day": {}, "context": None})
+    now = datetime(2026, 10, 30, 4, 5)
+
+    assert push.build_daily_batch([_reading()], "id", now=now)[0]["sent_label"] == "30/10 04:05"
+    assert push.build_gauge_wire_payload("id", now=now)["sent_label"] == "30/10 04:05"
+
+
 def test_build_daily_batch_empty_readings_yields_empty_batch():
     assert push.build_daily_batch([], "deadbeefcafebabe") == []
 

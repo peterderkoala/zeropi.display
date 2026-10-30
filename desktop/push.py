@@ -45,6 +45,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
@@ -183,14 +184,22 @@ def desktop_id(machine_id_paths: tuple[str, ...] = MACHINE_ID_PATHS) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_daily_batch(readings: list, desktop_id_: str) -> list[dict]:
+def sent_label(now: Optional[datetime] = None) -> str:
+    """When this Desktop sent, as the text the Pi's footer prints verbatim
+    (ADR-0014): local time, always date and time, since the Pi cannot know
+    what "today" is."""
+    return (now or datetime.now()).strftime("%d/%m %H:%M")
+
+
+def build_daily_batch(readings: list, desktop_id_: str, now: Optional[datetime] = None) -> list[dict]:
     """Turns pending Readings (newest-date-first, per usage.py) into an
     ordered list of Daily Payload dicts with correct `batch_size` /
     `batch_index` (spec §6.1, §7.3).
     """
     batch_size = len(readings)
+    label = sent_label(now)
     return [
-        usage.reading_to_daily_payload(reading, desktop_id_, batch_size, index)
+        {**usage.reading_to_daily_payload(reading, desktop_id_, batch_size, index), "sent_label": label}
         for index, reading in enumerate(readings)
     ]
 
@@ -334,7 +343,9 @@ async def run_gauge_with_connection(payload: Optional[dict], send_one: SendOne) 
     return True, bool(ack.get("wiped"))
 
 
-def build_gauge_wire_payload(desktop_id_: str, projects_root: Optional[Path] = None) -> Optional[dict]:
+def build_gauge_wire_payload(
+    desktop_id_: str, projects_root: Optional[Path] = None, now: Optional[datetime] = None
+) -> Optional[dict]:
     """The Gauge Payload with `kind`/`desktop_id` attached (spec §6.2),
     or None if gauge.py has nothing to send this cycle (spec §7.4/§5.3).
 
@@ -347,7 +358,7 @@ def build_gauge_wire_payload(desktop_id_: str, projects_root: Optional[Path] = N
     body = gauge.build_gauge_payload(projects_root=projects_root)
     if body is None:
         return None
-    return {"kind": "gauge", "desktop_id": desktop_id_, **body}
+    return {"kind": "gauge", "desktop_id": desktop_id_, **body, "sent_label": sent_label(now)}
 
 
 # ---------------------------------------------------------------------------
@@ -855,11 +866,11 @@ def print_dry_run(store_path: Optional[str] = None, projects_root: Optional[Path
             )
 
         print("Gauge state:")
-        gauge_payload = gauge.build_gauge_payload(projects_root=projects_root)
+        gauge_payload = build_gauge_wire_payload(did, projects_root)
         if gauge_payload is None:
             print("  no Gauge to push this cycle (no snapshot, or stale >= 300s)")
         else:
-            body = json.dumps({"kind": "gauge", "desktop_id": did, **gauge_payload}).encode("utf-8")
+            body = json.dumps(gauge_payload).encode("utf-8")
             print(f"  {gauge_payload} ({len(body)} bytes)")
     finally:
         store.close()

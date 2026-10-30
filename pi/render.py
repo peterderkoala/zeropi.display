@@ -143,10 +143,13 @@ def _bar(d: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, pct) -> None:
         d.rectangle([x + 1, y + 1, x + 1 + fill, y + h - 1], fill=0)
 
 
-def historic_frame(rows: List[HistoricRow], coverage_start: Optional[str], average: Optional[float]) -> Image.Image:
+def historic_frame(
+    rows: List[HistoricRow], coverage_start: Optional[str], average: Optional[float], sent_label: Optional[str] = None
+) -> Image.Image:
     """The Historic View (spec §5.1): the most recent Active Days, newest
     first, five rows at pitch 20px starting at y=1. `rows`, `coverage_start`
-    and `average` come straight from this module's data-layer functions.
+    and `average` come straight from this module's data-layer functions;
+    `sent_label` is the Desktop's own text, printed verbatim (ADR-0014).
     """
     img, d = _blank_frame()
 
@@ -169,10 +172,15 @@ def historic_frame(rows: List[HistoricRow], coverage_start: Optional[str], avera
 
     d.line([0, 101, PANEL_W, 101], fill=0)
 
-    since_label = date.fromisoformat(coverage_start).strftime("%d %b").upper() if coverage_start else "?"
-    d.text((3, 106), f"SINCE {since_label}", font=_font(12), fill=0)
+    since_label = f"SINCE {date.fromisoformat(coverage_start).strftime('%d %b').upper() if coverage_start else '?'}"
+    d.text((3, 106), since_label, font=_font(12), fill=0)
     avg_label = f"AVG ${average:.0f}" if average is not None else "AVG $0"
-    d.text((PANEL_W - 3 - d.textlength(avg_label, font=_font(12)), 106), avg_label, font=_font(12), fill=0)
+    avg_x = PANEL_W - 3 - d.textlength(avg_label, font=_font(12))
+    d.text((avg_x, 106), avg_label, font=_font(12), fill=0)
+    if sent_label:
+        # Centred in the space between SINCE and AVG, not on the panel, so both gaps match.
+        since_end = 3 + d.textlength(since_label, font=_font(12))
+        d.text(((since_end + avg_x - d.textlength(sent_label, font=_font(12))) / 2, 106), sent_label, font=_font(12), fill=0)
 
     return img
 

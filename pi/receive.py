@@ -315,6 +315,21 @@ def upsert_reading(conn: sqlite3.Connection, payload: dict) -> None:
         _set_meta(conn, "coverage_start", incoming)
 
 
+# The footer's room for it between SINCE and AVG (rendering spec §5.1).
+SENT_LABEL_MAX_CHARS = 12
+
+
+def record_sent_label(conn: sqlite3.Connection, payload: dict) -> None:
+    """Keeps the latest Daily or Gauge Payload's `sent_label`, the Desktop's own
+    text for when it sent, which the Historic View prints verbatim (ADR-0014).
+    A Payload without a usable one clears it: draw nothing, never a stale label."""
+    label = payload.get("sent_label")
+    if isinstance(label, str) and 0 < len(label) <= SENT_LABEL_MAX_CHARS:
+        _set_meta(conn, "sent_label", label)
+    else:
+        conn.execute("DELETE FROM meta WHERE key = 'sent_label'")
+
+
 # ---------------------------------------------------------------------------
 # Payload validation (spec §6.4)
 # ---------------------------------------------------------------------------
@@ -680,7 +695,7 @@ def _build_frame(view: dict):
             if not rows:
                 return "empty", render_module.empty_frame()
             return "historic", render_module.historic_frame(
-                rows, render_module.coverage_start(conn), render_module.historic_average(conn)
+                rows, render_module.coverage_start(conn), render_module.historic_average(conn), _get_meta(conn, "sent_label")
             )
         finally:
             conn.close()
@@ -909,6 +924,7 @@ class ReceiveState:
 
             if kind == "daily":
                 upsert_reading(conn, payload)
+                record_sent_label(conn, payload)
                 conn.commit()
                 # batch_size/batch_index are consumed for logging only
                 # (spec §6.1) — this is what makes an incomplete Batch
@@ -935,6 +951,7 @@ class ReceiveState:
                     )
                 )
             elif kind == "gauge":
+                record_sent_label(conn, payload)
                 conn.commit()
                 cls.gauge.update(payload)
                 drawn = cls.redraw_gate.try_draw_gauge(cls.gauge.view())

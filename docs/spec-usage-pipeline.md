@@ -539,6 +539,7 @@ batch-completion behaviour — there is no read path to report it through.
 | `cost_usd` | float | Rounded to 4 dp. |
 | `session_count` | int | Distinct sessions. |
 | `cost_complete` | bool | False if any model in the group was unpriced. |
+| `sent_label` | string, optional | When the Desktop sent, as display text (`30/10 04:00`). Printed verbatim by the Pi; never parsed (ADR-0014, added by #99). |
 
 Measured size: 197–236 bytes for the row fields (worst case 262), plus ~60 for
 `kind`/`desktop_id`/`batch_*`. Well inside 514.
@@ -563,6 +564,8 @@ Measured size: 197–236 bytes for the row fields (worst case 262), plus ~60 for
   may be null on an unknown model while `tokens` is still reported.
 - **No `resets_at`. No `updated_at`. No `generated_at`.** Instants do not cross
   this wire (ADR-0009). The #26 prototype's payload predates that decision.
+- `sent_label` (optional, as on the Daily Payload) is display text the Pi
+  prints, not an instant it interprets (ADR-0014, added by #99).
 
 Measured ~279 bytes with instants; smaller with countdowns.
 
