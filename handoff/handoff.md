@@ -9,9 +9,13 @@
 > (`BatchResult` fields, pair by address, `discover`) → #105 web skeleton and
 > localhost guard → #106 Operations over HTTP and the last-status slot → then
 > #107 (Status and Configuration tabs) and #108 (install and Setup) in
-> parallel → #109 hardware verification. **Takeable now: #103.** Work it with
-> `/mattpocock-skills:wayfinder continue` (plus `tdd`). ⚠ `test_cli.py`'s
-> rendering tests must pass **unchanged** through #103.
+> parallel → #109 hardware verification. **#103 is done** (`fdd2762`):
+> `desktop/operations.py` holds every action, with results carrying an
+> `outcome` and pre-BLE refusals raised as `Refused(kind, …)`; `cli.py` is a
+> renderer whose output was diffed byte-identical; `push.py` takes
+> `progress(kind, text)`. **Takeable now: #104.** Work it with
+> `/mattpocock-skills:wayfinder continue` (plus `tdd`); read #103's resolution
+> comment and the note on #104 first.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
