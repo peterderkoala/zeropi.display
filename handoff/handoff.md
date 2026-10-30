@@ -344,8 +344,8 @@ as `cli.py`, and the Pi is absent.
   `docs/spec-web-ui.md`** is blocked by #97 only. Each
   resolution comment carries a *Consequences for the spec* list, which is
   #98's gap check.
-- **Fog on the map:** install and packaging (two units, neither installed by
-  push marks not per-Pi, pushed status. (Install and packaging was resolved by #100.)
+- **Fog on the map:** push marks not per-Pi, pushed status. (Install and
+  packaging was resolved by #100.)
 
 **Branches for this map:**
 - `CONTEXT.md` edits collect on `plan/web-ui` until PR #88 merges. It now
