@@ -2,6 +2,22 @@
 
 ## Where things stand
 
+> **#99 (2026-10-30): the Historic View's footer says when the Desktop last
+> sent.** Example: `SINCE 30 OCT   30/10 23:21   AVG $96`.
+> - The Desktop stamps `sent_label` (`%d/%m %H:%M`, local time at push) on
+>   every Daily and Gauge Payload.
+> - The Pi keeps the latest in `meta['sent_label']` and prints it verbatim,
+>   centred between SINCE and AVG.
+> - A Payload with no usable label (missing, or over 11 characters), and any
+>   wipe, clears it, so nothing is drawn.
+>
+> ADR-0014 records why this is display text, not an instant (ADR-0009), and not
+> a stale marker (ADR-0010). The glossary term is **Sent Label**. The dev Pi
+> runs it from the curl bootstrap (`ref=dev`). The Pi drew it at 23:30:53, and
+> the frame rebuilt on the Pi from its own data shows the footer laid out
+> right. ⚠ `zero` on the dev Pi has **no passwordless sudo**: the Pi's
+> bootstrap needs the maintainer's `sudo -v` or `ssh -t`.
+>
 > **Done (2026-10-30): [map #102 — implement the web
 > UI](https://github.com/peterderkoala/zeropi.display/issues/102)**, an
 > **execution-mode** map against `docs/spec-web-ui.md`. It has seven slices,

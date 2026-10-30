@@ -89,3 +89,9 @@ an image default.
   Rejected on the same ground it was raised: the Pi would then take its time
   from the thing it measures staleness against, and the comparison degenerates
   to "always fresh".
+
+> **Amended 2026-10-30 by
+> [ADR-0014](./0014-the-pi-prints-when-the-desktop-sent.md) (#99):** the Historic
+> View's footer prints `sent_label`, the Desktop's own text for when it sent.
+> It is not an instant the Pi interprets: the Pi never parses or compares it,
+> and its clock plays no part.

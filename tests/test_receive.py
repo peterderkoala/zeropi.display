@@ -218,6 +218,7 @@ def test_desktop_id_change_wipes_readings_and_coverage_start(db_path):
     try:
         receive.check_desktop_id(conn, "desktop-a")
         receive.upsert_reading(conn, daily_payload())
+        receive.record_sent_label(conn, daily_payload(sent_label="30/10 04:00"))
         conn.commit()
         assert conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 1
         assert receive._get_meta(conn, "coverage_start") is not None
@@ -228,6 +229,7 @@ def test_desktop_id_change_wipes_readings_and_coverage_start(db_path):
         assert wiped is True
         assert conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 0
         assert receive._get_meta(conn, "coverage_start") is None
+        assert receive._get_meta(conn, "sent_label") is None  # #99: the previous Desktop's, gone with its data
         assert receive._get_meta(conn, "desktop_id") == "desktop-b"
     finally:
         conn.close()

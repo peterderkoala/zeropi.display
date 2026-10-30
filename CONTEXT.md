@@ -130,6 +130,14 @@ a date the Pi simply never received reads as *outside coverage* rather than
 as zero usage.
 _Avoid_: Since, epoch, first date
 
+**Sent Label**:
+When the Desktop last sent a Daily or Gauge Payload to this Pi, as display text
+the Desktop formats at push time (`30/10 04:00`) and the Pi prints verbatim in
+the Historic View's footer. To the Pi it is text, never an instant
+(ADR-0014). It answers "is the Desktop still talking to me?", not "is this
+number fresh?".
+_Avoid_: Last seen, last updated, timestamp, received_at
+
 **Panel Health**:
 Whether the Pi can actually drive the panel — the render worker alive, and its
 last refresh completed rather than raising or hanging. Distinct from whether a

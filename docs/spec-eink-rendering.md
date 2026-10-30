@@ -225,8 +225,8 @@ table no longer agrees with".
 - **Coverage Start**: `meta['coverage_start']`, verbatim.
 - **Sent label**: `meta['sent_label']`, verbatim. Every Daily and Gauge
   Payload replaces it with its own `sent_label`, or clears it when the Payload
-  has no usable one (missing, not a string, empty, or over 12 characters).
-  The Pi never parses it (ADR-0014).
+  has no usable one (missing, not a string, empty, or over 11 characters).
+  Any wipe clears it. The Pi never parses it (ADR-0014).
 - **Incomplete**: a day is `~` when **any** Reading that day has
   `cost_complete = 0` (`MIN(cost_complete) = 0`). One unpriced model makes the
   day's total a floor, not a fact.

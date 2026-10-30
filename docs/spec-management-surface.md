@@ -317,7 +317,7 @@ prevent. **Consequence: the schema's tier field only ever reads 1 or 2.**
 | `FONT_DIR` (`render.py:29`) | DejaVu path | **Tier 3, not Tier 1.** The 13 px floor was verified on glass with DejaVu specifically; a different typeface invalidates that evidence |
 | five-row Historic View pitch | 5 rows @ 20 px | `render.py:148`; it is what floors `usage.window_days` |
 
-### 4.4 Outside the Tier system (8)
+### 4.4 Outside the Tier system (10)
 
 `CONTEXT.md` scopes **Tier** to *tunable values*. These are not tunable, so they
 have no Tier. Listing them is what makes the inventory complete rather than
@@ -339,6 +339,9 @@ selective — an unlisted constant reads as an oversight.
 - `PANEL_SERVICE`, `BUSY_PIN` (`epd-selftest.py:48,51`) — bench-tool constants,
   not part of the running system
 - **The BLE lock path** (§7.1) — mechanism, not policy.
+- the Sent Label's format `%d/%m %H:%M` (`push.py` `sent_label`) and
+  `SENT_LABEL_MAX_CHARS = 11` (`receive.py`) — a wire contract and the footer
+  room measured for it (rendering spec §5.1, ADR-0014), not tunables (#99)
 
 ### 4.5 Migration
 

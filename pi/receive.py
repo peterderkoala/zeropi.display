@@ -144,7 +144,8 @@ def init_db(db_path: str = DB_PATH) -> None:
 
 
 def _wipe_readings(conn: sqlite3.Connection, clear_settings: bool = True) -> None:
-    """Drop and recreate `readings`, delete the stored Coverage Start, and
+    """Drop and recreate `readings`, delete the stored Coverage Start and
+    sent label (ADR-0014), and
     — by default — clear every Setting back to its code default
     (spec §6.3).
 
@@ -164,7 +165,7 @@ def _wipe_readings(conn: sqlite3.Connection, clear_settings: bool = True) -> Non
     """
     conn.execute("DROP TABLE IF EXISTS readings")
     conn.execute(_CREATE_READINGS_SQL)
-    conn.execute("DELETE FROM meta WHERE key = 'coverage_start'")
+    conn.execute("DELETE FROM meta WHERE key IN ('coverage_start', 'sent_label')")
     if clear_settings:
         conn.execute("DELETE FROM meta WHERE key LIKE ?", (SETTING_KEY_PREFIX + "%",))
 
@@ -315,8 +316,8 @@ def upsert_reading(conn: sqlite3.Connection, payload: dict) -> None:
         _set_meta(conn, "coverage_start", incoming)
 
 
-# The footer's room for it between SINCE and AVG (rendering spec §5.1).
-SENT_LABEL_MAX_CHARS = 12
+# `30/10 14:05`: what the footer was measured to fit between SINCE and AVG (rendering spec §5.1).
+SENT_LABEL_MAX_CHARS = 11
 
 
 def record_sent_label(conn: sqlite3.Connection, payload: dict) -> None:
@@ -695,7 +696,10 @@ def _build_frame(view: dict):
             if not rows:
                 return "empty", render_module.empty_frame()
             return "historic", render_module.historic_frame(
-                rows, render_module.coverage_start(conn), render_module.historic_average(conn), _get_meta(conn, "sent_label")
+                rows,
+                render_module.coverage_start(conn),
+                render_module.historic_average(conn),
+                _get_meta(conn, "sent_label"),
             )
         finally:
             conn.close()

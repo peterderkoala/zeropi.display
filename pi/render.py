@@ -172,15 +172,17 @@ def historic_frame(
 
     d.line([0, 101, PANEL_W, 101], fill=0)
 
-    since_label = f"SINCE {date.fromisoformat(coverage_start).strftime('%d %b').upper() if coverage_start else '?'}"
-    d.text((3, 106), since_label, font=_font(12), fill=0)
+    footer = _font(12)
+    since_date = date.fromisoformat(coverage_start).strftime("%d %b").upper() if coverage_start else "?"
+    since_label = f"SINCE {since_date}"
+    d.text((3, 106), since_label, font=footer, fill=0)
     avg_label = f"AVG ${average:.0f}" if average is not None else "AVG $0"
-    avg_x = PANEL_W - 3 - d.textlength(avg_label, font=_font(12))
-    d.text((avg_x, 106), avg_label, font=_font(12), fill=0)
+    avg_x = PANEL_W - 3 - d.textlength(avg_label, font=footer)
+    d.text((avg_x, 106), avg_label, font=footer, fill=0)
     if sent_label:
         # Centred in the space between SINCE and AVG, not on the panel, so both gaps match.
-        since_end = 3 + d.textlength(since_label, font=_font(12))
-        d.text(((since_end + avg_x - d.textlength(sent_label, font=_font(12))) / 2, 106), sent_label, font=_font(12), fill=0)
+        since_end = 3 + d.textlength(since_label, font=footer)
+        d.text(((since_end + avg_x - d.textlength(sent_label, font=footer)) / 2, 106), sent_label, font=footer, fill=0)
 
     return img
 

@@ -41,9 +41,10 @@ from the overnight Batch. The signal is an *old date*.
   time the Desktop talked to this Pi". Settings and Commands do not count:
   they say nothing about whether data is flowing.
 - **A Payload without a usable label clears it**: missing, not a string, empty,
-  or longer than the footer has room for (12 characters). The footer then draws
-  nothing, not a placeholder. During an upgrade with mixed versions, a label
-  can therefore never outlive the Payloads that carried it.
+  or over 11 characters (`30/10 14:05`, which is what the footer was measured to
+  fit). The footer then draws nothing, not a placeholder. During an upgrade with
+  mixed versions, a label can therefore never outlive the Payloads that carried
+  it. Any wipe clears it too, together with the data it dated.
 - **An older Pi ignores the field.** `parse_payload` does not reject unknown
   fields, so a new Desktop stays compatible with an un-upgraded Pi.
 - **Historic View only.** The Gauge frame is under 300 s old by construction

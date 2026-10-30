@@ -275,7 +275,7 @@ def _write(payload, monkeypatch):
     receive.ReceiveState.on_write(list(json.dumps(payload).encode("utf-8")), {})
 
 
-def _historic_frame_drawn(db_path, monkeypatch):
+def _historic_frame_drawn(monkeypatch):
     worker = FakeWorker()
     monkeypatch.setattr(receive.ReceiveState, "_panel_worker", worker)
     receive.render({"historic": True})
@@ -314,18 +314,18 @@ GAUGE = {
 
 def test_the_latest_sent_label_of_any_data_kind_is_drawn_in_the_historic_footer(pi, monkeypatch):
     _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
-    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, "30/10 04:00"))
+    assert _images_equal(_historic_frame_drawn(monkeypatch), _expected(pi, "30/10 04:00"))
 
     _write({**GAUGE, "sent_label": "30/10 14:05"}, monkeypatch)  # a Gauge is "heard from" too
-    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, "30/10 14:05"))
+    assert _images_equal(_historic_frame_drawn(monkeypatch), _expected(pi, "30/10 14:05"))
 
 
 def test_a_payload_without_a_usable_sent_label_clears_it(pi, monkeypatch):
     # An older Desktop (no label), or a label the footer has no room for: draw nothing, never a stale one.
     _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
     _write(daily_payload(), monkeypatch)
-    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, None))
+    assert _images_equal(_historic_frame_drawn(monkeypatch), _expected(pi, None))
 
     _write(daily_payload(sent_label="30/10 04:00"), monkeypatch)
-    _write(daily_payload(sent_label="a label far too long for the footer"), monkeypatch)
-    assert _images_equal(_historic_frame_drawn(pi, monkeypatch), _expected(pi, None))
+    _write(daily_payload(sent_label="30/10/26 14:05"), monkeypatch)
+    assert _images_equal(_historic_frame_drawn(monkeypatch), _expected(pi, None))
