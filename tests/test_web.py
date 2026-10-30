@@ -125,6 +125,12 @@ def test_vendored_modules_are_served(client, name):
     assert "javascript" in resp.headers["content-type"]
 
 
+@pytest.mark.parametrize("path", ["/", "/setup", "/static/app.js", "/static/vendor/preact.module.js"])
+def test_the_page_and_its_files_are_revalidated_on_every_load(client, path):
+    # #109: a browser's heuristic cache kept running the old app.js after zeropi-web restarted on new code.
+    assert client.get(path).headers.get("cache-control") == "no-cache"
+
+
 def test_vendor_readme_pins_each_file_by_sha256():
     import hashlib
 

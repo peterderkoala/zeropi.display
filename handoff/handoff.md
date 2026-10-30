@@ -9,7 +9,7 @@
 > (`BatchResult` fields, pair by address, `discover`) → #105 web skeleton and
 > localhost guard → #106 Operations over HTTP and the last-status slot → then
 > #107 (Status and Configuration tabs) and #108 (install and Setup) in
-> parallel → #109 hardware verification. **#103 is done** (`fdd2762`):
+> parallel → #109 hardware verification (partly run, see below). **#103 is done** (`fdd2762`):
 > `desktop/operations.py` holds every action, with results carrying an
 > `outcome` and pre-BLE refusals raised as `Refused(kind, …)`; `cli.py` is a
 > renderer whose output was diffed byte-identical; `push.py` takes
@@ -55,7 +55,26 @@
 > only `zeropi-web`'s enable link and answered on `:8737`. #108 is closed. ⚠ Setup's
 > done step reads *paired with `<address>` (short id …)*, not §9.5's
 > *`<name>` (`<address>`)*: only `pi.address` is stored, and every Pi
-> advertises the same name. **Takeable now: #109.**
+> advertises the same name. **#109 is partly run** (`docs/web-ui-verification.md`,
+> 2026-10-30). On the dev Pi, through the installed `zeropi-web` and a real
+> browser, these pass: the guard; `busy`; `busy_here`; the second tab attaching; the
+> restart mid-`push` (*outcome unknown*, stop in 1.18 s); the banner and
+> Setup's Start; the two-phase partial `wipe`; a `→ Pi` Setting (the Ack only);
+> and real discover and pair. Two defects were fixed:
+> - re-pairing the same Pi left Setup stuck in *choosing*;
+> - pages had no `Cache-Control`, so browsers ran an old `app.js` after an
+>   upgrade. They are now `no-cache`. ⚠ A browser that cached a pre-fix copy
+>   needs one hard reload.
+>
+> ⚠ Found, not fixed: Setup's step 4 after a re-pair shows the previous,
+> out-of-date Verdict (§9.5 covers only the first pair). **Still owed, by
+> the maintainer** (the agent has no SSH to the Pi and cannot reboot):
+> - from scratch with the curl bootstrap;
+> - `absent`, with the Pi powered off;
+> - `meta` on the Pi for the Setting;
+> - a Desktop reboot.
+>
+> #109 and map #102 stay open until those have run.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

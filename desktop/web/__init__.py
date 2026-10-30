@@ -39,6 +39,8 @@ from web.runner import BusyHere, Operation, Runner, refusal_json
 HOST = "127.0.0.1"  # §5.1: no --host flag
 SHUTDOWN_GRACE_S = 1
 STATIC_DIR = Path(__file__).parent / "static"
+# Revalidated on every load, so a browser never runs an old page against upgraded code.
+REVALIDATE = {"Cache-Control": "no-cache"}
 
 
 # §7.5: a success of one of these after a check labels the check out of date.
@@ -380,9 +382,16 @@ def create_app(
 
     # §10.1: one HTML page, client-side tabs, reload-stable routes.
     for route in ("/", "/config", "/setup"):
-        app.add_api_route(route, lambda: FileResponse(STATIC_DIR / "index.html"), include_in_schema=False)
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+        app.add_api_route(route, lambda: FileResponse(STATIC_DIR / "index.html", headers=REVALIDATE), include_in_schema=False)
+    app.mount("/static", _RevalidatedFiles(directory=STATIC_DIR), name="static")
     return app
+
+
+class _RevalidatedFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.update(REVALIDATE)
+        return response
 
 
 def serve(*, port: int, cfg_path: Path, cli_store_path: Optional[str] = None) -> int:

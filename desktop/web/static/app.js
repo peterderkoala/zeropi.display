@@ -467,7 +467,10 @@ function Setup({ sv, go }) {
     if (sv.loaded && !running && !sv.showOp && !lastCheck) sv.autoCheck(desktop, slot);
   }, [sv.loaded, running, sv.showOp, desktop, slot]);
 
+  // A successful pair ends the re-pair, also onto the same Pi, where `paired` never changes (#109).
+  const pairedOk = op && op.verb === "pair" && op.result && op.result.outcome === "ok";
   useEffect(() => setRepairing(false), [paired]);
+  useEffect(() => { if (pairedOk) setRepairing(false); }, [pairedOk]);
 
   // The banner's link to step 3 (§5.3), also on a reload: the steps render only once loaded.
   useEffect(() => {
