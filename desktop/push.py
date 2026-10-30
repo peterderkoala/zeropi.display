@@ -86,6 +86,18 @@ CLI_LOCK_WAIT_S = 15.0
 SERVICE_LOCK_WAIT_S = 0.0
 LOCK_POLL_INTERVAL_S = 0.25
 
+# web-ui spec §4.4: `progress(kind, text)` -- `kind` is one of PROGRESS_KINDS,
+# `text` the CLI's exact line. The default prints it, so CLI output is unchanged.
+Progress = Callable[[str, str], None]
+PROGRESS_KINDS = frozenset(
+    {"lock_wait", "scanning", "found", "connected", "row_failed", "settings_failed", "phase"}
+)
+
+
+def print_progress(kind: str, text: str) -> None:
+    # The lock-wait line goes to stderr so it cannot spoil `status --json`.
+    print(text, file=sys.stderr if kind == "lock_wait" else sys.stdout)
+
 
 class BleLinkBusy(RuntimeError):
     """The BLE lock is held by another Desktop-side job (spec §7.1).
@@ -199,7 +211,9 @@ class BatchResult:
         return self.failed == 0
 
 
-async def _send_batch_once(payloads: list[dict], send_one: SendOne, conn) -> BatchResult:
+async def _send_batch_once(
+    payloads: list[dict], send_one: SendOne, conn, progress: Progress = print_progress
+) -> BatchResult:
     """Sends one pass of Payloads sequentially over the already-open
     connection, marking each successfully-Acked Reading as pushed (spec
     §7.3 steps 3-5). Returns whether any Ack in this pass had `wiped: true`.
@@ -209,13 +223,13 @@ async def _send_batch_once(payloads: list[dict], send_one: SendOne, conn) -> Bat
         try:
             ack = await send_one(payload)
         except Exception as exc:  # noqa: BLE001 - a failed row must not abort the Batch
-            print(f"Row failed: {payload['date']} {payload['project']} {payload['model']}: {exc}")
+            progress("row_failed", f"Row failed: {payload['date']} {payload['project']} {payload['model']}: {exc}")
             result.failed += 1
             continue
 
         if ack is None or ack.get("status") != "ok":
             reason = (ack or {}).get("reason", "no Ack")
-            print(f"Row failed: {payload['date']} {payload['project']} {payload['model']}: {reason}")
+            progress("row_failed", f"Row failed: {payload['date']} {payload['project']} {payload['model']}: {reason}")
             result.failed += 1
             continue
 
@@ -245,6 +259,7 @@ async def run_batch_with_connection(
     send_one: SendOne,
     *,
     wiped_already: bool = False,
+    progress: Progress = print_progress,
 ) -> BatchResult:
     """The full Batch loop against an already-open connection (spec §7.3,
     §7.2): one pass over the pending Readings, and — if any Ack in that
@@ -264,7 +279,7 @@ async def run_batch_with_connection(
         return BatchResult()
 
     payloads = build_daily_batch(readings, desktop_id_)
-    result = await _send_batch_once(payloads, send_one, conn)
+    result = await _send_batch_once(payloads, send_one, conn, progress)
     if wiped_already:
         result.wiped = True
 
@@ -275,7 +290,7 @@ async def run_batch_with_connection(
         usage.clear_pushed_marks(conn)
         readings2 = usage.pending_readings(conn)
         payloads2 = build_daily_batch(readings2, desktop_id_)
-        result2 = await _send_batch_once(payloads2, send_one, conn)
+        result2 = await _send_batch_once(payloads2, send_one, conn, progress)
         result.sent += result2.sent
         result.failed += result2.failed
         # `wiped` stays True: it already happened this invocation.
@@ -456,6 +471,7 @@ async def ble_lock(
     poll_interval_s: float = LOCK_POLL_INTERVAL_S,
     sleep_fn: Callable[[float], Awaitable[None]] = asyncio.sleep,
     monotonic_fn: Callable[[], float] = time.monotonic,
+    progress: Progress = print_progress,
 ):
     """Holds the advisory `flock(2)` of spec §7.1 for the body's duration.
 
@@ -492,9 +508,9 @@ async def ble_lock(
                     # Same reason as §7.1's scanning line: up to 15 s of
                     # silence reads as hung (seen on hardware by #87). stderr,
                     # so it cannot spoil `cli.py status --json`'s stdout.
-                    print(
+                    progress(
+                        "lock_wait",
                         f"Waiting for the link — another zeropi-display job holds it (up to {wait_s:.0f}s)…",
-                        file=sys.stderr,
                     )
                     announced = True
                 await sleep_fn(min(poll_interval_s, remaining))
@@ -544,6 +560,7 @@ async def write_settings(
     send_one: SendOne,
     *,
     required: bool = False,
+    progress: Progress = print_progress,
 ) -> SettingsOutcome:
     """Writes one Settings Payload. Returns what it did.
 
@@ -564,14 +581,14 @@ async def write_settings(
     except Exception as exc:  # noqa: BLE001 - best-effort unless required
         if required:
             raise SettingsAssertionError(f"settings write failed: {exc}") from exc
-        print(f"Settings re-assertion failed (continuing): {exc}")
+        progress("settings_failed", f"Settings re-assertion failed (continuing): {exc}")
         return SettingsOutcome()
 
     if ack is None or ack.get("status") != "ok":
         reason = (ack or {}).get("reason", "no Ack")
         if required:
             raise SettingsAssertionError(f"settings write failed: {reason}")
-        print(f"Settings re-assertion failed (continuing): {reason}")
+        progress("settings_failed", f"Settings re-assertion failed (continuing): {reason}")
         return SettingsOutcome(ok=False, wiped=bool((ack or {}).get("wiped")))
 
     return SettingsOutcome(ok=True, wiped=bool(ack.get("wiped")))
@@ -585,6 +602,7 @@ async def _with_ble_connection(
     settings_outcome: Optional[SettingsOutcome] = None,
     lock_wait_s: float = CLI_LOCK_WAIT_S,
     pi_address: Optional[str] = None,
+    progress: Progress = print_progress,
 ) -> Any:
     """Takes the BLE lock, scans for the Pi, opens one BleakClient, re-asserts
     Settings, and runs `coro_fn(send_one)` inside it. Raised exceptions
@@ -597,13 +615,13 @@ async def _with_ble_connection(
     callers'. `coro_fn=None` is the CLI-initiated settings change: the write
     is the entire job, so there is nothing else to run.
     """
-    async with ble_lock(wait_s=lock_wait_s):
+    async with ble_lock(wait_s=lock_wait_s, progress=progress):
         # ⚠ Say that we are scanning (§7.1): an absent Pi costs a full
         # `SCAN_TIMEOUT_SECONDS` before it is known, and silence for ten
         # seconds reads as hung.
-        print(f"Scanning for the Pi (up to {SCAN_TIMEOUT_SECONDS:.0f}s)…")
+        progress("scanning", f"Scanning for the Pi (up to {SCAN_TIMEOUT_SECONDS:.0f}s)…")
         device = await find_pi(address=pi_address)
-        print(f"Found {device.name or device.address} ({device.address})")
+        progress("found", f"Found {device.name or device.address} ({device.address})")
         async with _open_client(device) as client:
             conn = BleConnection(client)
             async with conn:
@@ -613,10 +631,10 @@ async def _with_ble_connection(
                 # Printing that is worse than printing nothing: it invites
                 # exactly the wrong diagnosis, since the real MTU is large and
                 # the link is fine.
-                print(f"Connected to {device.address}")
+                progress("connected", f"Connected to {device.address}")
                 if settings_payload is not None:
                     outcome = await write_settings(
-                        settings_payload, conn.send_one, required=settings_required
+                        settings_payload, conn.send_one, required=settings_required, progress=progress
                     )
                     if settings_outcome is not None:
                         settings_outcome.ok = outcome.ok
@@ -638,6 +656,7 @@ async def run_batch_pass(
     settings: Optional[dict] = None,
     lock_wait_s: float = CLI_LOCK_WAIT_S,
     pi_address: Optional[str] = None,
+    progress: Progress = print_progress,
 ) -> BatchResult:
     """One Batch pass: ingest the logs, compute pending Readings, and (if
     any) push them over one BLE connection (spec §7.3). `--dry-run` is
@@ -676,7 +695,7 @@ async def run_batch_pass(
 
         async def _run(send_one: SendOne) -> BatchResult:
             return await run_batch_with_connection(
-                store, did, send_one, wiped_already=settings_outcome.wiped
+                store, did, send_one, wiped_already=settings_outcome.wiped, progress=progress
             )
 
         try:
@@ -686,6 +705,7 @@ async def run_batch_pass(
                 settings_outcome=settings_outcome,
                 lock_wait_s=lock_wait_s,
                 pi_address=pi_address,
+                progress=progress,
             )
         except BleLinkBusy:
             raise
