@@ -46,7 +46,10 @@ to this.
 | A two-phase partial `wipe` | `wipe_partial` | Wipe… with `7c970f`. The modal shows `Wiped. The re-push hasn't happened yet…` and a *Push now* button. |
 | Not paired (redirect to Setup) | `not_paired` | Open `/`. It lands on `/setup`, shows no banner and starts no Operation. |
 | Configuration | `working` | Saving `usage.window_days` = `99` shows `out_of_range` inline with `config.py`'s text. `7` shows *pending restart* and a single *Restart zeropi-push* button. `pi.idle_keepalive_s` opens the Operation modal. `pi.address` links to Setup. |
-| Setup with no Pi / one Pi / two Pis, the unit missing | (#108) | Setup's own states belong to #108. |
+| Setup with one Pi | `not_paired` | Open `/`. It lands on `/setup` and the one automatic `discover` (§9.3) preselects the Pi. Pair, close the modal, and step 4's automatic check runs (§9.5). *Start zeropi-push* turns step 3 done and clears the banner. *Pair a different Pi…* asks first, then scans. |
+| Setup with no Pi | `setup_none` | *No Pi found* with the Pi's curl one-liner, marked to run **on the Pi**. Pair is disabled. |
+| Setup with two Pis | `setup_two` | Neither is preselected. Pair stays disabled, with *Choose a Pi first.*, until one is chosen. |
+| The unit missing | `setup_missing` | Pair, then step 3 says *is not installed*. *Start zeropi-push* gets the `unit_missing` refusal with the Desktop one-liner (§9.4). The banner shows *is not installed* and links to step 3 (`/setup#service`). |
 
 ## Record of the check run in #107 (2026-10-30)
 
@@ -80,3 +83,17 @@ states rechecked:
 - A stale `onerror` handler could overwrite a newer Operation.
 - The modal got Escape, focus and `aria-modal`, and the link-styled actions
   became real buttons.
+
+## Record of the Setup check run in #108 (2026-10-30)
+
+Every Setup row above rendered at 1100 px and 375 px, against
+`tests/web_demo.py`. One defect was found and fixed:
+
+- A long one-liner in inline `code` widened the page to 636 px at 375 px.
+  `code` now wraps anywhere, and the one-liners are blocks.
+
+`/code-review` then moved Setup's sentences (*No Pi found…* with the Pi's
+one-liner, *2 Pis found. Choose one.*) into Python's `summary`, kept the
+missing unit on §9.4's `unit_missing` refusal rather than page-authored
+text, and made the automatic `discover` once per page rather than once per
+visit to the tab.

@@ -29,6 +29,17 @@ function failure({ status, data }) {
   return (data && data.refusal) || { kind: `http_${status}`, message: `The web service answered ${status}. Nothing was done.`, rationale: null };
 }
 
+// §9.4's Desktop-side actions on zeropi-push: null when done, else a refusal
+// with systemctl's own text verbatim.
+async function unitAction(action) {
+  const resp = await api(`/api/service/${action}`, {}).catch(() => ({ status: 0, data: null }));
+  if (resp.status === 200) return null;
+  if (resp.data && resp.data.systemctl !== undefined) {
+    return { kind: "systemctl", message: `✗ Failed to ${action} zeropi-push: ${resp.data.systemctl}`, rationale: null };
+  }
+  return failure(resp);
+}
+
 // cli.py's `_dur`, for the durations the page shows as they were (§7.4).
 function dur(seconds) {
   if (seconds === null || seconds === undefined) return "never";
@@ -79,6 +90,10 @@ function useSurface() {
   const [desktop, setDesktop] = useState(null);
   const [slot, setSlot] = useState(undefined); // undefined: not loaded; null: empty (§7.2)
   const [lastCheck, setLastCheck] = useState(null); // this page's latest status result, failed ones included
+  const [lastDiscover, setLastDiscover] = useState(null); // Setup's list (§9.3)
+  const [loaded, setLoaded] = useState(false); // nothing starts by itself before load() reattached (§6.5)
+  const autoChecked = useRef(false);
+  const autoDiscovered = useRef(false);
   const [op, setOp] = useState(null);
   const [showOp, setShowOp] = useState(false);
   const [refusal, setRefusal] = useState(null);
@@ -108,6 +123,7 @@ function useSurface() {
       const result = JSON.parse(e.data);
       setOp((o) => (o.id === id ? { ...o, running: false, result } : o));
       if (verb === "status") setLastCheck(result);
+      if (verb === "discover") setLastDiscover(result);
       // §7.6: Desktop facts refresh after every Operation.
       refreshDesktop();
       refreshSlot();
@@ -160,8 +176,23 @@ function useSurface() {
         setOp({ ...mine, running: false, unknown: true, events: [] });
       } else attach(mine.id, mine.verb);
     } else if (current) attach(current.id, current.verb);
-    // §7.3: one automatic check, on load, when the slot is empty -- never again on this page.
-    if (s === null && desk && desk.pi_address && !(current && current.running)) start("status", {}, true);
+    if (!(current && current.running)) autoCheck(desk, s);
+    setLoaded(true);
+  }
+
+  // §7.3: one automatic check when the slot is empty -- on load, or once
+  // Setup has paired (§9.5 step 4) -- and never again on this page.
+  function autoCheck(desk, s) {
+    if (autoChecked.current || s !== null || !desk || !desk.pi_address) return;
+    autoChecked.current = true;
+    start("status", {}, true);
+  }
+
+  // §9.3: one scan, automatically, when Setup opens with no Pi paired -- once per page.
+  function autoDiscover(desk) {
+    if (autoDiscovered.current || !desk || desk.pi_address) return;
+    autoDiscovered.current = true;
+    start("discover", {}, true);
   }
 
   useEffect(() => {
@@ -171,7 +202,10 @@ function useSurface() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
-  return { desktop, slot, lastCheck, op, showOp, setShowOp, refusal, setRefusal, start, follow, attach, refreshDesktop, configVersion };
+  return {
+    desktop, slot, lastCheck, lastDiscover, loaded, op, showOp, setShowOp, refusal, setRefusal,
+    start, follow, attach, autoCheck, autoDiscover, refreshDesktop, configVersion,
+  };
 }
 
 // ------------------------------------------------------------------ pieces
@@ -183,7 +217,7 @@ function Banner({ desktop, go }) {
   if (!what) return null;
   return html`<div class="banner" role="status">
     ⚠ zeropi-push ${what} — nothing is pushing usage to the Pi. This is a Desktop fact, not part of the Verdict.${" "}
-    <a href="/setup" onClick=${(e) => go(e, "/setup")}>Fix in Setup →</a>
+    <a href="/setup#service" onClick=${(e) => go(e, "/setup#service")}>Fix in Setup →</a>
   </div>`;
 }
 
@@ -369,11 +403,8 @@ function Configuration({ sv, go }) {
   }, [sv.configVersion]);
 
   async function restart() {
-    const resp = await api("/api/service/restart", {}).catch(() => ({ status: 0, data: null }));
-    if (resp.status === 200) setNotice({ ok: true, text: "Restarted zeropi-push." });
-    else if (resp.data && resp.data.systemctl !== undefined) {
-      setNotice({ refusal: { kind: "systemctl", message: `✗ Failed to restart zeropi-push: ${resp.data.systemctl}`, rationale: null } });
-    } else setNotice({ refusal: failure(resp) });
+    const refusal = await unitAction("restart");
+    setNotice(refusal ? { refusal } : { ok: true, text: "Restarted zeropi-push." });
     refresh();
   }
 
@@ -395,6 +426,119 @@ function Configuration({ sv, go }) {
   </div>`;
 }
 
+// ------------------------------------------------------------------ Setup (§9.5)
+
+// One step of the checklist: what is true now, never stored progress.
+function Step({ n, title, done, id, children }) {
+  return html`<section class="step" id=${id}>
+    <h3><span class=${done ? "ok" : "mute"}>${done ? "✓" : `${n}.`}</span> ${title}</h3>
+    ${children}
+  </section>`;
+}
+
+// Step 1 while choosing a Pi: the last discover's own summary (§9.3), and its list.
+function PiList({ result, scanning, pick, setChosen }) {
+  if (scanning) return html`<p class="mute">Scanning for 10s…</p>`;
+  if (!result) return null;
+  const devices = result.devices || [];
+  if (devices.length === 0) return html`<div class="refusal">${result.summary}</div>`;
+  return html`<fieldset class="pis">
+    <legend class="small mute">${result.summary}</legend>
+    ${devices.map((d) => html`<label><input type="radio" name="pi" checked=${pick === d.address} onChange=${() => setChosen(d.address)} />
+      ${" "}${d.name} <code>${d.address}</code> <span class="small mute">${d.rssi} dBm</span></label>`)}
+  </fieldset>`;
+}
+
+function Setup({ sv, go }) {
+  const { desktop, slot, lastCheck, lastDiscover, op, start } = sv;
+  const [chosen, setChosen] = useState(null);
+  const [repairing, setRepairing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const running = op && op.running;
+  const paired = desktop && desktop.pi_address;
+
+  useEffect(() => {
+    if (sv.loaded && !running) sv.autoDiscover(desktop);
+  }, [sv.loaded, desktop, running]);
+
+  // §9.5 step 4: after a pair, the empty slot's check -- once the pair's result has been read.
+  useEffect(() => {
+    if (sv.loaded && !running && !sv.showOp && !lastCheck) sv.autoCheck(desktop, slot);
+  }, [sv.loaded, running, sv.showOp, desktop, slot]);
+
+  useEffect(() => setRepairing(false), [paired]);
+
+  // The banner's link to step 3 (§5.3), also on a reload: the steps render only once loaded.
+  useEffect(() => {
+    if (desktop && location.hash) document.querySelector(location.hash)?.scrollIntoView();
+  }, [!!desktop]);
+
+  async function startPush() {
+    setNotice(await unitAction("start"));
+    sv.refreshDesktop();
+  }
+
+  function scan() {
+    setChosen(null);
+    start("discover", {}, true);
+  }
+
+  if (!desktop) return html`<p class="mute">Loading…</p>`;
+  const choosingPi = !paired || repairing;
+  const devices = (lastDiscover && lastDiscover.devices) || [];
+  const pick = chosen || (devices.length === 1 ? devices[0].address : null);
+  const unit = desktop.service.unit;
+  const checked = slot ? slot.result : lastCheck;
+  const verdictResult = checked && checked.verdict ? checked : null; // a refused check carries no Verdict
+
+  return html`<div class="setup">
+    <${RefusalBox} refusal=${sv.refusal} onDismiss=${() => sv.setRefusal(null)} />
+
+    <${Step} n="1" title="Find the Pi" done=${!choosingPi}>
+      ${choosingPi
+        ? html`<${PiList} result=${lastDiscover} scanning=${running && op.verb === "discover"} pick=${pick} setChosen=${setChosen} />
+            <button disabled=${running} onClick=${scan}>Scan again</button>`
+        : html`<p>Paired with <code>${desktop.pi_address}</code> (short id <code>${desktop.short_id}</code>).
+            ${!confirming && html` <button class="link" onClick=${() => setConfirming(true)}>Pair a different Pi…</button>`}</p>
+          ${confirming && html`<div class="confirm">
+            <b>Pair a different Pi?</b> This Desktop is paired with <code>${desktop.pi_address}</code>. Pairing another replaces it.
+            <div class="row">
+              <button class="danger" onClick=${() => { setConfirming(false); setRepairing(true); scan(); }}>Find another Pi</button>
+              <button onClick=${() => setConfirming(false)}>Cancel</button>
+            </div>
+          </div>`}`}
+    <//>
+
+    <${Step} n="2" title="Pair" done=${!choosingPi}>
+      ${choosingPi
+        ? html`<p class="small">⚠ If this Pi was paired with another computer, it clears its history and takes this computer's.</p>
+            <button class="primary" disabled=${running || !pick} onClick=${() => start("pair", { address: pick })}>Pair${pick ? ` with ${pick}` : ""}</button>
+            ${!pick && devices.length > 1 && html` <span class="small mute">Choose a Pi first.</span>`}`
+        : html`<p class="mute small">Paired. This Desktop's Readings go to this Pi.</p>`}
+    <//>
+
+    <${Step} n="3" id="service" title="Start zeropi-push" done=${paired && unit === "running"}>
+      ${!paired
+        ? html`<p class="mute small">After pairing: an unpaired zeropi-push would push to whichever Pi it heard first.</p>`
+        : unit === "running"
+          ? html`<p>zeropi-push running${desktop.service.uptime_s !== null ? `, up ${dur(desktop.service.uptime_s)}` : ""}.</p>`
+          : html`<p>zeropi-push ${{ failed: "has failed", missing: "is not installed" }[unit] || "is not running"}. It pushes usage to the Pi.</p>
+              <button class="primary" onClick=${startPush}>Start zeropi-push</button>`}
+      <${RefusalBox} refusal=${notice} onDismiss=${() => setNotice(null)} />
+    <//>
+
+    <${Step} n="4" title="First status" done=${verdictResult && verdictResult.verdict.state === "ok"}>
+      ${!paired
+        ? html`<p class="mute small">After pairing.</p>`
+        : verdictResult
+          ? html`<p><span class=${HEAD[verdictResult.verdict.state][1]}>${HEAD[verdictResult.verdict.state][0]}</span> ${verdictResult.verdict.headline}
+              ${" "}<a href="/" onClick=${(e) => go(e, "/")}>Status →</a></p>`
+          : html`<p class="mute">${running && op.verb === "status" ? "Checking…" : "No status yet."}</p>`}
+    <//>
+  </div>`;
+}
+
 // ------------------------------------------------------------------ the app
 
 function App() {
@@ -410,7 +554,8 @@ function App() {
   const go = (e, to) => {
     if (e) e.preventDefault();
     history.pushState(null, "", to);
-    setPath(to);
+    setPath(location.pathname);
+    if (location.hash) requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView());
   };
 
   // §9.5: Status redirects to Setup while no Pi is paired.
@@ -434,7 +579,7 @@ function App() {
     <main>
       ${tab.path === "/" && html`<${Status} sv=${sv} />`}
       ${tab.path === "/config" && html`<${Configuration} sv=${sv} go=${go} />`}
-      ${tab.path === "/setup" && html`<p class="mute">Setup arrives with #108.</p>`}
+      ${tab.path === "/setup" && html`<${Setup} sv=${sv} go=${go} />`}
     </main>
     <${OpModal} sv=${sv} />
   `;

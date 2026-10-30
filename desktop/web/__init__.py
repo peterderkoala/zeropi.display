@@ -125,7 +125,9 @@ def _summary(verb: str, r: Any) -> str:
     if verb == "discover":
         if r.unreachable is not None:
             return _refused(r.unreachable, "scanned")
-        return f"{len(r.devices)} Pi(s) found." if r.devices else "No Pi found."
+        if not r.devices:
+            return f"No Pi found. If it has not been set up yet, run this on the Pi: {operations.PI_INSTALL_ONE_LINER}"
+        return "One Pi found." if len(r.devices) == 1 else f"{len(r.devices)} Pis found. Choose one."
     if verb == "config_set":
         if r.error is not None:
             return (

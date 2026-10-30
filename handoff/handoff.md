@@ -42,8 +42,21 @@
 > `docs/web-ui-page-checks.md`, with `tests/web_demo.py` (the real app over
 > fake BLE, one scenario per §10.7 state). ⚠ `zeropi-web` now shuts down
 > with `timeout_graceful_shutdown=1`: an open events stream used to hold
-> shutdown until the Operation ended (§5.3). **Takeable now: #108.** Read
-> #107's resolution comment first.
+> shutdown until the Operation ended (§5.3). **#108 is done too**:
+> `desktop/zeropi-web.service`, `install-desktop.sh` (standalone now deploys
+> all of `desktop/`, writes both units for the layout, enables and restarts
+> `zeropi-web` only, `try-restart`s a running `zeropi-push`, waits for the URL
+> and `xdg-open`s it; the old end-of-install BLE scan is gone, since Setup
+> discovers) and the Setup tab (§9.5 checklist, scenarios `setup_none`,
+> `setup_two`, `setup_missing` in `tests/web_demo.py`). ⚠ **The installer has
+> not run end to end on this Desktop**: the agent's sandbox refused to write
+> systemd user units. The units were rendered for both layouts and passed
+> `systemd-analyze --user verify`, and the standalone copy served the UI.
+> Running `desktop/install-desktop.sh` (both layouts, in-place last) by hand
+> belongs to #109's checks, and #108 stays open until it has run. ⚠ Setup's
+> done step reads *paired with `<address>` (short id …)*, not §9.5's
+> *`<name>` (`<address>`)*: only `pi.address` is stored, and every Pi
+> advertises the same name. **Takeable now: #109**, after that run.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

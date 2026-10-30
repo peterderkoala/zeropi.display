@@ -151,6 +151,11 @@ def test_desktop_facts(client):
     }
 
 
+def test_the_pi_one_liner_is_the_pi_role_of_the_same_bootstrap():
+    assert operations.PI_INSTALL_ONE_LINER.endswith("| bash -s -- pi")
+    assert operations.PI_INSTALL_ONE_LINER.rsplit(" ", 1)[0] == operations.DESKTOP_INSTALL_ONE_LINER.rsplit(" ", 1)[0]
+
+
 def test_desktop_facts_carry_the_banner_state_and_the_short_id(paired):
     body = paired.get("/api/desktop").json()
     assert body["service"]["unit"] == "unknown"  # the fixture's ServiceInfo names none
@@ -584,3 +589,17 @@ def test_summary_of_a_refusal_inside_an_operation_is_its_message(paired, monkeyp
     monkeypatch.setattr(operations, "push_batch", refuses)
     r = _finish(paired, paired.post("/api/operations", json={"verb": "push"}).json()["id"])
     assert r["summary"] == "Not paired — no Pi address is recorded."
+
+
+def _found(*addresses):
+    return operations.DiscoverResult(tuple(operations.FoundPi("zeropi-display", a, -60) for a in addresses), None)
+
+
+def test_summary_of_a_discover_that_found_no_pi_gives_the_pi_one_liner(paired, monkeypatch):
+    r = _result_of(paired, monkeypatch, "discover", _found())
+    assert r["summary"] == f"No Pi found. If it has not been set up yet, run this on the Pi: {operations.PI_INSTALL_ONE_LINER}"
+
+
+def test_summary_of_a_discover_with_one_or_several_pis(paired, monkeypatch):
+    assert _result_of(paired, monkeypatch, "discover", _found("A"))["summary"] == "One Pi found."
+    assert _result_of(paired, monkeypatch, "discover", _found("A", "B"))["summary"] == "2 Pis found. Choose one."

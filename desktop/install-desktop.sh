@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# desktop/install-desktop.sh -- provisions the Desktop role: a venv with
-# bleak and a runnable push.py, on a machine that may not be the
-# maintainer's.
+# desktop/install-desktop.sh -- provisions the Desktop role: a venv, both
+# systemd --user units, and the web UI running at http://127.0.0.1:8737,
+# on a machine that may not be the maintainer's. The one non-graphical
+# step of first-run setup (docs/spec-web-ui.md §9.1); the browser's Setup
+# tab does the rest.
 #
 # Contract with the repo-root bootstrap (install.sh), settled by #33 so
 # both sides can be built independently:
@@ -33,10 +35,16 @@
 # client._backend._acquire_mtu(), a private BlueZ-specific bleak API (#32,
 # out of scope here). Refusing loudly beats a clean install that fails at
 # push time.
+#
+# ⚠ Enables zeropi-web only, never zeropi-push (spec §9.4): an unpaired
+# push loop would push to whatever Pi it heard first. Setup enables it after
+# a successful pair. A re-run does restart zeropi-push if it is already
+# running, so it picks up the new code.
 
 set -euo pipefail
 
-SERVICE_NAME="zeropi-display service"
+WEB_URL="http://127.0.0.1:8737"
+UNIT_DIR="$HOME/.config/systemd/user"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
     echo "FAIL: the Desktop role only works on Linux -- push.py's MTU" >&2
@@ -115,19 +123,39 @@ if [[ "$MODE" == "in-place" ]]; then
     REPO_ROOT="${CWD_REPO_ROOT:-$REPO_ROOT}"
     echo "==> Mode: in-place (clone detected at $REPO_ROOT)"
     VENV_DIR="$REPO_ROOT/.venv"
-    PUSH_PY="$REPO_ROOT/desktop/push.py"
-    REQUIREMENTS="$REPO_ROOT/desktop/requirements.txt"
+    DESKTOP_DIR="$REPO_ROOT/desktop"
 else
     STANDALONE_DIR="${PREFIX:-$HOME/.local/share/zeropi-display}"
     echo "==> Mode: standalone ($STANDALONE_DIR)"
     VENV_DIR="$STANDALONE_DIR/venv"
-    PUSH_PY="$STANDALONE_DIR/push.py"
-    REQUIREMENTS="$STANDALONE_DIR/requirements.txt"
+    DESKTOP_DIR="$STANDALONE_DIR"
 
-    echo "==> Deploying push.py and requirements.txt to $STANDALONE_DIR"
+    # All of desktop/ (spec §9.2): service.py and cli.py import the rest, so
+    # copying push.py alone (#47's gap) could never run either unit.
+    echo "==> Deploying desktop/ to $STANDALONE_DIR"
     mkdir -p "$STANDALONE_DIR"
-    cp "$SCRIPT_DIR/push.py" "$PUSH_PY"
-    cp "$SCRIPT_DIR/requirements.txt" "$REQUIREMENTS"
+    cp "$SCRIPT_DIR"/*.py "$SCRIPT_DIR"/requirements.txt "$SCRIPT_DIR"/requirements-web.txt \
+        "$SCRIPT_DIR"/*.service "$STANDALONE_DIR/"
+    rm -rf "$STANDALONE_DIR/web"  # no stale static file outlives an update
+    cp -r "$SCRIPT_DIR/web" "$STANDALONE_DIR/web"
+fi
+PUSH_PY="$DESKTOP_DIR/push.py"
+
+# These paths go into a sed replacement and a unit file below, where |, &, \
+# and % would be read as syntax rather than as part of a path.
+case "$DESKTOP_DIR$VENV_DIR" in
+    *[\|\&\\%]*)
+        echo "FAIL: the install path must not contain | & \\ or %: $DESKTOP_DIR" >&2
+        exit 1
+        ;;
+esac
+# Both units are systemd --user units (§9.1); without a user manager (e.g. an
+# SSH session with no lingering) neither can be started, so fail before
+# building the venv.
+if ! systemctl --user show-environment >/dev/null 2>&1; then
+    echo "FAIL: no systemd --user manager is reachable from this shell." >&2
+    echo "Run the installer from a desktop session (or enable lingering: loginctl enable-linger)." >&2
+    exit 1
 fi
 
 echo "==> Setting up the venv at $VENV_DIR"
@@ -151,7 +179,7 @@ if ! "$VENV_DIR/bin/python" -m pip --version >/dev/null 2>&1; then
     }
 fi
 "$VENV_DIR/bin/python" -m pip install --quiet --upgrade pip
-"$VENV_DIR/bin/python" -m pip install --quiet -r "$REQUIREMENTS"
+"$VENV_DIR/bin/python" -m pip install --quiet -r "$DESKTOP_DIR/requirements.txt" -r "$DESKTOP_DIR/requirements-web.txt"
 
 echo "==> Stamping VERSION"
 # Lives inside the venv, not the install root: for in-place that root is the
@@ -186,40 +214,45 @@ EOF
     esac
 fi
 
-echo "==> Checking whether a Pi is reachable"
-# A warning, not a hard failure: the two roles are provisioned
-# independently and the Pi may not be up yet. Reuses push.py's own
-# matches_service()/SERVICE_UUID rather than duplicating the UUID here, so
-# the two can never drift apart.
-if "$VENV_DIR/bin/python" - "$(dirname "$PUSH_PY")" <<'PYEOF'
-import asyncio
-import sys
+echo "==> Writing zeropi-push.service and zeropi-web.service to $UNIT_DIR"
+# Only ExecStart and WorkingDirectory differ between layouts (§9.2); the
+# web UI never writes unit files, so this is the one place that knows them.
+mkdir -p "$UNIT_DIR"
+write_unit() {  # <unit> <script> [args...]
+    local unit="$1" script="$2"
+    shift 2
+    sed -e "s|^WorkingDirectory=.*|WorkingDirectory=$DESKTOP_DIR|" \
+        -e "s|^ExecStart=.*|ExecStart=\"$VENV_DIR/bin/python\" \"$DESKTOP_DIR/$script\"${*:+ $*}|" \
+        "$DESKTOP_DIR/$unit.service" > "$UNIT_DIR/$unit.service"
+}
+write_unit zeropi-push service.py
+write_unit zeropi-web cli.py web
+systemctl --user daemon-reload
+systemctl --user enable zeropi-web
+systemctl --user restart zeropi-web
+systemctl --user try-restart zeropi-push  # only if already running: never starts it
 
-sys.path.insert(0, sys.argv[1])
-from bleak import BleakScanner
-from push import matches_service
+echo "==> Waiting for the web UI at $WEB_URL"
+# The venv's own Python, not curl: an in-place clone may not have curl.
+if ! "$VENV_DIR/bin/python" - "$WEB_URL/" <<'PYEOF'
+import sys, time, urllib.request
 
-async def check() -> bool:
+for _ in range(20):
     try:
-        device = await BleakScanner.find_device_by_filter(matches_service, timeout=10.0)
-    except Exception as exc:
-        print(f"    scan failed: {exc}", file=sys.stderr)
-        return False
-    return device is not None
-
-sys.exit(0 if asyncio.run(check()) else 1)
+        urllib.request.urlopen(sys.argv[1], timeout=2)
+        sys.exit(0)
+    except OSError:
+        time.sleep(0.5)
+sys.exit(1)
 PYEOF
 then
-    echo "    found a Pi advertising the $SERVICE_NAME"
-else
-    echo "    WARNING: no Pi advertising the $SERVICE_NAME was seen in 10s." >&2
-    echo "    Fine if the Pi isn't provisioned or powered on yet -- push.py" >&2
-    echo "    will scan again on its own next run." >&2
+    echo "FAIL: zeropi-web is not answering at $WEB_URL." >&2
+    echo "See: journalctl --user -u zeropi-web" >&2
+    exit 1
 fi
 
 echo "==> Desktop role installed ($MODE)."
-if [[ "$MODE" == "in-place" ]]; then
-    echo "    Run: $VENV_DIR/bin/python $PUSH_PY"
-else
-    echo "    Run: zeropi-push  (or $HOME/.local/bin/zeropi-push)"
+echo "    Open $WEB_URL and follow Setup to pair the Pi and start zeropi-push."
+if [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]] && command -v xdg-open >/dev/null; then
+    xdg-open "$WEB_URL" >/dev/null 2>&1 || true
 fi

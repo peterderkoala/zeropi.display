@@ -375,9 +375,9 @@ async def start_service(service_name: str = SERVICE_NAME, run_fn: Callable[..., 
     return _systemctl(service_name, ["enable", "--now"], run_fn)
 
 
-DESKTOP_INSTALL_ONE_LINER = (
-    "curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- desktop"
-)
+_BOOTSTRAP = "curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s --"
+DESKTOP_INSTALL_ONE_LINER = f"{_BOOTSTRAP} desktop"
+PI_INSTALL_ONE_LINER = f"{_BOOTSTRAP} pi"  # runs on the Pi, never from here (§9.3)
 
 
 def require_unit(service_name: str = SERVICE_NAME, run_fn: Callable[..., Any] = subprocess.run) -> None:

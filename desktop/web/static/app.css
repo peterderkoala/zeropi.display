@@ -5,6 +5,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+code { overflow-wrap: anywhere; }
 code, .mono { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 13px; }
 h1, h2, h3 { margin: 0; }
 h3 { margin: 22px 0 6px; font-size: 15px; }
@@ -38,7 +39,7 @@ main { max-width: 980px; margin: 0 auto; padding: 24px 16px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .tile-head { font-size: 18px; margin-bottom: 4px; }
 
-.refusal, .info, .confirm { padding: 10px 14px; margin: 12px 0; }
+.refusal, .info, .confirm { padding: 10px 14px; margin: 12px 0; overflow-wrap: anywhere; }
 .refusal { border-left: 3px solid var(--fail); background: var(--bad-bg); }
 .confirm { border-left: 3px solid var(--fail); background: var(--card); border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .confirm .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
@@ -70,3 +71,7 @@ td.edit { white-space: nowrap; text-align: right; }
   td { border: 0; padding: 2px 4px; }
   td.edit { text-align: left; }
 }
+
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 4px 16px 14px; margin-bottom: 10px; }
+.pis { border: 0; padding: 0; margin: 6px 0 10px; }
+.pis label { display: block; padding: 4px 0; }

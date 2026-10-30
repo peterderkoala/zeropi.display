@@ -32,6 +32,7 @@ import push  # noqa: E402
 import web  # noqa: E402
 
 PI = SimpleNamespace(name="zeropi-display", address="B8:27:EB:7C:97:0F")
+OTHER_PI = SimpleNamespace(name="zeropi-display", address="B8:27:EB:41:0C:22")
 
 # scenario -> (paired, zeropi-push's unit state, how the radio answers)
 SCENARIOS = {
@@ -43,7 +44,10 @@ SCENARIOS = {
     "failed": (True, "failed", "ok"),
     "not_installed": (True, "missing", "ok"),
     "wipe_partial": (True, "running", "repush_busy"),
-    "not_paired": (False, "stopped", "ok"),
+    "not_paired": (False, "stopped", "ok"),  # Setup with one Pi
+    "setup_none": (False, "stopped", "absent"),
+    "setup_two": (False, "stopped", "two_pis"),
+    "setup_missing": (False, "missing", "ok"),  # pairs, then zeropi-push isn't installed
 }
 
 
@@ -86,15 +90,20 @@ def install_fakes(radio: str, delay: float) -> None:
         await connect(progress)
         return push.BatchResult(sent=3, settings_ok=True)
 
-    async def find_pi(*a, **kw):
+    async def find_pi(*a, address=None, **kw):
         await asyncio.sleep(delay)
         if radio == "absent":
             raise RuntimeError("no Pi advertising within 10.0s")
-        return PI
+        return OTHER_PI if address == OTHER_PI.address else PI
 
     async def scan_for_pis(*a, **kw):
         await asyncio.sleep(delay)
-        return [] if radio == "absent" else [(PI, SimpleNamespace(local_name=PI.name, rssi=-61))]
+        if radio == "absent":
+            return []
+        found = [(PI, SimpleNamespace(local_name=PI.name, rssi=-61))]
+        if radio == "two_pis":
+            found.append((OTHER_PI, SimpleNamespace(local_name=OTHER_PI.name, rssi=-78)))
+        return found
 
     operations.send_command = send_command
     push.run_batch_pass = run_batch_pass
@@ -103,12 +112,13 @@ def install_fakes(radio: str, delay: float) -> None:
     push.desktop_id = lambda *a, **kw: "a6805332099d91a1"
 
 
-def fake_systemctl(unit: str, started: list):
+def fake_systemctl(unit: dict, started: list):
     def run(argv, **kw):
         if "show" in argv:
-            load = "not-found" if unit == "missing" else "loaded"
+            load = "not-found" if unit["state"] == "missing" else "loaded"
             return subprocess.CompletedProcess(argv, 0, stdout=f"{load}\n", stderr="")
         started[0] = time.monotonic()  # a restart picks the pending changes up
+        unit["state"] = "running"  # enable --now / restart
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     return run
@@ -135,15 +145,19 @@ def main() -> int:
     finally:
         conn.close()
 
-    state = {"running": "running", "unknown": "unknown"}.get(unit, "not running")
+    unit = {"state": unit}  # Setup's Start zeropi-push changes it
     started = [time.monotonic()]  # zeropi-push "started" now, so only later edits are pending restart
+
+    def service_info():
+        running = unit["state"] == "running"
+        state = "running" if running else "not running"
+        return operations.ServiceInfo(state, time.monotonic() - started[0] if running else None, unit["state"])
+
     app = web.create_app(
         port=args.port,
         cfg_path=cfg_path,
         cli_store_path=str(store),
-        service_info_fn=lambda: operations.ServiceInfo(
-            state, time.monotonic() - started[0] if unit == "running" else None, unit
-        ),
+        service_info_fn=service_info,
         systemctl_fn=fake_systemctl(unit, started),
     )
     import uvicorn

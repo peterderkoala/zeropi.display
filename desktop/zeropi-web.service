@@ -1,0 +1,26 @@
+# desktop/zeropi-web.service -- the web UI (docs/spec-web-ui.md §5), a
+# resident systemd --user unit serving http://127.0.0.1:8737.
+#
+# A template: install-desktop.sh rewrites ExecStart and WorkingDirectory for
+# the layout it detected (spec §9.2) and enables this unit, never
+# zeropi-push (§9.4). The defaults below are the standalone layout.
+#
+# ⚠ Deliberately no Requires=/PartOf=/BindsTo=/After= on zeropi-push (§5.2):
+# the UI has to stay up exactly when zeropi-push has failed, to say so and
+# offer to restart it.
+
+[Unit]
+Description=zeropi.display web UI (http://127.0.0.1:8737)
+Documentation=https://github.com/peterderkoala/zeropi.display/blob/dev/docs/spec-web-ui.md
+
+[Service]
+Type=simple
+# Without it print() never reaches the journal (found while verifying #48).
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=%h/.local/share/zeropi-display
+ExecStart=%h/.local/share/zeropi-display/venv/bin/python %h/.local/share/zeropi-display/cli.py web
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
