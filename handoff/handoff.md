@@ -4,11 +4,12 @@
 
 > **Live work (2026-10-30): [map #89 — a lightweight web UI for the Management
 > Surface (spec)](https://github.com/peterderkoala/zeropi.display/issues/89)**, a
-> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Eight
+> **planning** map whose destination is a binding `docs/spec-web-ui.md`. Nine
 > of its **ten** tickets are closed: stack research (#90), the stack (#91), the
 > in-process seam (#92), the process model (#93), how a long BLE action
 > appears over HTTP (#94), when the page asks for status (#95), the
-> localhost guard (#96) and first-run setup (#100). **#100 (graphical first-run setup) was added on
+> localhost guard (#96), first-run setup (#100) and the pages prototype
+> (#97, variant B). Only #98, writing the spec, remains. **#100 (graphical first-run setup) was added on
 > 2026-10-30** and blocks #97/#98. The detail is on the map's Decisions-so-far; see
 > [For the next session](#for-the-next-session) for what can be taken next.
 > **The test Pi is absent for this map**, so no ticket needs hardware. PR #88
@@ -338,12 +339,18 @@ as `cli.py`, and the Pi is absent.
   derived from real state; a new `discover` Operation lists every Pi; setup
   enables `zeropi-push` only **after** a successful pair. This resolved the
   map's "Install and packaging" fog.
-- ⏭ **Takeable now: #97 The pages (prototype, fake data)**, which is HITL and
-  uses `mattpocock-skills:prototype` on a `prototype/*` branch. Its input
-  comments (#95, #96, #100) list what the pages must show. **#98 Write
-  `docs/spec-web-ui.md`** is blocked by #97 only. Each
-  resolution comment carries a *Consequences for the spec* list, which is
-  #98's gap check.
+- ✅ **#97 The pages** (2026-10-30): **variant B** of the prototype on
+  `prototype/web-ui` (`5deb9bf`, throwaway; `?variant=B&scenario=…`). It has
+  three tabs (Status, Configuration, Setup) on their own routes; the Operation
+  is a modal opened from a nav indicator, hideable, no cancel; a Status hero
+  with the Verdict and the actions; the six checks as tiles; refusals inline.
+  ⚠ The differences from the CLI are listed on #97 on purpose. Narrow screens
+  are not covered.
+- ⏭ **Takeable now: #98 Write `docs/spec-web-ui.md`** (`wayfinder:task`, AFK).
+  Its gap check is the *Consequences for the spec* list in every resolution
+  comment (#91–#97, #100), plus #96's tests list and #97's list of states.
+  ⚠ Before writing, decide the two fog items (push marks, pushed status):
+  either they become tickets or the spec states them as open.
 - **Fog on the map:** push marks not per-Pi, pushed status. (Install and
   packaging was resolved by #100.)
 
@@ -1363,7 +1370,7 @@ in `docs/research/`):
 - **`mattpocock-skills:wayfinder`** to work a ticket on the live map, **#89**.
   Invoke it with `continue` or the map, not with a fresh idea, because
   charting is done. It picks the next frontier ticket for you if you do not
-  name one. #97 is a prototype ticket; for any grilling one:
+  name one. #98 is a task (writing the spec); for any grilling one:
   - Load **`mattpocock-skills:grilling` + `mattpocock-skills:domain-modeling`**.
   - Ask in numbered rounds, with a recommendation per question.
   - Glossary edits go to `plan/web-ui`, never to `dev`.
