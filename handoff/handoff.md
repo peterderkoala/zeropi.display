@@ -387,6 +387,22 @@ frame from drawing.
 
 ## For the next session
 
+### #112 — repo audit findings (open)
+
+A whole-repo audit at `0bccce7` (2026-10-30) found 7 items. Each one names
+its fix and the test that shows it is done. Do them in this order:
+1. 10 of the 18 Configuration keys can be set, but no code reads them.
+2. One Gauge Payload with a non-number `pct` or `resets_in_s` kills the Pi's
+   own minute timer until restart: GLib drops a timer whose callback raises.
+3. A Batch can mark entries pushed that another process ingested mid-send.
+4. A failed scheduled Batch is not retried for 24 hours.
+5-7. Ack-to-row matching, a tail-read for the Gauge's context size, and a
+   duplicate `encode()`.
+
+Items 1 and 4 each hold a decision with a default. It is `needs-triage` until
+the maintainer accepts those defaults. `ready-for-agent` does not exist as a
+label yet.
+
 ### Map #102 — implement the web UI (closed)
 
 ✅ **Done 2026-10-30.** All seven slices (#103–#109) are closed, and §13 is
