@@ -403,6 +403,14 @@ Items 1 and 4 each hold a decision with a default. It is `needs-triage` until
 the maintainer accepts those defaults. `ready-for-agent` does not exist as a
 label yet.
 
+### #113 — show the SQLite contents in the web UI (open, reminder)
+
+A future feature, not scoped yet: a read-only web UI view of the three
+databases (the Desktop `config` and usage `entries` tables, and the Pi
+`readings`/`meta` tables). The Pi one is reachable only over BLE, so it needs
+a new verb and a change to the management-surface spec. The ticket lists the
+open questions. It is `needs-triage`: grill it before building.
+
 ### Map #102 — implement the web UI (closed)
 
 ✅ **Done 2026-10-30.** All seven slices (#103–#109) are closed, and §13 is
