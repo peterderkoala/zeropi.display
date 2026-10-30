@@ -171,6 +171,10 @@ Single-context layout (root `CONTEXT.md` + `docs/adr/`, created lazily as decisi
 
 `handoff/handoff.md`, tracked in git, is the continuity document between sessions — not a temp file, and not what a generic handoff skill's own default (write to the OS temp directory) should produce here. Update it in place when a ticket resolves or a recorded fact goes stale; see `docs/agents/handoff.md`.
 
+### Code lookups
+
+Every code lookup starts with the code-review-graph MCP tools (callers, callees, tests, impact), then reads the files they point to; Grep comes first only for non-code files and string literals. Reviews update the graph first (`full_rebuild=true` with uncommitted files). See `docs/agents/code-review-graph.md`.
+
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
