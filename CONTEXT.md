@@ -256,10 +256,19 @@ _Avoid_: Health, status (that is what the Pi *reports*), state
 
 **Configuration**:
 The Desktop's own tunable values, held in a dedicated SQLite store separate
-from the archive of record. Read once at process startup and never re-read, so
-a process runs one known Configuration for its whole life. Written only by the
-management surface — never by the resident service.
+from the archive of record. Read once at the start of a **run** and never
+re-read during it, so a run executes one known Configuration throughout. Written
+only by the management surface — never by the resident service.
 _Avoid_: Config file, preferences, options, config table
+
+> A **run** is the resident service's whole process life, and one CLI
+> invocation. For a long-lived Management Surface process such as the web UI it
+> is **one operation**, not the process life: the surface writes Configuration
+> (`pair` records the Pi's address) and must see its own writes. A web UI that
+> froze Configuration at startup would answer *not paired* straight after its
+> own `pair`. What the rule protects is that *which Configuration is the
+> resident service running?* has one answer. That is untouched, and it is what
+> *pending restart* is measured against.
 
 > Deliberately not a section in the Desktop store. That store is the archive of
 > record (ADR-0005) with its own version gate and its own backup story;
@@ -307,6 +316,22 @@ _Avoid_: Offline, down, disconnected, unavailable
 > Unreachable Pi is **refused at the moment it is typed** rather than held —
 > most sharply for a destructive one, because the reason the Pi is Unreachable
 > may be the reason not to act on it.
+
+**Operation**:
+One management action that touches the link, as the Management Surface
+carries it out: a status request, a push, a pairing, a Command, or a Settings
+change. An Operation has **started or been refused**. There is no third state
+in which it is waiting to start. A surface runs one Operation at a time, and
+a second one asked for meanwhile is refused, not held. Once started, an
+Operation runs to completion whether or not anyone is still watching.
+_Avoid_: Job, task, request, action queue, pending action
+
+> Following an Operation already running, from a reloaded page or a second
+> window, is **not** a queue. A queue holds something that has not started and
+> fires later, at a time nobody chose; that is exactly what
+> [ADR-0011](./docs/adr/0011-management-actions-are-never-deferred.md) rules
+> out. If you find yourself describing an Operation as *pending*, it is the
+> wrong word or the wrong design.
 
 **Tier**:
 Which of three classes a tunable value belongs to: a deployment fact, freely
