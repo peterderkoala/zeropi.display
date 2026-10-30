@@ -68,13 +68,13 @@
 >   needs one hard reload.
 >
 > ⚠ Found, not fixed: Setup's step 4 after a re-pair shows the previous,
-> out-of-date Verdict (§9.5 covers only the first pair). **Still owed, by
-> the maintainer:**
-> - from scratch with the curl bootstrap, which removes the Desktop's units
->   first;
-> - a Desktop reboot.
+> out-of-date Verdict (§9.5 covers only the first pair). From scratch
+> also passed: the curl bootstrap with no units and no `pi.address`, then
+> Setup's pair, *Start zeropi-push* (enabled only after the pair) and the
+> first Verdict. The clone is the live install again. **Still owed, by the
+> maintainer:** a Desktop reboot (§13.6).
 >
-> #109 and map #102 stay open until those have run.
+> #109 and map #102 stay open until it has run.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.

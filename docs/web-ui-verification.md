@@ -7,11 +7,10 @@ and the run §13 says the map owes. Everything below ran against the real dev Pi
 over real BLE, through the installed `zeropi-web` and a real browser
 (Playwright's Chromium). Nothing here is `tests/web_demo.py` or a fixture.
 
-**Result: partial.** §13 items 3, 4 and 5 pass on hardware, and the installer
-ran in both layouts. The run found and fixed **two defects**. Item 1 *from
-scratch* and item 6 (reboot) are still owed. Both need the maintainer, and are
-listed in [What is still owed](#what-is-still-owed). #109 stays open until they
-have run.
+**Result: §13 items 1, 3, 4 and 5 pass on hardware.** Item 2 could not run
+(one board). The run found and fixed **two defects**. Item 6, a Desktop reboot,
+is still owed by the maintainer (see [What is still owed](#what-is-still-owed)).
+#109 stays open until it has run.
 
 ## Environment
 
@@ -29,10 +28,46 @@ SSH to the Pi came late in the run, with access details as in the gitignored
 BLE (`status` replies, Acks). Afterwards, they came from its `meta` table and
 `systemctl`.
 
-## 1. The installer, both layouts (§13.1, partly)
+## 1. From scratch, both layouts (§13.1)
 
-Not *from scratch*: units already existed and the Pi was already paired. The
-installer itself ran end to end for the first time:
+**From scratch, standalone, by the curl bootstrap** (23:01, run by the agent
+at the maintainer's request). The starting state:
+
+- both units stopped, disabled and removed (`daemon-reload`; no `zeropi*` unit
+  files left);
+- `pi.address` deleted from `~/.config/zeropi-display/config.db`;
+- the config store and both unit files backed up first.
+
+The standalone directory was left in place, because it holds the usage archive
+(`usage-archive.db`, 7.7 MB). So the venv was reused, and the install took
+3.8 s. Then, from `/tmp`:
+`curl -fsSL …/dev/install.sh | bash -s -- desktop`.
+
+- The bootstrap resolved `dev` to `605aff4` and ran the standalone layout. It
+  wrote both units and created **only `zeropi-web`'s** enable link. Afterwards
+  `zeropi-push` was `disabled` and `inactive`, so §9.4's safety property held.
+- **The browser opened**: `xdg-open` reached the maintainer's session browser.
+  The journal shows `GET /` at 23:01:15 and then, since nothing was paired,
+  the one automatic `discover` (§9.3): *One Pi found.*
+- **Setup**, walked in Playwright's Chromium:
+  - `/` redirected to `/setup`, with no banner;
+  - step 1 listed `zeropi-display B8:27:EB:7C:97:0F −43 dBm`, preselected;
+  - steps 3 and 4 said *After pairing*;
+  - Pair → `Coupled. This Desktop is a6805332…` and `✓ Paired with
+    B8:27:EB:7C:97:0F. Batch: 1 sent, 0 failed.` (the same Desktop Id, so no
+    wipe);
+  - after the modal closed, step 4's automatic check showed `✓ Working.` and
+    *Status →*;
+  - *Start zeropi-push* turned step 3 ✓ (*running, up 0s*).
+  
+  `zeropi-push`'s enable link was then created at 23:02, after the pair, as
+  §9.4 orders (`enable --now`).
+- **In-place**, last, so the clone is live again. Both units were rewritten to
+  the clone's `.venv` and `desktop/`, both stayed enabled, and `cli.py status`
+  gave `✓ Working`.
+
+Earlier in the run, the installer had also run over existing units (not from
+scratch), in both layouts:
 
 - **Standalone** (`--prefix ~/.local/share/zeropi-display`, run from `/tmp`).
   Both units were rewritten to the standalone venv and copy. The only enable link
@@ -142,12 +177,8 @@ lines from Operations), so its `PYTHONUNBUFFERED=1` works.
 
 ## What is still owed
 
-Each needs the maintainer's hands:
+It needs the maintainer's hands:
 
-1. **From scratch (§13.1)**: stop, disable and remove both units, unset
-   `pi.address`, then run the curl bootstrap's Desktop role
-   (`curl -fsSL https://raw.githubusercontent.com/peterderkoala/zeropi.display/dev/install.sh | bash -s -- desktop`)
-   and walk Setup in the browser it opens. Then the clone, last.
-2. **Reboot (§13.6)**: reboot the Desktop, log in, and run
+- **Reboot (§13.6)**: reboot the Desktop, log in, and run
    `systemctl --user is-active zeropi-web zeropi-push` and
    `journalctl --user -u zeropi-web -b`.
