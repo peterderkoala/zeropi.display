@@ -2,14 +2,14 @@
 
 ## Where things stand
 
-> **Live work (2026-10-30): [map #102 — implement the web
+> **Done (2026-10-30): [map #102 — implement the web
 > UI](https://github.com/peterderkoala/zeropi.display/issues/102)**, an
 > **execution-mode** map against `docs/spec-web-ui.md`. It has seven slices,
 > chained: #103 extract the operations module → #104 extend the operations
 > (`BatchResult` fields, pair by address, `discover`) → #105 web skeleton and
 > localhost guard → #106 Operations over HTTP and the last-status slot → then
 > #107 (Status and Configuration tabs) and #108 (install and Setup) in
-> parallel → #109 hardware verification (partly run, see below). **#103 is done** (`fdd2762`):
+> parallel → #109 hardware verification. All seven are closed. **#103 is done** (`fdd2762`):
 > `desktop/operations.py` holds every action, with results carrying an
 > `outcome` and pre-BLE refusals raised as `Refused(kind, …)`; `cli.py` is a
 > renderer whose output was diffed byte-identical; `push.py` takes
@@ -55,7 +55,7 @@
 > only `zeropi-web`'s enable link and answered on `:8737`. #108 is closed. ⚠ Setup's
 > done step reads *paired with `<address>` (short id …)*, not §9.5's
 > *`<name>` (`<address>`)*: only `pi.address` is stored, and every Pi
-> advertises the same name. **#109 is partly run** (`docs/web-ui-verification.md`,
+> advertises the same name. **#109 is done** (`docs/web-ui-verification.md`,
 > 2026-10-30). On the dev Pi, through the installed `zeropi-web` and a real
 > browser, these pass: the guard; `busy`; `busy_here`; the second tab attaching; the
 > restart mid-`push` (*outcome unknown*, stop in 1.18 s); the banner and
@@ -68,13 +68,14 @@
 >   needs one hard reload.
 >
 > ⚠ Found, not fixed: Setup's step 4 after a re-pair shows the previous,
-> out-of-date Verdict (§9.5 covers only the first pair). From scratch
-> also passed: the curl bootstrap with no units and no `pi.address`, then
-> Setup's pair, *Start zeropi-push* (enabled only after the pair) and the
-> first Verdict. The clone is the live install again. **Still owed, by the
-> maintainer:** a Desktop reboot (§13.6).
+> out-of-date Verdict (§9.5 covers only the first pair). Also passed:
+> - from scratch: the curl bootstrap with no units and no `pi.address`, then
+>   Setup's pair, *Start zeropi-push* (enabled only after the pair) and the
+>   first Verdict;
+> - reboot survival: both units back, and both journals show `print()`
+>   output.
 >
-> #109 and map #102 stay open until it has run.
+> Not run: two Pis (one board). The clone is the live install.
 >
 > **`plan/web-ui` is merged into `dev`** (`8d05b3e`, 2026-10-30), so the spec
 > and the two `CONTEXT.md` changes are on `dev` now and PR #88 grew by them.
@@ -367,6 +368,17 @@ frame from drawing.
 - Agent-skill config: `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 
 ## For the next session
+
+### Map #102 — implement the web UI (closed)
+
+✅ **Done 2026-10-30.** All seven slices (#103–#109) are closed, and §13 is
+verified on hardware in `docs/web-ui-verification.md`. Two spec gaps it left:
+- Setup's step 4 after a re-pair (§9.5 covers only the first pair);
+- the paired line shows the address, not §9.5's name, because every Pi
+  advertises the same name.
+
+Neither has a ticket. The only other open issue is #99. `dev` is ahead of
+`main`; the PR waits for the maintainer.
 
 ### Map #89 — the web UI spec (closed)
 

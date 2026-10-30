@@ -7,10 +7,9 @@ and the run §13 says the map owes. Everything below ran against the real dev Pi
 over real BLE, through the installed `zeropi-web` and a real browser
 (Playwright's Chromium). Nothing here is `tests/web_demo.py` or a fixture.
 
-**Result: §13 items 1, 3, 4 and 5 pass on hardware.** Item 2 could not run
-(one board). The run found and fixed **two defects**. Item 6, a Desktop reboot,
-is still owed by the maintainer (see [What is still owed](#what-is-still-owed)).
-#109 stays open until it has run.
+**Result: every §13 item that this hardware can run passes: 1, 3, 4, 5 and
+6.** Item 2 needs a second board and was not run. The run found and fixed **two
+defects**.
 
 ## Environment
 
@@ -139,11 +138,23 @@ Restored `86400` the same way (save, then *Restart zeropi-push*), and `meta`
 read `'86400'`. #87's open point stands: no `status` field carries a Setting,
 so over BLE alone the Ack is all the evidence there is.
 
-## 6. Reboot survival (§13.6): not run
+## 6. Reboot survival (§13.6)
 
-Needs a Desktop reboot. What is already shown: `zeropi-web`'s own `print()`
-output reaches the journal (`Batch complete: 1 sent, 0 failed, wiped=False`
-lines from Operations), so its `PYTHONUNBUFFERED=1` works.
+The maintainer rebooted the Desktop (booted 23:06:34) and logged in:
+
+- **Both units came back on their own** at 23:07:58, and
+  `systemctl --user is-active zeropi-web zeropi-push` gave `active` twice.
+- **`zeropi-push`'s `print()` reached the journal.** It logged `Scanning…`,
+  `Found…` and `Connected…`, then `Batch complete: 1 sent, 0 failed,
+  wiped=False` at 23:08:09.
+- **`zeropi-web`'s `print()` reached the journal too.** A `push` through
+  `POST /api/operations` (`202`) logged `Batch complete: 1 sent, 0 failed,
+  wiped=False` at 23:10:01. Both units' `PYTHONUNBUFFERED=1` works.
+
+The first `cli.py status` after the boot reported *unreachable* (exit 2),
+although `zeropi-push` had just pushed to the Pi. A retry a minute later was
+`✓ Working`, showing a gauge frame drawn 1m 22s earlier. That was a single
+10 s scan that missed the advertisement, and it was not chased further.
 
 ## Defects found and fixed
 
@@ -175,10 +186,6 @@ lines from Operations), so its `PYTHONUNBUFFERED=1` works.
   which can belong to the previous Pi, and shows it without the out-of-date
   label. Unchanged here: the spec does not say what a re-pair's step 4 shows.
 
-## What is still owed
+## Not run
 
-It needs the maintainer's hands:
-
-- **Reboot (§13.6)**: reboot the Desktop, log in, and run
-   `systemctl --user is-active zeropi-web zeropi-push` and
-   `journalctl --user -u zeropi-web -b`.
+- **Two Pis (§13.2)**: only one board. See §2.
